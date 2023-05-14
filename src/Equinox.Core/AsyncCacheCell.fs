@@ -4,7 +4,7 @@ open System.Threading
 open System.Threading.Tasks
 
 /// Asynchronous Lazy<'T> used to gate a workflow to ensure at most once execution of a computation.
-type AsyncLazy<'T>(workflow : unit -> Task<'T>) =
+type AsyncLazy<'T>(workflow: unit -> Task<'T>) =
 
     /// NOTE due to `Lazy<T>` semantics, failed attempts will cache any exception; AsyncCacheCell compensates for this by rolling over to a new instance
     let workflow = lazy workflow ()
@@ -21,13 +21,13 @@ type AsyncLazy<'T>(workflow : unit -> Task<'T>) =
         | _ -> true
 
     /// Used to rule out values where the computation yielded an exception or the result has now expired
-    member _.TryAwaitValid(isExpired) : Task<'T voption> =
+    member _.TryAwaitValid(isExpired): Task<'T voption> =
         let t = workflow.Value
 
         // Determines if the last attempt completed, but failed; For TMI see https://stackoverflow.com/a/33946166/11635
         if t.IsFaulted then Task.FromResult ValueNone
         else task {
-            let! (res : 'T) = t
+            let! (res: 'T) = t
             match isExpired with
             | ValueSome isExpired when isExpired res -> return ValueNone
             | _ -> return ValueSome res }
@@ -38,7 +38,7 @@ type AsyncLazy<'T>(workflow : unit -> Task<'T>) =
 /// Generic async lazy caching implementation that admits expiration/recomputation/retry on exception semantics.
 /// If `workflow` fails, all readers entering while the load/refresh is in progress will share the failure
 /// The first caller through the gate triggers a recomputation attempt if the previous attempt ended in failure
-type AsyncCacheCell<'T>(workflow : CancellationToken -> Task<'T>, ?isExpired : 'T -> bool) =
+type AsyncCacheCell<'T>(workflow: CancellationToken -> Task<'T>, ?isExpired: 'T -> bool) =
 
     let isExpired = match isExpired with Some x -> ValueSome x | None -> ValueNone
     // we can't pre-initialize as we need the invocation to be tied to a CancellationToken

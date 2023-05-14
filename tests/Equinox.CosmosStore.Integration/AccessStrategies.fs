@@ -48,7 +48,7 @@ module SequenceCheck =
 
     module Fold =
 
-        type State = int array
+        type State = int[]
         let initial : State = [||]
         let evolve state = function
             | Events.Add e -> Array.append state [| e.value |]
@@ -61,11 +61,11 @@ module SequenceCheck =
 
     type Service(resolve : Guid -> Equinox.Decider<Events.Event, Fold.State>) =
 
-        member _.Read(instance : Guid) : Async<int array> =
+        member _.Read(instance : Guid) : Async<int[]> =
             let decider = resolve instance
             decider.Query(id)
 
-        member _.Add(instance : Guid, value : int, count) : Async<int array> =
+        member _.Add(instance : Guid, value : int, count) : Async<int[]> =
             let decider = resolve instance
             decider.Transact(decide (value, count), id)
 

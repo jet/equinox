@@ -6,8 +6,8 @@ open System.Diagnostics
 open System.Text
 
 /// Extracts the innermost exception if defined
-let (|InnermostExn|) (exn : exn) =
-    let rec aux (e : exn) =
+let (|InnermostExn|) (exn: exn) =
+    let rec aux (e: exn) =
         match e with
         | :? AggregateException as agg when agg.InnerExceptions.Count > 1 -> e
         | _ ->
@@ -26,9 +26,9 @@ type Async with
     /// </summary>
     /// <param name="task">Task to be awaited.</param>
     [<DebuggerStepThrough>]
-    static member AwaitTaskCorrect(task : System.Threading.Tasks.Task<'T>) : Async<'T> =
+    static member AwaitTaskCorrect(task: System.Threading.Tasks.Task<'T>): Async<'T> =
         Async.FromContinuations(fun (sc,ec,_) ->
-            task.ContinueWith(fun (t : System.Threading.Tasks.Task<'T>) ->
+            task.ContinueWith(fun (t: System.Threading.Tasks.Task<'T>) ->
                 if t.IsFaulted then
                     let e = t.Exception
                     if e.InnerExceptions.Count = 1 then ec e.InnerExceptions[0]
@@ -37,9 +37,9 @@ type Async with
                 else sc t.Result)
             |> ignore)
     [<DebuggerStepThrough>]
-    static member AwaitTaskCorrect(task : System.Threading.Tasks.Task) : Async<unit> =
+    static member AwaitTaskCorrect(task: System.Threading.Tasks.Task): Async<unit> =
         Async.FromContinuations(fun (sc,ec,_) ->
-            task.ContinueWith(fun (task : System.Threading.Tasks.Task) ->
+            task.ContinueWith(fun (task: System.Threading.Tasks.Task) ->
                 if task.IsFaulted then
                     let e = task.Exception
                     if e.InnerExceptions.Count = 1 then ec e.InnerExceptions[0]
@@ -50,7 +50,7 @@ type Async with
                     sc ())
             |> ignore)
 
-    static member map (f:'a -> 'b) (a:Async<'a>) : Async<'b> = async.Bind(a, f >> async.Return)
+    static member map (f:'a -> 'b) (a:Async<'a>): Async<'b> = async.Bind(a, f >> async.Return)
     static member choose a b = async {
         let! result = Async.Choice [|Async.map Some a ; Async.map Some b |]
         return Option.get result
@@ -61,7 +61,7 @@ type StringBuilder with
     member sb.Appendf fmt = Printf.ksprintf (ignore << sb.Append) fmt
     member sb.Appendfn fmt = Printf.ksprintf (ignore << sb.AppendLine) fmt
 
-    static member inline Build(builder : StringBuilder -> unit) =
+    static member inline Build(builder: StringBuilder -> unit) =
         let instance = StringBuilder() // TOCONSIDER PooledStringBuilder.GetInstance()
         builder instance
         instance.ToString()

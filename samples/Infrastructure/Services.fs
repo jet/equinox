@@ -8,10 +8,10 @@ open System
 
 type Store(store) =
     member _.Category
-        (   codec : FsCodec.IEventCodec<'event, ReadOnlyMemory<byte>, unit>,
+        (   codec: FsCodec.IEventCodec<'event, ReadOnlyMemory<byte>, unit>,
             fold: 'state -> 'event seq -> 'state,
-            initial : 'state,
-            snapshot : ('event -> bool) * ('state -> 'event)) : Category<'event, 'state, unit> =
+            initial: 'state,
+            snapshot: ('event -> bool) * ('state -> 'event)): Category<'event, 'state, unit> =
         match store with
         | Storage.StorageConfig.Memory store ->
             Equinox.MemoryStore.MemoryStoreCategory(store, codec, fold, initial)

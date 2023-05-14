@@ -67,10 +67,10 @@ module private Token =
     let (|Unpack|) (token : StreamToken) : int = unbox<Token> token.value
     /// Represent a stream known to be empty
     let ofEmpty = streamTokenOfEventCount 0
-    let ofValue (value : 'event array) = streamTokenOfEventCount value.Length
+    let ofValue (value : 'event[]) = streamTokenOfEventCount value.Length
 
 /// Represents the state of a set of streams in a style consistent withe the concrete Store types - no constraints on memory consumption (but also no persistence!).
-type private Category<'event, 'state, 'context, 'Format>(store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event, 'Format, 'context>, fold, initial) =
+type private Category<'event, 'state, 'context, 'Format>(store: VolatileStore<'Format>, codec: FsCodec.IEventCodec<'event, 'Format, 'context>, fold, initial) =
     interface ICategory<'event, 'state, 'context> with
         member _.Load(_log, _categoryName, _streamId, streamName, _allowStale, _requireLeader, _ct) =
             match store.Load(streamName) with
@@ -88,10 +88,10 @@ type private Category<'event, 'state, 'context, 'Format>(store : VolatileStore<'
                     struct (token', fold state (conflictingEvents |> Seq.skip eventCount |> Seq.chooseV codec.TryDecode)) |> Task.FromResult
                 SyncResult.Conflict resync |> Task.FromResult
 
-type MemoryStoreCategory<'event, 'state, 'Format, 'context>(resolveInner, empty) =
+type MemoryStoreCategory<'event, 'state, 'Format, 'context> internal (resolveInner, empty) =
     inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
-    new (store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event, 'Format, 'context>, fold, initial) =
-        let impl = Category<'event, 'state, 'context, 'Format>(store, codec, fold, initial)
-        let resolveInner categoryName streamId = struct (impl :> ICategory<_, _, _>, StreamName.render categoryName streamId, ValueNone)
+    new(store: VolatileStore<'Format>, codec: FsCodec.IEventCodec<'event, 'Format, 'context>, fold, initial) =
+        let impl = Category<'event, 'state, 'context, 'Format>(store, codec, fold, initial) :> ICategory<_, _, _>
+        let resolveInner categoryName streamId = struct (impl, StreamName.render categoryName streamId, ValueNone)
         let empty = struct (Token.ofEmpty, initial)
         MemoryStoreCategory(resolveInner, empty)

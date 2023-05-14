@@ -10,7 +10,7 @@ open FsCheck.Xunit
 open Swensen.Unquote.Assertions
 open Xunit
 
-let unpack (Token.Unpack token : StreamToken) =
+let unpack (Token.Unpack token: StreamToken) =
     token.streamVersion, token.compactionEventNumber, token.batchCapacityLimit
 
 [<Theory
@@ -37,7 +37,7 @@ let ``ofUncompactedVersion - batchCapacityLimit`` streamVersion batchSize expect
     ; InlineData(   0,  2, 1, 3, 0)
     ; InlineData(   1,  2, 1, 3, 0)
     ; InlineData(   2,  2, 1, 3, 1)>]
-let ``ofPreviousTokenAndEventsLength - batchCapacityLimit`` (previousCompactionEventNumber : System.Nullable<int>) streamVersion eventsLength batchSize expectedCapacity =
+let ``ofPreviousTokenAndEventsLength - batchCapacityLimit`` (previousCompactionEventNumber: System.Nullable<int>) streamVersion eventsLength batchSize expectedCapacity =
     let previousToken =
         if not previousCompactionEventNumber.HasValue then Token.ofCompactionEventNumber None 0 -84 -42L
         else Token.ofCompactionEventNumber (Some previousCompactionEventNumber.Value) 0 -84 -42L
@@ -45,7 +45,7 @@ let ``ofPreviousTokenAndEventsLength - batchCapacityLimit`` (previousCompactionE
     test <@ Some expectedCapacity = batchCapacityLimit @>
 
 [<Property>]
-let ``Properties of tokens based on various generation mechanisms `` streamVersion (previousCompactionEventNumber : int64 option) eventsLength batchSize =
+let ``Properties of tokens based on various generation mechanisms `` streamVersion (previousCompactionEventNumber: int64 option) eventsLength batchSize =
     let ovStreamVersion, ovCompactionEventNumber, ovBatchCapacityLimit =
         unpack <| Token.ofNonCompacting streamVersion
     let uvStreamVersion, uvCompactionEventNumber, uvBatchCapacityLimit =

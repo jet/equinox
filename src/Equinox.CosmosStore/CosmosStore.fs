@@ -29,10 +29,10 @@ type Event = // TODO for STJ v5: All fields required unless explicitly optional
         m: EventBody // TODO for STJ v5: Optional, not serialized if missing
 
         /// Optional correlationId
-        correlationId : string // TODO for STJ v5: Optional, not serialized if missing
+        correlationId: string // TODO for STJ v5: Optional, not serialized if missing
 
         /// Optional causationId
-        causationId : string // TODO for STJ v5: Optional, not serialized if missing
+        causationId: string // TODO for STJ v5: Optional, not serialized if missing
     }
 
     interface IEventData<EventBody> with
@@ -78,7 +78,7 @@ type Batch = // TODO for STJ v5: All fields required unless explicitly optional
 /// Compaction/Snapshot/Projection Event based on the state at a given point in time `i`
 [<NoEquality; NoComparison>]
 type Unfold =
-    {   /// Base: Stream Position (Version) of State from which this Unfold Event was generated
+    {   /// Base: Stream Position (Version) of State from which this Unfold Event was generated. An unfold from State Version 1 is i=1 and includes event i=1
         i: int64
 
         /// Generation datetime
@@ -128,20 +128,20 @@ type Tip = // TODO for STJ v5: All fields required unless explicitly optional
 
 /// Position and Etag to which an operation is relative
 [<NoComparison>]
-type Position = { index : int64; etag : string option }
+type Position = { index: int64; etag: string option }
 
 module internal Position =
     /// NB very inefficient compared to FromDocument or using one already returned to you
-    let fromI (i : int64) = { index = i; etag = None }
+    let fromI (i: int64) = { index = i; etag = None }
     /// If we have strong reason to suspect a stream is empty, we won't have an etag (and Writer Stored Procedure special cases this)
     let fromKnownEmpty = fromI 0L
     /// Just Do It mode
     let fromAppendAtEnd = fromI -1L // sic - needs to yield -1
-    let fromEtag (value : string) = { fromI -2L with etag = Some value }
+    let fromEtag (value: string) = { fromI -2L with etag = Some value }
     /// Create Position from Tip record context (facilitating 1 RU reads)
-    let fromTip (x : Tip) = { index = x.n; etag = match x._etag with null -> None | x -> Some x }
+    let fromTip (x: Tip) = { index = x.n; etag = match x._etag with null -> None | x -> Some x }
     /// If we encounter the tip (id=-1) item/document, we're interested in its etag so we can re-sync for 1 RU
-    let tryFromBatch (x : Batch) =
+    let tryFromBatch (x: Batch) =
         if x.id <> Tip.WellKnownDocumentId then None
         else Some { index = x.n; etag = match x._etag with null -> None | x -> Some x }
 
@@ -149,7 +149,7 @@ module internal Position =
 type Direction = Forward | Backward override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
 
 type internal Enum() =
-    static member Events(i : int64, e : Event[], ?minIndex, ?maxIndex) : ITimelineEvent<EventBody> seq = seq {
+    static member Events(i: int64, e: Event[], ?minIndex, ?maxIndex): ITimelineEvent<EventBody> seq = seq {
         let indexMin, indexMax = defaultArg minIndex 0L, defaultArg maxIndex Int64.MaxValue
         for offset in 0..e.Length-1 do
             let index = i + int64 offset
@@ -157,19 +157,19 @@ type internal Enum() =
             if index >= indexMin && index < indexMax then
                 let x = e[offset]
                 yield FsCodec.Core.TimelineEvent.Create(index, x.c, x.d, x.m, Guid.Empty, x.correlationId, x.causationId, x.t) }
-    static member internal Events(t : Tip, ?minIndex, ?maxIndex) : ITimelineEvent<EventBody> seq =
+    static member internal Events(t: Tip, ?minIndex, ?maxIndex): ITimelineEvent<EventBody> seq =
         Enum.Events(t.i, t.e, ?minIndex = minIndex, ?maxIndex = maxIndex)
-    static member internal Events(b : Batch, ?minIndex, ?maxIndex) =
+    static member internal Events(b: Batch, ?minIndex, ?maxIndex) =
         Enum.Events(b.i, b.e, ?minIndex = minIndex, ?maxIndex = maxIndex)
-    static member Unfolds(xs : Unfold[]) : ITimelineEvent<EventBody> seq = seq {
+    static member Unfolds(xs: Unfold[]): ITimelineEvent<EventBody> seq = seq {
         for x in xs -> FsCodec.Core.TimelineEvent.Create(x.i, x.c, x.d, x.m, Guid.Empty, null, null, x.t, isUnfold = true) }
-    static member EventsAndUnfolds(x : Tip, ?minIndex, ?maxIndex) : ITimelineEvent<EventBody> seq =
+    static member EventsAndUnfolds(x: Tip, ?minIndex, ?maxIndex): ITimelineEvent<EventBody> seq =
         Enum.Events(x, ?minIndex = minIndex, ?maxIndex = maxIndex)
         |> Seq.append (Enum.Unfolds x.u)
         // where Index is equal, unfolds get delivered after the events so the fold semantics can be 'idempotent'
         |> Seq.sortBy (fun x -> x.Index, x.IsUnfold)
 
-type IRetryPolicy = abstract member Execute : (int -> CancellationToken -> Task<'T>) -> Task<'T>
+type IRetryPolicy = abstract member Execute: (int -> CancellationToken -> Task<'T>) -> Task<'T>
 
 module Log =
 
@@ -178,8 +178,8 @@ module Log =
 
     [<NoEquality; NoComparison>]
     type Measurement =
-       {   database : string; container : string; stream : string
-           interval : StopwatchInterval; bytes : int; count : int; ru : float }
+       {   database: string; container: string; stream: string
+           interval: StopwatchInterval; bytes: int; count: int; ru: float }
        member x.Category = StreamName.category (FSharp.UMX.UMX.tag x.stream)
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
     type Metric =
@@ -191,7 +191,7 @@ module Log =
         | TipNotModified of Measurement
 
         /// Summarizes a set of Responses for a given Read request
-        | Query of Direction * responses : int * Measurement
+        | Query of Direction * responses: int * Measurement
         /// Individual read request in a Batch
         /// Charges are rolled up into Query Metric (so do not double count)
         | QueryResponse of Direction * Measurement
@@ -203,7 +203,7 @@ module Log =
         /// Summarizes outcome of request to trim batches from head of a stream and events in Tip
         /// Count in Measurement is number of batches (documents) deleted
         /// Bytes in Measurement is number of events deleted
-        | Prune of responsesHandled : int * Measurement
+        | Prune of responsesHandled: int * Measurement
         /// Handled response from listing of batches in a stream
         /// Charges are rolled up into the Prune Metric (so do not double count)
         | PruneResponse of Measurement
@@ -211,24 +211,24 @@ module Log =
         | Delete of Measurement
         /// Trimmed the Tip
         | Trim of Measurement
-    let [<return: Struct>] (|MetricEvent|_|) (logEvent : Serilog.Events.LogEvent) : Metric voption =
+    let [<return: Struct>] (|MetricEvent|_|) (logEvent: Serilog.Events.LogEvent): Metric voption =
         let mutable p = Unchecked.defaultof<_>
         logEvent.Properties.TryGetValue(PropertyTag, &p) |> ignore
         match p with Log.ScalarValue (:? Metric as e) -> ValueSome e | _ -> ValueNone
 
     /// Attach a property to the captured event record to hold the metric information
-    let internal event (value : Metric) = Internal.Log.withScalarProperty PropertyTag value
-    let internal prop name value (log : ILogger) = log.ForContext(name, value)
-    let internal propData name (events : #IEventData<EventBody> seq) (log : ILogger) =
-        let render (body : EventBody) = body.GetRawText()
+    let internal event (value: Metric) = Internal.Log.withScalarProperty PropertyTag value
+    let internal prop name value (log: ILogger) = log.ForContext(name, value)
+    let internal propData name (events: #IEventData<EventBody> seq) (log: ILogger) =
+        let render (body: EventBody) = body.GetRawText()
         let items = seq { for e in events do yield sprintf "{\"%s\": %s}" e.EventType (render e.Data) }
         log.ForContext(name, sprintf "[%s]" (String.concat ",\n\r" items))
     let internal propEvents = propData "events"
     let internal propDataUnfolds = Enum.Unfolds >> propData "unfolds"
-    let internal propStartPos (value : Position) log = prop "startPos" value.index log
-    let internal propStartEtag (value : Position) log = prop "startEtag" value.etag log
+    let internal propStartPos (value: Position) log = prop "startPos" value.index log
+    let internal propStartEtag (value: Position) log = prop "startEtag" value.etag log
 
-    let withLoggedRetries<'t> (retryPolicy : IRetryPolicy option) (contextLabel : string) (f : ILogger -> CancellationToken -> Task<'t>) log ct : Task<'t> =
+    let withLoggedRetries<'t> (retryPolicy: IRetryPolicy option) (contextLabel: string) (f: ILogger -> CancellationToken -> Task<'t>) log ct: Task<'t> =
         match retryPolicy with
         | None -> f log ct
         | Some retryPolicy ->
@@ -237,7 +237,7 @@ module Log =
                 f log
             retryPolicy.Execute withLoggingContextWrapping
 
-    let internal (|BlobLen|) (x : EventBody) = if x.ValueKind = JsonValueKind.Null then 0 else x.GetRawText().Length
+    let internal (|BlobLen|) (x: EventBody) = if x.ValueKind = JsonValueKind.Null then 0 else x.GetRawText().Length
     let internal eventLen (x: #IEventData<_>) = let BlobLen bytes, BlobLen metaBytes = x.Data, x.Meta in bytes + metaBytes + 80
     let internal batchLen = Seq.sumBy eventLen
     [<RequireQualifiedAccess>]
@@ -266,13 +266,13 @@ module Log =
         module Stats =
 
             type internal Counter =
-                 { mutable rux100 : int64; mutable count : int64; mutable ms : int64 }
+                 { mutable rux100: int64; mutable count: int64; mutable ms: int64 }
                  static member Create() = { rux100 = 0L; count = 0L; ms = 0L }
                  member x.Ingest(ru, ms) =
                      Interlocked.Increment(&x.count) |> ignore
                      Interlocked.Add(&x.rux100, int64 (ru*100.)) |> ignore
                      Interlocked.Add(&x.ms, ms) |> ignore
-            let inline private (|RcMs|) ({ interval = i; ru = ru } : Measurement) =
+            let inline private (|RcMs|) ({ interval = i; ru = ru }: Measurement) =
                 ru, int64 i.ElapsedMilliseconds
             type LogSink() =
                 static let epoch = System.Diagnostics.Stopwatch.StartNew()
@@ -313,7 +313,7 @@ module Log =
 
         /// Relies on feeding of metrics from Log through to Stats.LogSink
         /// Use Stats.LogSink.Restart() to reset the start point (and stats) where relevant
-        let dump (log : ILogger) =
+        let dump (log: ILogger) =
             let stats =
               [ "Read", Stats.LogSink.Read
                 "Write", Stats.LogSink.Write
@@ -339,7 +339,7 @@ module Log =
             // Yes, there's a minor race here between the use of the values and the reset
             let duration = Stats.LogSink.Restart()
             if rows > 1 then logActivity "TOTAL" totalCount (totalRRu + totalWRu) totalMs
-            let measures : (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
+            let measures: (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
             let logPeriodicRate name count rru wru = log.Information("{rru:n1}R/{wru:n1}W CU @ {count:n0} rp{unit}", rru, wru, count, name)
             for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRRu/d) (totalWRu/d)
 
@@ -348,10 +348,10 @@ module private MicrosoftAzureCosmosWrappers =
 
     type ReadResult<'T> = Found of 'T | NotFound | NotModified
     type Container with
-        member private container.DeserializeResponseBody<'T>(rm : ResponseMessage) : 'T =
+        member private container.DeserializeResponseBody<'T>(rm: ResponseMessage): 'T =
             rm.EnsureSuccessStatusCode().Content
             |> container.Database.Client.ClientOptions.Serializer.FromStream<'T>
-        member container.TryReadItem(partitionKey : PartitionKey, id : string, ct, ?options : ItemRequestOptions): Task<float * ReadResult<'T>> = task {
+        member container.TryReadItem(partitionKey: PartitionKey, id: string, ct, ?options: ItemRequestOptions): Task<float * ReadResult<'T>> = task {
             use! rm = container.ReadItemStreamAsync(id, partitionKey, requestOptions = Option.toObj options, cancellationToken = ct)
             return rm.Headers.RequestCharge, rm.StatusCode |> function
                 | System.Net.HttpStatusCode.NotFound -> NotFound
@@ -360,7 +360,7 @@ module private MicrosoftAzureCosmosWrappers =
 
 // NB don't nest in a private module, or serialization will fail miserably ;)
 [<CLIMutable; NoEquality; NoComparison>]
-type SyncResponse = { etag : string; n : int64; conflicts : Unfold[]; e : Event[] }
+type SyncResponse = { etag: string; n: int64; conflicts: Unfold[]; e: Event[] }
 
 module internal SyncStoredProc =
     let [<Literal>] name = "EquinoxEventsInTip4"  // NB need to rename/number for any breaking change
@@ -452,10 +452,10 @@ module internal Sync =
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
     type Result =
         | Written of Position
-        | Conflict of Position * events : ITimelineEvent<EventBody>[]
+        | Conflict of Position * events: ITimelineEvent<EventBody>[]
         | ConflictUnknown of Position
 
-    let private run (container : Container, stream : string) (maxEventsInTip, maxStringifyLen) (exp, req : Tip, ct)
+    let private run (container: Container, stream: string) (maxEventsInTip, maxStringifyLen) (exp, req: Tip, ct)
         : Task<float*Result> = task {
         let ep =
             match exp with
@@ -463,7 +463,7 @@ module internal Sync =
             | SyncExp.Etag et -> Position.fromEtag et
             | SyncExp.Any -> Position.fromAppendAtEnd
         let args = [| box req; box ep.index; box (Option.toObj ep.etag); box maxEventsInTip; box maxStringifyLen |]
-        let! (res : Scripts.StoredProcedureExecuteResponse<SyncResponse>) =
+        let! (res: Scripts.StoredProcedureExecuteResponse<SyncResponse>) =
             container.Scripts.ExecuteStoredProcedureAsync<SyncResponse>(SyncStoredProc.name, PartitionKey stream, args, cancellationToken = ct)
         let newPos = { index = res.Resource.n; etag = Option.ofObj res.Resource.etag }
         match res.Resource.conflicts with
@@ -475,12 +475,12 @@ module internal Sync =
             let events = (Enum.Events(ep.index, res.Resource.e), Enum.Unfolds unfolds) ||> Seq.append |> Array.ofSeq
             return res.RequestCharge, Result.Conflict (newPos, events) }
 
-    let private logged (container, stream) (maxEventsInTip, maxStringifyLen) (exp : SyncExp, req : Tip) (log : ILogger) ct : Task<Result> = task {
+    let private logged (container, stream) (maxEventsInTip, maxStringifyLen) (exp: SyncExp, req: Tip) (log: ILogger) ct: Task<Result> = task {
         let! t, (ru, result) = (fun ct -> run (container, stream) (maxEventsInTip, maxStringifyLen) (exp, req, ct)) |> Stopwatch.time ct
         let verbose = log.IsEnabled Serilog.Events.LogEventLevel.Debug
         let count, bytes = req.e.Length, if verbose then Enum.Events req |> Log.batchLen else 0
         let log =
-            let inline mkMetric ru : Log.Measurement =
+            let inline mkMetric ru: Log.Measurement =
                 { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = bytes; count = count; ru = ru }
             let inline propConflict log = log |> Log.prop "conflict" true |> Log.prop "eventTypes" (Seq.truncate 5 (seq { for x in req.e -> x.c }))
             if verbose then log |> Log.propEvents (Enum.Events req) |> Log.propDataUnfolds req.u else log
@@ -500,30 +500,30 @@ module internal Sync =
             "Sync", stream, count, req.u.Length, t.ElapsedMilliseconds, ru, bytes, exp)
         return result }
 
-    let batch (log : ILogger) (retryPolicy, maxEventsInTip, maxStringifyLen) containerStream expBatch ct : Task<Result> =
+    let batch (log: ILogger) (retryPolicy, maxEventsInTip, maxStringifyLen) containerStream expBatch ct: Task<Result> =
         let call = logged containerStream (maxEventsInTip, maxStringifyLen) expBatch
         Log.withLoggedRetries retryPolicy "writeAttempt" call log ct
 
-    let private mkEvent (e : IEventData<_>) =
+    let private mkEvent (e: IEventData<_>) =
         {   t = e.Timestamp
             c = e.EventType; d = JsonElement.undefinedToNull e.Data; m = JsonElement.undefinedToNull e.Meta
             correlationId = e.CorrelationId; causationId = e.CausationId }
-    let mkBatch (stream : string) (events : IEventData<_>[]) unfolds : Tip =
+    let mkBatch (stream: string) (events: IEventData<_>[]) unfolds: Tip =
         {   p = stream; id = Tip.WellKnownDocumentId; n = -1L(*Server-managed*); i = -1L(*Server-managed*); _etag = null
             e = Array.map mkEvent events; u = Array.ofSeq unfolds }
-    let mkUnfold compressor baseIndex (x : IEventData<_>) : Unfold =
+    let mkUnfold compressor baseIndex (x: IEventData<_>): Unfold =
         {   i = baseIndex; t = x.Timestamp
             c = x.EventType; d = compressor x.Data; m = compressor x.Meta }
 
 module Initialization =
 
     // Note: the Cosmos SDK does not (currently) support changing the Throughput mode of an existing Database or Container.
-    type [<RequireQualifiedAccess>] Throughput = Manual of rus : int | Autoscale of maxRus : int
+    type [<RequireQualifiedAccess>] Throughput = Manual of rus: int | Autoscale of maxRus: int
     type [<RequireQualifiedAccess>] Provisioning = Container of Throughput | Database of Throughput | Serverless
     let private (|ThroughputProperties|) = function
         | Throughput.Manual rus -> ThroughputProperties.CreateManualThroughput(rus)
         | Throughput.Autoscale maxRus -> ThroughputProperties.CreateAutoscaleThroughput(maxRus)
-    let private createOrProvisionDatabase (client : CosmosClient) dName mode = async {
+    let private createOrProvisionDatabase (client: CosmosClient) dName mode = async {
         let! ct = Async.CancellationToken
         let createDatabaseIfNotExists maybeTp = async {
             let! r = client.CreateDatabaseIfNotExistsAsync(dName, throughputProperties = Option.toObj maybeTp, cancellationToken = ct) |> Async.AwaitTaskCorrect
@@ -534,7 +534,7 @@ module Initialization =
             let! d = createDatabaseIfNotExists (Some tp)
             let! _ = d.ReplaceThroughputAsync(tp, cancellationToken = ct) |> Async.AwaitTaskCorrect
             return d }
-    let private createOrProvisionContainer (d : Database) (cName, pkPath, customizeContainer) mode = async {
+    let private createOrProvisionContainer (d: Database) (cName, pkPath, customizeContainer) mode = async {
         let cp = ContainerProperties(id = cName, partitionKeyPath = pkPath)
         customizeContainer cp
         let! ct = Async.CancellationToken
@@ -548,11 +548,11 @@ module Initialization =
             let! _ = c.ReplaceThroughputAsync(throughput, cancellationToken = ct) |> Async.AwaitTaskCorrect
             return c }
 
-    let private createStoredProcIfNotExists (c : Container) (name, body) ct : Task<float> = task {
+    let private createStoredProcIfNotExists (c: Container) (name, body) ct: Task<float> = task {
         try let! r = c.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(id = name, body = body), cancellationToken = ct)
             return r.RequestCharge
         with :? CosmosException as ce when ce.StatusCode = System.Net.HttpStatusCode.Conflict -> return ce.RequestCharge }
-    let private applyBatchAndTipContainerProperties (cp : ContainerProperties) =
+    let private applyBatchAndTipContainerProperties (cp: ContainerProperties) =
         cp.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
         cp.IndexingPolicy.Automatic <- true
         // Can either do a blacklist or a whitelist
@@ -560,28 +560,28 @@ module Initialization =
         cp.IndexingPolicy.ExcludedPaths.Add(ExcludedPath(Path="/*"))
         // NB its critical to index the nominated PartitionKey field defined above or there will be runtime errors
         for k in Batch.IndexedFields do cp.IndexingPolicy.IncludedPaths.Add(IncludedPath(Path = sprintf "/%s/?" k))
-    let createSyncStoredProcIfNotExists (log : ILogger option) container ct = task {
+    let createSyncStoredProcIfNotExists (log: ILogger option) container ct = task {
         let! t, ru = createStoredProcIfNotExists container (SyncStoredProc.name, SyncStoredProc.body) |> Stopwatch.time ct
         match log with
         | None -> ()
         | Some log -> log.Information("Created stored procedure {procName} in {ms:f1}ms {ru}RU", SyncStoredProc.name, t.ElapsedMilliseconds, ru) }
-    let init log (client : CosmosClient) (dName, cName) mode skipStoredProc ct = task {
+    let init log (client: CosmosClient) (dName, cName) mode skipStoredProc ct = task {
         let! d = createOrProvisionDatabase client dName mode
         let! c = createOrProvisionContainer d (cName, sprintf "/%s" Batch.PartitionKeyField, applyBatchAndTipContainerProperties) mode // as per Cosmos team, Partition Key must be "/id"
         if not skipStoredProc then
             do! createSyncStoredProcIfNotExists (Some log) c ct }
 
-    let private applyAuxContainerProperties (cp : ContainerProperties) =
+    let private applyAuxContainerProperties (cp: ContainerProperties) =
         // TL;DR no indexing of any kind; see https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet/issues/142
         cp.IndexingPolicy.Automatic <- false
         cp.IndexingPolicy.IndexingMode <- IndexingMode.None
 
-    let initAux (client : CosmosClient) (dName, cName) mode = async {
+    let initAux (client: CosmosClient) (dName, cName) mode = async {
         let! d = createOrProvisionDatabase client dName mode
         return! createOrProvisionContainer d (cName, "/id", applyAuxContainerProperties) mode } // as per Cosmos team, Partition Key must be "/id"
 
     /// Holds Container state, coordinating initialization activities
-    type internal ContainerInitializerGuard(container : Container, fallback : Container option, ?initContainer : Container -> CancellationToken -> Task<unit>) =
+    type internal ContainerInitializerGuard(container: Container, fallback: Container option, ?initContainer: Container -> CancellationToken -> Task<unit>) =
         let initGuard = initContainer |> Option.map (fun init -> AsyncCacheCell<unit>(init container))
 
         member _.Container = container
@@ -590,14 +590,14 @@ module Initialization =
 
 module internal Tip =
 
-    let private get (container : Container, stream : string) (maybePos : Position option) ct =
+    let private get (container: Container, stream: string) (maybePos: Position option) ct =
         let ro = match maybePos with Some { etag = Some etag } -> ItemRequestOptions(IfNoneMatchEtag = etag) |> Some | _ -> None
         container.TryReadItem<Tip>(PartitionKey stream, Tip.WellKnownDocumentId, ct, ?options = ro)
-    let private loggedGet (get : Container * string -> Position option -> CancellationToken -> Task<_>) (container, stream) (maybePos : Position option) (log : ILogger) ct = task {
+    let private loggedGet (get: Container * string -> Position option -> CancellationToken -> Task<_>) (container, stream) (maybePos: Position option) (log: ILogger) ct = task {
         let log = log |> Log.prop "stream" stream
-        let! t, (ru, res : ReadResult<Tip>) = get (container, stream) maybePos |> Stopwatch.time ct
+        let! t, (ru, res: ReadResult<Tip>) = get (container, stream) maybePos |> Stopwatch.time ct
         let verbose = log.IsEnabled Events.LogEventLevel.Debug
-        let log bytes count (f : Log.Measurement -> _) = log |> Log.event (f { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = bytes; count = count; ru = ru })
+        let log bytes count (f: Log.Measurement -> _) = log |> Log.event (f { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = bytes; count = count; ru = ru })
         match res with
         | ReadResult.NotModified ->
             (log 0 0 Log.Metric.TipNotModified).Information("EqxCosmos {action:l} {stream} {res} {ms:f1}ms {ru}RU", "Tip", stream, 304, t.ElapsedMilliseconds, ru)
@@ -612,9 +612,9 @@ module internal Tip =
             let log = log |> Log.prop "_etag" tip._etag |> Log.prop "n" tip.n
             log.Information("EqxCosmos {action:l} {stream} {res} {ms:f1}ms {ru}RU", "Tip", stream, 200, t.ElapsedMilliseconds, ru)
         return ru, res }
-    type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * i : int64 * ITimelineEvent<EventBody>[]
+    type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * i: int64 * ITimelineEvent<EventBody>[]
     /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with Result.NotModified
-    let tryLoad (log : ILogger) retryPolicy containerStream (maybePos : Position option, maxIndex) ct : Task<Result> = task {
+    let tryLoad (log: ILogger) retryPolicy containerStream (maybePos: Position option, maxIndex) ct: Task<Result> = task {
         let! _rc, res = Log.withLoggedRetries retryPolicy "readAttempt" (loggedGet get containerStream maybePos) log ct
         match res with
         | ReadResult.NotModified -> return Result.NotModified
@@ -625,19 +625,19 @@ module internal Tip =
 
 module internal Query =
 
-    let feedIteratorMapTi (map : int -> StopwatchInterval -> FeedResponse<'t> -> 'u) (query : FeedIterator<'t>) ct : IAsyncEnumerable<'u> = taskSeq {
+    let feedIteratorMapTi (map: int -> StopwatchInterval -> FeedResponse<'t> -> 'u) (query: FeedIterator<'t>) ct: IAsyncEnumerable<'u> = taskSeq {
         // earlier versions, such as 3.9.0, do not implement IDisposable; see linked issue for detail on when SDK team added it
         use _ = query // see https://github.com/jet/equinox/issues/225 - in the Cosmos V4 SDK, all this is managed IAsyncEnumerable
         let mutable i = 0
         while query.HasMoreResults do
-            let! t, (res : FeedResponse<'t>) = (fun ct -> query.ReadNextAsync(ct)) |> Stopwatch.time ct
+            let! t, (res: FeedResponse<'t>) = (fun ct -> query.ReadNextAsync(ct)) |> Stopwatch.time ct
             yield map i t res }
-    let private mkQuery (log : ILogger) (container : Container, stream : string) includeTip (maxItems : int) (direction : Direction, minIndex, maxIndex) : FeedIterator<Batch> =
+    let private mkQuery (log: ILogger) (container: Container, stream: string) includeTip (maxItems: int) (direction: Direction, minIndex, maxIndex): FeedIterator<Batch> =
         let order = if direction = Direction.Forward then "ASC" else "DESC"
         let query =
             let args = [
-                 match minIndex with None -> () | Some x -> yield "c.n > @minPos", fun (q : QueryDefinition) -> q.WithParameter("@minPos", x)
-                 match maxIndex with None -> () | Some x -> yield "c.i < @maxPos", fun (q : QueryDefinition) -> q.WithParameter("@maxPos", x) ]
+                 match minIndex with None -> () | Some x -> yield "c.n > @minPos", fun (q: QueryDefinition) -> q.WithParameter("@minPos", x)
+                 match maxIndex with None -> () | Some x -> yield "c.i < @maxPos", fun (q: QueryDefinition) -> q.WithParameter("@maxPos", x) ]
             let whereClause =
                 let notTip = sprintf "c.id!=\"%s\"" Tip.WellKnownDocumentId
                 let conditions = Seq.map fst args
@@ -651,21 +651,21 @@ module internal Query =
 
     // Unrolls the Batches in a response
     // NOTE when reading backwards, the events are emitted in reverse Index order to suit the takeWhile consumption
-    let private mapPage direction (container : Container, streamName : string) (minIndex, maxIndex) (maxRequests : int option)
-            (log : ILogger) i t (res : FeedResponse<Batch>)
+    let private mapPage direction (container: Container, streamName: string) (minIndex, maxIndex) (maxRequests: int option)
+            (log: ILogger) i t (res: FeedResponse<Batch>)
         : ITimelineEvent<EventBody>[] * Position option * float =
         let log = log |> Log.prop "batchIndex" i
         match maxRequests with
         | Some mr when i >= mr -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
         | _ -> ()
         let batches, ru = Array.ofSeq res, res.RequestCharge
-        let unwrapBatch (b : Batch) =
+        let unwrapBatch (b: Batch) =
             Enum.Events(b, ?minIndex = minIndex, ?maxIndex = maxIndex)
             |> if direction = Direction.Backward then Seq.rev else id
         let events = batches |> Seq.collect unwrapBatch |> Array.ofSeq
         let verbose = log.IsEnabled Events.LogEventLevel.Debug
         let count, bytes = events.Length, if verbose then events |> Log.batchLen else 0
-        let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = streamName; interval = t; bytes = bytes; count = count; ru = ru }
+        let reqMetric: Log.Measurement = { database = container.Database.Id; container = container.Id; stream = streamName; interval = t; bytes = bytes; count = count; ru = ru }
         let log = let evt = Log.Metric.QueryResponse (direction, reqMetric) in log |> Log.event evt
         let log = if verbose then log |> Log.propEvents events else log
         let index = if count = 0 then Nullable () else Nullable <| Seq.min (seq { for x in batches -> x.i })
@@ -677,17 +677,17 @@ module internal Query =
         let maybePosition = batches |> Array.tryPick Position.tryFromBatch
         events, maybePosition, ru
 
-    let private logQuery direction (container : Container, streamName) interval (responsesCount, events : ITimelineEvent<EventBody>[]) n (ru : float) (log : ILogger) =
+    let private logQuery direction (container: Container, streamName) interval (responsesCount, events: ITimelineEvent<EventBody>[]) n (ru: float) (log: ILogger) =
         let verbose = log.IsEnabled Events.LogEventLevel.Debug
         let count, bytes = events.Length, if verbose then events |> Log.batchLen else 0
-        let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = streamName; interval = interval; bytes = bytes; count = count; ru = ru }
+        let reqMetric: Log.Measurement = { database = container.Database.Id; container = container.Id; stream = streamName; interval = interval; bytes = bytes; count = count; ru = ru }
         let evt = Log.Metric.Query (direction, responsesCount, reqMetric)
         let action = match direction with Direction.Forward -> "QueryF" | Direction.Backward -> "QueryB"
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "EqxCosmos {action:l} {stream} v{n} {count}/{responses} {ms:f1}ms {ru}RU",
             action, streamName, n, count, responsesCount, interval.ElapsedMilliseconds, ru)
 
-    let private calculateUsedVersusDroppedPayload stopIndex (xs : ITimelineEvent<EventBody>[]) : int * int =
+    let private calculateUsedVersusDroppedPayload stopIndex (xs: ITimelineEvent<EventBody>[]): int * int =
         let mutable used, dropped = 0, 0
         let mutable found = false
         for x in xs do
@@ -698,9 +698,9 @@ module internal Query =
         used, dropped
 
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    type ScanResult<'event> = { found : bool; minIndex : int64; next : int64; maybeTipPos : Position option; events : 'event[] }
+    type ScanResult<'event> = { found: bool; minIndex: int64; next: int64; maybeTipPos: Position option; events: 'event[] }
 
-    let scanTip (tryDecode : #IEventData<EventBody> -> 'event voption, isOrigin : 'event -> bool) (pos : Position, i : int64, xs : #ITimelineEvent<EventBody>[]) : ScanResult<'event> =
+    let scanTip (tryDecode: #IEventData<EventBody> -> 'event voption, isOrigin: 'event -> bool) (pos: Position, i: int64, xs: #ITimelineEvent<EventBody>[]): ScanResult<'event> =
         let items = ResizeArray()
         let isOrigin' e =
             match tryDecode e with
@@ -712,13 +712,13 @@ module internal Query =
         { found = f; maybeTipPos = Some pos; minIndex = i; next = pos.index + 1L; events = e }
 
     // Yields events in ascending Index order
-    let scan<'event> (log : ILogger) (container, stream) includeTip (maxItems : int) maxRequests direction
-        (tryDecode : ITimelineEvent<EventBody> -> 'event voption, isOrigin : 'event -> bool)
+    let scan<'event> (log: ILogger) (container, stream) includeTip (maxItems: int) maxRequests direction
+        (tryDecode: ITimelineEvent<EventBody> -> 'event voption, isOrigin: 'event -> bool)
         (minIndex, maxIndex, ct)
         : Task<ScanResult<'event> option> = task {
         let mutable found = false
         let mutable responseCount = 0
-        let mergeBatches (log : ILogger) (batchesBackward : IAsyncEnumerable<ITimelineEvent<EventBody>[] * Position option * float>) = task {
+        let mergeBatches (log: ILogger) (batchesBackward: IAsyncEnumerable<ITimelineEvent<EventBody>[] * Position option * float>) = task {
             let mutable lastResponse, maybeTipPos, ru = None, None, 0.
             let! events =
                 batchesBackward
@@ -742,7 +742,7 @@ module internal Query =
             return events, maybeTipPos, ru }
         let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream
         let readLog = log |> Log.prop "direction" direction
-        let batches ct : IAsyncEnumerable<ITimelineEvent<EventBody>[] * Position option * float> =
+        let batches ct: IAsyncEnumerable<ITimelineEvent<EventBody>[] * Position option * float> =
             let query = mkQuery readLog (container, stream) includeTip maxItems (direction, minIndex, maxIndex)
             feedIteratorMapTi (mapPage direction (container, stream) (minIndex, maxIndex) maxRequests readLog) query ct
         let! t, (events, maybeTipPos, ru) = (fun ct -> batches ct |> mergeBatches log) |> Stopwatch.time ct
@@ -756,13 +756,13 @@ module internal Query =
             | None, None -> 0L
         log |> logQuery direction (container, stream) t (responseCount, raws) version ru
         match minMax, maybeTipPos with
-        | Some (i, m), _ -> return Some ({ found = found; minIndex = i; next = m + 1L; maybeTipPos = maybeTipPos; events = decoded } : ScanResult<_>)
+        | Some (i, m), _ -> return Some ({ found = found; minIndex = i; next = m + 1L; maybeTipPos = maybeTipPos; events = decoded }: ScanResult<_>)
         | None, Some { index = tipI } -> return Some { found = found; minIndex = tipI; next = tipI; maybeTipPos = maybeTipPos; events = [||] }
         | None, _ -> return None }
 
-    let walkLazy<'event> (log : ILogger) (container, stream) maxItems maxRequests
-        (tryDecode : ITimelineEvent<EventBody> -> 'event option, isOrigin : 'event -> bool)
-        (direction, minIndex, maxIndex, ct : CancellationToken)
+    let walkLazy<'event> (log: ILogger) (container, stream) maxItems maxRequests
+        (tryDecode: ITimelineEvent<EventBody> -> 'event option, isOrigin: 'event -> bool)
+        (direction, minIndex, maxIndex, ct: CancellationToken)
         : IAsyncEnumerable<'event[]> = taskSeq {
         let query = mkQuery log (container, stream) true maxItems (direction, minIndex, maxIndex)
 
@@ -811,10 +811,10 @@ module internal Query =
     /// 1) Tip Data and/or Conflicting events
     /// 2) Querying Primary for predecessors of what's obtained from 1
     /// 3) Querying Archive for predecessors of what's obtained from 2
-    let load (log : ILogger) (minIndex, maxIndex) (tip : ScanResult<'event> option)
-            (primary : int64 option * int64 option * CancellationToken -> Task<ScanResult<'event> option>)
+    let load (log: ILogger) (minIndex, maxIndex) (tip: ScanResult<'event> option)
+            (primary: int64 option * int64 option * CancellationToken -> Task<ScanResult<'event> option>)
             // Choice1Of2 -> indicates whether it's acceptable to ignore missing events; Choice2Of2 -> Fallback store
-            (fallback : Choice<bool, int64 option * int64 option * CancellationToken -> Task<ScanResult<'event> option>>) ct
+            (fallback: Choice<bool, int64 option * int64 option * CancellationToken -> Task<ScanResult<'event> option>>) ct
             : Task<Position * 'event[]> = task {
         let minI = defaultArg minIndex 0L
         match tip with
@@ -864,15 +864,15 @@ module internal Query =
 // NOTE: module is public so BatchIndices can be deserialized into
 module Prune =
 
-    type BatchIndices = { id : string; i : int64; n : int64 }
+    type BatchIndices = { id: string; i: int64; n: int64 }
 
-    let until (log : ILogger) (container : Container, stream : string) (maxItems : int) indexInclusive ct : Task<int * int * int64> = task {
+    let until (log: ILogger) (container: Container, stream: string) (maxItems: int) indexInclusive ct: Task<int * int * int64> = task {
         let log = log |> Log.prop "stream" stream
-        let deleteItem id count : Task<float> = task {
+        let deleteItem id count: Task<float> = task {
             let ro = ItemRequestOptions(EnableContentResponseOnWrite = false) // https://devblogs.microsoft.com/cosmosdb/enable-content-response-on-write/
             let! t, res = (fun ct -> container.DeleteItemAsync(id, PartitionKey stream, ro, ct)) |> Stopwatch.time ct
             let rc, ms = res.RequestCharge, t.ElapsedMilliseconds
-            let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = count; ru = rc }
+            let reqMetric: Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = count; ru = rc }
             let log = let evt = Log.Metric.Delete reqMetric in log |> Log.event evt
             log.Information("EqxCosmos {action:l} {id} {ms:f1}ms {ru}RU", "Delete", id, ms, rc)
             return rc }
@@ -887,26 +887,26 @@ module Prune =
             let ro = ItemRequestOptions(EnableContentResponseOnWrite = false, IfMatchEtag = tip._etag)
             let! t, updateRes = (fun ct -> container.ReplaceItemAsync(tip, tip.id, PartitionKey stream, ro, ct)) |> Stopwatch.time ct
             let rc, ms = tipRu + updateRes.RequestCharge, t.ElapsedMilliseconds
-            let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = count; ru = rc }
+            let reqMetric: Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = count; ru = rc }
             let log = let evt = Log.Metric.Trim reqMetric in log |> Log.event evt
             log.Information("EqxCosmos {action:l} {count} {ms:f1}ms {ru}RU", "Trim", count, ms, rc)
             return rc }
         let log = log |> Log.prop "index" indexInclusive
-        let query : FeedIterator<BatchIndices> =
+        let query: FeedIterator<BatchIndices> =
              let qro = QueryRequestOptions(PartitionKey = PartitionKey stream, MaxItemCount = maxItems)
              // sort by i to guarantee we don't ever leave an observable gap in the sequence
              container.GetItemQueryIterator<_>("SELECT c.id, c.i, c.n FROM c ORDER by c.i", requestOptions = qro)
-        let mapPage i (t : StopwatchInterval) (page : FeedResponse<BatchIndices>) =
+        let mapPage i (t: StopwatchInterval) (page: FeedResponse<BatchIndices>) =
             let batches, rc, ms = Array.ofSeq page, page.RequestCharge, t.ElapsedMilliseconds
             let next = Array.tryLast batches |> Option.map (fun x -> x.n)
-            let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = batches.Length; ru = rc }
+            let reqMetric: Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = batches.Length; ru = rc }
             let log = let evt = Log.Metric.PruneResponse reqMetric in log |> Log.prop "batchIndex" i |> Log.event evt
             log.Information("EqxCosmos {action:l} {batches} {ms:f1}ms n={next} {ru}RU", "PruneResponse", batches.Length, ms, Option.toNullable next, rc)
             batches, rc
         let! pt, outcomes =
-            let isTip (x : BatchIndices) = x.id = Tip.WellKnownDocumentId
+            let isTip (x: BatchIndices) = x.id = Tip.WellKnownDocumentId
             let isRelevant x = x.i <= indexInclusive || isTip x
-            let handle (batches : BatchIndices[], rc) = task {
+            let handle (batches: BatchIndices[], rc) = task {
                 let mutable delCharges, batchesDeleted, trimCharges, batchesTrimmed, eventsDeleted, eventsDeferred = 0., 0, 0., 0, 0, 0
                 let mutable lwm = None
                 for x in batches |> Seq.takeWhile (fun x -> isRelevant x || lwm = None) do
@@ -948,21 +948,21 @@ module Prune =
             eventsDeleted <- eventsDeleted + eDel
             eventsDeferred <- eventsDeferred + eDef
         outcomes |> Array.iter accumulate
-        let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = pt; bytes = eventsDeleted; count = batches; ru = queryCharges }
+        let reqMetric: Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = pt; bytes = eventsDeleted; count = batches; ru = queryCharges }
         let log = let evt = Log.Metric.Prune (responses, reqMetric) in log |> Log.event evt
         let lwm = lwm |> Option.defaultValue 0L // If we've seen no batches at all, then the write position is 0L
         log.Information("EqxCosmos {action:l} {events}/{batches} lwm={lwm} {ms:f1}ms queryRu={queryRu} deleteRu={deleteRu} trimRu={trimRu}",
                         "Prune", eventsDeleted, batches, lwm, pt.ElapsedMilliseconds, queryCharges, delCharges, trimCharges)
         return eventsDeleted, eventsDeferred, lwm }
 
-type [<NoComparison>] Token = { pos : Position }
+type [<NoComparison>] Token = { pos: Position }
 module Token =
 
     // TOCONSIDER Could implement accumulating the streamBytes as it's loaded (but should stop counting when it hits the origin event)
     //            Should probably be optional as computing the UTF8/16 size from the JsonElement is not cheap
     //            Alternately, can mirror DynamoStore scheme where the size is maintained in the Tip, and updated as batches are calved
-    let create pos : StreamToken = { value = box { pos = pos }; version = pos.index; streamBytes = -1 }
-    let (|Unpack|) (token : StreamToken) : Position = let t = unbox<Token> token.value in t.pos
+    let create pos: StreamToken = { value = box { pos = pos }; version = pos.index; streamBytes = -1 }
+    let (|Unpack|) (token: StreamToken): Position = let t = unbox<Token> token.value in t.pos
     let supersedes struct (Unpack currentPos, Unpack xPos) =
         let currentVersion, newVersion = currentPos.index, xPos.index
         let currentETag, newETag = currentPos.etag, xPos.etag
@@ -980,9 +980,9 @@ module Internal =
 /// Defines the policies in force regarding how to split up calls when loading Event Batches via queries
 type QueryOptions
     (   // Max number of Batches to return per paged query response. Default: 10.
-        [<O; D null>] ?maxItems : int,
+        [<O; D null>] ?maxItems: int,
         // Dynamic version of `maxItems`, allowing one to react to dynamic configuration changes. Default: use `maxItems` value.
-        [<O; D null>] ?getMaxItems : unit -> int,
+        [<O; D null>] ?getMaxItems: unit -> int,
         // Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`. Default: unlimited.
         [<O; D null>] ?maxRequests) =
     let getMaxItems = defaultArg getMaxItems (fun () -> defaultArg maxItems 10)
@@ -1004,7 +1004,7 @@ type TipOptions
         [<O; D null>] ?readRetryPolicy,
         [<O; D null>] ?writeRetryPolicy) =
     /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
-    member val MaxEvents : int = maxEvents
+    member val MaxEvents: int = maxEvents
     /// Maximum serialized size (length of JSON.stringify representation) to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
     member val MaxJsonLength = defaultArg maxJsonLength 30_000
     /// Whether to inhibit throwing when events are missing, but no Archive Container has been supplied
@@ -1013,13 +1013,13 @@ type TipOptions
     member val ReadRetryPolicy = readRetryPolicy
     member val WriteRetryPolicy = writeRetryPolicy
 
-type StoreClient(container : Container, archive : Container option, query : QueryOptions, tip : TipOptions) =
+type StoreClient(container: Container, archive: Container option, query: QueryOptions, tip: TipOptions) =
 
     let loadTip log stream pos = Tip.tryLoad log tip.ReadRetryPolicy (container, stream) (pos, None)
     let ignoreMissing = tip.IgnoreMissingEvents
 
     // Always yields events forward, regardless of direction
-    member internal _.Read(log, stream, direction, (tryDecode, isOrigin), ?ct, ?minIndex, ?maxIndex, ?tip) : Task<StreamToken * 'event[]> = task {
+    member internal _.Read(log, stream, direction, (tryDecode, isOrigin), ?ct, ?minIndex, ?maxIndex, ?tip): Task<StreamToken * 'event[]> = task {
         let tip = tip |> Option.map (Query.scanTip (tryDecode, isOrigin))
         let includeTip = Option.isNone tip
         let walk log container = Query.scan log (container, stream) includeTip query.MaxItems query.MaxRequests direction (tryDecode, isOrigin)
@@ -1031,17 +1031,17 @@ type StoreClient(container : Container, archive : Container option, query : Quer
         let log = log |> Log.prop "stream" stream
         let! pos, events = Query.load log (minIndex, maxIndex) tip (walk log container) walkFallback (defaultArg ct CancellationToken.None)
         return Token.create pos, events }
-    member _.ReadLazy(log, batching : QueryOptions, stream, direction, (tryDecode, isOrigin), ?ct, ?minIndex, ?maxIndex) : IAsyncEnumerable<'event[]> =
+    member _.ReadLazy(log, batching: QueryOptions, stream, direction, (tryDecode, isOrigin), ?ct, ?minIndex, ?maxIndex): IAsyncEnumerable<'event[]> =
         Query.walkLazy log (container, stream) batching.MaxItems batching.MaxRequests (tryDecode, isOrigin) (direction, minIndex, maxIndex, defaultArg ct CancellationToken.None)
 
-    member store.Load(log, (stream, maybePos), (tryDecode, isOrigin), checkUnfolds : bool, ct) : Task<StreamToken * 'event[]> =
+    member store.Load(log, (stream, maybePos), (tryDecode, isOrigin), checkUnfolds: bool, ct): Task<StreamToken * 'event[]> =
         if not checkUnfolds then store.Read(log, stream, Direction.Backward, (tryDecode, isOrigin), ct)
         else task {
             match! loadTip log stream maybePos ct with
             | Tip.Result.NotFound -> return Token.create Position.fromKnownEmpty, Array.empty
             | Tip.Result.NotModified -> return invalidOp "Not applicable"
             | Tip.Result.Found (pos, i, xs) -> return! store.Read(log, stream, Direction.Backward, (tryDecode, isOrigin), ct, tip = (pos, i, xs)) }
-    member _.GetPosition(log, stream, ct, ?pos) : Task<StreamToken> = task {
+    member _.GetPosition(log, stream, ct, ?pos): Task<StreamToken> = task {
         match! loadTip log stream pos ct with
         | Tip.Result.NotFound -> return Token.create Position.fromKnownEmpty
         | Tip.Result.NotModified -> return Token.create pos.Value
@@ -1058,25 +1058,26 @@ type StoreClient(container : Container, archive : Container option, query : Quer
             | Tip.Result.NotModified -> return LoadFromTokenResult.Unchanged
             | Tip.Result.Found (pos, i, xs) -> return! read (pos, i, xs) }
 
-    member internal _.Sync(log, stream, exp, batch : Tip, ct) : Task<InternalSyncResult> = task {
+    member internal _.Sync(log, stream, exp, batch: Tip, ct): Task<InternalSyncResult> = task {
         if Array.isEmpty batch.e && Array.isEmpty batch.u then invalidOp "Must write either events or unfolds."
         match! Sync.batch log (tip.WriteRetryPolicy, tip.MaxEvents, tip.MaxJsonLength) (container, stream) (exp, batch) ct with
+        | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create pos')
         | Sync.Result.Conflict (pos', events) -> return InternalSyncResult.Conflict (pos', events)
-        | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create pos')
-        | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create pos') }
+        | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create pos') }
 
     member _.Prune(log, stream, index, ct) =
         Prune.until log (container, stream) query.MaxItems index ct
 
-type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IEventCodec<'event, EventBody, 'context>) =
-    member _.Load(log, stream, initial, checkUnfolds, fold, isOrigin, ct) : Task<struct (StreamToken * 'state)> = task {
+type internal Category<'event, 'state, 'context>
+    (   store: StoreClient, codec: IEventCodec<'event, EventBody, 'context>) =
+    member _.Load(log, stream, initial, checkUnfolds, fold, isOrigin, ct): Task<struct (StreamToken * 'state)> = task {
         let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds, ct)
         return struct (token, fold initial events) }
-    member _.Reload(log, streamName, (Token.Unpack pos as streamToken), state, fold, isOrigin, ct, ?preloaded) : Task<struct (StreamToken * 'state)> = task {
+    member _.Reload(log, streamName, (Token.Unpack pos as streamToken), state, fold, isOrigin, ct, ?preloaded): Task<struct (StreamToken * 'state)> = task {
         match! store.Reload(log, (streamName, pos), (codec.TryDecode, isOrigin), ct, ?preview = preloaded) with
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
-    member cat.Sync(log, streamName, (Token.Unpack pos as streamToken), state, events, mapUnfolds, fold, isOrigin, context, compressUnfolds, ct) : Task<SyncResult<'state>> = task {
+    member cat.Sync(log, streamName, (Token.Unpack pos as streamToken), state, events, mapUnfolds, fold, isOrigin, context, compressUnfolds, ct): Task<SyncResult<'state>> = task {
         let state' = fold state (Seq.ofArray events)
         let encode e = codec.Encode(context, e)
         let exp, events, eventsEncoded, projectionsEncoded =
@@ -1129,11 +1130,11 @@ module internal Caching =
             member _.TrySync(log : ILogger, _categoryName, _streamId, streamName, context, maybeInit, streamToken, state, events, ct) : Task<SyncResult<'state>> = task {
                 match maybeInit with ValueNone -> () | ValueSome i -> do! i ct
                 match! category.Sync(log, streamName, streamToken, state, events, mapUnfolds, fold, isOrigin, context, compressUnfolds, ct) with
-                | SyncResult.Conflict resync ->
-                    return SyncResult.Conflict (cache streamName resync)
                 | SyncResult.Written tokenAndState' ->
                     do! updateCache streamName tokenAndState'
-                    return SyncResult.Written tokenAndState' }
+                    return SyncResult.Written tokenAndState'
+                | SyncResult.Conflict resync ->
+                    return SyncResult.Conflict (cache streamName resync) }
 
 module ConnectionString =
 
@@ -1324,18 +1325,18 @@ type CosmosStoreClient
 
 /// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
 type CosmosStoreContext(storeClient : CosmosStoreClient, tipOptions, queryOptions) =
-    new(    storeClient : CosmosStoreClient,
-            // Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
-            // NOTE <c>Equinox.Cosmos</c> versions <= 3.0.0 cannot read events in Tip, hence using a non-zero value will not be interoperable.
-            tipMaxEvents,
-            // Maximum serialized size (length of `JSON.stringify` representation) permitted in Tip before they get moved out to a standalone Batch. Default: 30_000.
-            [<O; D null>] ?tipMaxJsonLength,
-            // Inhibit throwing when events are missing, but no Archive Container has been supplied as a fallback.
-            [<O; D null>] ?ignoreMissingEvents,
-            // Max number of Batches to return per paged query response. Default: 10.
-            [<O; D null>] ?queryMaxItems,
-            // Maximum number of trips to permit when slicing the work into multiple responses limited by `queryMaxItems`. Default: unlimited.
-            [<O; D null>] ?queryMaxRequests) =
+    new(storeClient : CosmosStoreClient,
+        // Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
+        // NOTE <c>Equinox.Cosmos</c> versions <= 3.0.0 cannot read events in Tip, hence using a non-zero value will not be interoperable.
+        tipMaxEvents,
+        // Maximum serialized size (length of `JSON.stringify` representation) permitted in Tip before they get moved out to a standalone Batch. Default: 30_000.
+        [<O; D null>] ?tipMaxJsonLength,
+        // Inhibit throwing when events are missing, but no Archive Container has been supplied as a fallback.
+        [<O; D null>] ?ignoreMissingEvents,
+        // Max number of Batches to return per paged query response. Default: 10.
+        [<O; D null>] ?queryMaxItems,
+        // Maximum number of trips to permit when slicing the work into multiple responses limited by `queryMaxItems`. Default: unlimited.
+        [<O; D null>] ?queryMaxRequests) =
         let tipOptions = TipOptions(maxEvents = tipMaxEvents, ?maxJsonLength = tipMaxJsonLength, ?ignoreMissingEvents = ignoreMissingEvents)
         let queryOptions = QueryOptions(?maxItems = queryMaxItems, ?maxRequests = queryMaxRequests)
         CosmosStoreContext(storeClient, tipOptions, queryOptions)
@@ -1392,7 +1393,7 @@ type AccessStrategy<'event, 'state> =
     /// Allow any events that pass the `isOrigin` test to be used in lieu of folding all the events from the start of the stream
     /// When writing, uses `toSnapshots` to 'unfold' the <c>'state</c>, representing it as one or more Event records to be stored in
     /// the Tip with efficient read cost.
-    | MultiSnapshot of isOrigin : ('event -> bool) * toSnapshots : ('state -> 'event array)
+    | MultiSnapshot of isOrigin : ('event -> bool) * toSnapshots : ('state -> 'event[])
     /// Instead of actually storing the events representing the decisions, only ever update a snapshot stored in the Tip document
     /// <remarks>In this mode, Optimistic Concurrency Control is necessarily based on the _etag</remarks>
     | RollingState of toSnapshot : ('state -> 'event)
@@ -1401,18 +1402,18 @@ type AccessStrategy<'event, 'state> =
     /// In this mode, Optimistic Concurrency Control is based on the _etag (rather than the normal Expected Version strategy)
     /// in order that conflicting updates to the state not involving the writing of an event can trigger retries.
     /// </remarks>
-    | Custom of isOrigin : ('event -> bool) * transmute : ('event array -> 'state -> 'event array * 'event array)
+    | Custom of isOrigin : ('event -> bool) * transmute : ('event[] -> 'state -> 'event[] * 'event[])
 
-type CosmosStoreCategory<'event, 'state, 'context>(resolveInner, empty) =
+type CosmosStoreCategory<'event, 'state, 'context> internal (resolveInner, empty) =
     inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
-    new (   context : CosmosStoreContext, codec, fold, initial, caching, access,
-            // Compress Unfolds in Tip. Default: <c>true</c>.
-            // NOTE when set to <c>false</c>, requires Equinox.CosmosStore or Equinox.Cosmos Version >= 2.3.0 to be able to read
-            [<O; D null>] ?compressUnfolds) =
+    new(context: CosmosStoreContext, codec, fold, initial, caching, access,
+        // Compress Unfolds in Tip. Default: <c>true</c>.
+        // NOTE when set to <c>false</c>, requires Equinox.CosmosStore or Equinox.Cosmos Version >= 2.3.0 to be able to read
+        [<O; D null>] ?compressUnfolds) =
         let compressUnfolds = defaultArg compressUnfolds true
         let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<'event, 'state, 'context>>()
         let resolveCategory (categoryName, container) =
-            let createCategory _name : ICategory<_, _, 'context> =
+            let createCategory _name: ICategory<_, _, 'context> =
                 let tryReadCache, updateCache =
                     match caching with
                     | CachingStrategy.NoCaching -> (fun _ -> Task.FromResult ValueNone), fun _ _ -> Task.FromResult ()
@@ -1446,15 +1447,15 @@ open FSharp.Control
 /// Outcome of appending events, specifying the new and/or conflicting events, together with the updated Target write position
 [<RequireQualifiedAccess; NoComparison>]
 type AppendResult<'t> =
-    | Ok of pos : 't
-    | Conflict of index : 't * conflictingEvents : ITimelineEvent<EventBody>[]
-    | ConflictUnknown of index : 't
+    | Ok of pos: 't
+    | Conflict of index: 't * conflictingEvents: ITimelineEvent<EventBody>[]
+    | ConflictUnknown of index: 't
 
 /// Encapsulates the core facilities Equinox.CosmosStore offers for operating directly on Events in Streams.
 type EventsContext internal
-    (   context : Equinox.CosmosStore.CosmosStoreContext, store : StoreClient,
+    (   context: Equinox.CosmosStore.CosmosStoreContext, store: StoreClient,
         // Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
-        log : Serilog.ILogger) =
+        log: Serilog.ILogger) =
     do if log = null then nullArg "log"
     let maxCountPredicate count =
         let acc = ref (max (count-1) 0)
@@ -1473,16 +1474,16 @@ type EventsContext internal
         | Direction.Forward -> startPos, None
         | Direction.Backward -> None, startPos
 
-    new (context : Equinox.CosmosStore.CosmosStoreContext, log) =
+    new (context: Equinox.CosmosStore.CosmosStoreContext, log) =
         let struct (store, _streamId, _init) = context.ResolveContainerClientAndStreamIdAndInit(null, null)
         EventsContext(context, store, log)
 
     member _.ResolveStream(streamName) =
         let struct (_cc, streamName, init) = context.ResolveContainerClientAndStreamIdAndInit(null, streamName)
         struct (streamName, init)
-    member x.StreamId(streamName) : string = x.ResolveStream streamName |> ValueTuple.fst
+    member x.StreamId(streamName): string = x.ResolveStream streamName |> ValueTuple.fst
 
-    member internal _.GetLazy(stream, ?ct, ?queryMaxItems, ?direction, ?minIndex, ?maxIndex) : IAsyncEnumerable<ITimelineEvent<EventBody>[]> =
+    member internal _.GetLazy(stream, ?ct, ?queryMaxItems, ?direction, ?minIndex, ?maxIndex): IAsyncEnumerable<ITimelineEvent<EventBody>[]> =
         let direction = defaultArg direction Direction.Forward
         let batching = match queryMaxItems with Some qmi -> QueryOptions(qmi) | _ -> context.QueryOptions
         store.ReadLazy(log, batching, stream, direction, (Some, fun _ -> false), ?ct = ct, ?minIndex = minIndex, ?maxIndex = maxIndex)
@@ -1504,23 +1505,23 @@ type EventsContext internal
 
     /// Establishes the current position of the stream in as efficient a manner as possible
     /// (The ideal situation is that the preceding token is supplied as input in order to avail of 1RU low latency state checks)
-    member _.Sync(stream, [<O; D null>] ?position : Position) : Async<Position> = async {
+    member _.Sync(stream, [<O; D null>] ?position: Position): Async<Position> = async {
         let! ct = Async.CancellationToken
         let! Token.Unpack pos' = store.GetPosition(log, stream, ct, ?pos = position) |> Async.AwaitTaskCorrect
         return pos' }
 
     /// Query (with MaxItems set to `queryMaxItems`) from the specified `Position`, allowing the reader to efficiently walk away from a running query
     /// ... NB as long as they Dispose!
-    member x.Walk(stream, queryMaxItems, [<O; D null>] ?ct, [<O; D null>] ?minIndex, [<O; D null>] ?maxIndex, [<O; D null>] ?direction) : IAsyncEnumerable<ITimelineEvent<EventBody>[]> =
+    member x.Walk(stream, queryMaxItems, [<O; D null>] ?ct, [<O; D null>] ?minIndex, [<O; D null>] ?maxIndex, [<O; D null>] ?direction): IAsyncEnumerable<ITimelineEvent<EventBody>[]> =
         x.GetLazy(stream, ?ct = ct, queryMaxItems = queryMaxItems, ?direction = direction, ?minIndex = minIndex, ?maxIndex = maxIndex)
 
     /// Reads all Events from a `Position` in a given `direction`
-    member x.Read(stream, [<O; D null>] ?ct, [<O; D null>] ?position, [<O; D null>] ?maxCount, [<O; D null>] ?direction) : Task<Position*ITimelineEvent<EventBody>[]> =
+    member x.Read(stream, [<O; D null>] ?ct, [<O; D null>] ?position, [<O; D null>] ?maxCount, [<O; D null>] ?direction): Task<Position*ITimelineEvent<EventBody>[]> =
         x.GetInternal((stream, position), ?ct = ct, ?maxCount = maxCount, ?direction = direction) |> yieldPositionAndData
 
     /// Appends the supplied batch of events, subject to a consistency check based on the `position`
     /// Callers should implement appropriate idempotent handling, or use Equinox.Decider for that purpose
-    member x.Sync(stream, position, events : IEventData<_>[], ct) : Task<AppendResult<Position>> = task {
+    member x.Sync(stream, position, events: IEventData<_>[], ct): Task<AppendResult<Position>> = task {
         // Writes go through the stored proc, which we need to provision per container
         // Having to do this here in this way is far from ideal, but work on caching, external snapshots and caching is likely
         //   to move this about before we reach a final destination in any case
@@ -1535,34 +1536,34 @@ type EventsContext internal
 
     /// Low level, non-idempotent call appending events to a stream without a concurrency control mechanism in play
     /// NB Should be used sparingly; Equinox.Decider enables building equivalent equivalent idempotent handling with minimal code.
-    member x.NonIdempotentAppend(stream, events : IEventData<_>[]) : Async<Position> = async {
+    member x.NonIdempotentAppend(stream, events: IEventData<_>[]): Async<Position> = async {
         let! ct = Async.CancellationToken
         match! x.Sync(stream, Position.fromAppendAtEnd, events, ct) |> Async.AwaitTaskCorrect with
         | AppendResult.Ok token -> return token
         | x -> return x |> sprintf "Conflict despite it being disabled %A" |> invalidOp }
 
-    member _.Prune(stream, index, ct) : Task<int * int * int64> =
+    member _.Prune(stream, index, ct): Task<int * int * int64> =
         store.Prune(log, stream, index, ct)
 
 /// Provides mechanisms for building `EventData` records to be supplied to the `Events` API
 type EventData() =
     /// Creates an Event record, suitable for supplying to Append et al
-    static member FromUtf8Bytes(eventType, data, ?meta) : IEventData<_> = FsCodec.Core.EventData.Create(eventType, data, ?meta = meta) :> _
+    static member FromUtf8Bytes(eventType, data, ?meta): IEventData<_> = FsCodec.Core.EventData.Create(eventType, data, ?meta = meta) :> _
 
 /// Api as defined in the Equinox Specification
 /// Note the CosmosContext APIs can yield better performance due to the fact that a Position tracks the etag of the Stream's Tip
 module Events =
 
-    let private (|PositionIndex|) (x : Position) = x.index
-    let private stripSyncResult (f : Task<AppendResult<Position>>) : Async<AppendResult<int64>> = async {
+    let private (|PositionIndex|) (x: Position) = x.index
+    let private stripSyncResult (f: Task<AppendResult<Position>>): Async<AppendResult<int64>> = async {
         match! f |> Async.AwaitTaskCorrect with
         | AppendResult.Ok (PositionIndex index)-> return AppendResult.Ok index
         | AppendResult.Conflict (PositionIndex index, events) -> return AppendResult.Conflict (index, events)
         | AppendResult.ConflictUnknown (PositionIndex index) -> return AppendResult.ConflictUnknown index }
-    let private stripPosition (f : Async<Position>) : Async<int64> = async {
+    let private stripPosition (f: Async<Position>): Async<int64> = async {
         let! (PositionIndex index) = f
         return index }
-    let private dropPosition (f : Task<Position * ITimelineEvent<EventBody>[]>) : Async<ITimelineEvent<EventBody>[]> = async {
+    let private dropPosition (f: Task<Position * ITimelineEvent<EventBody>[]>): Async<ITimelineEvent<EventBody>[]> = async {
         let! _, xs = f |> Async.AwaitTaskCorrect
         return xs }
     let (|MinPosition|) = function
@@ -1576,7 +1577,7 @@ module Events =
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let getAll (ctx : EventsContext) (streamName : string) (index : int64) (batchSize : int) : Async<IAsyncEnumerable<ITimelineEvent<EventBody>[]>> = async {
+    let getAll (ctx: EventsContext) (streamName: string) (index: int64) (batchSize: int): Async<IAsyncEnumerable<ITimelineEvent<EventBody>[]>> = async {
         let! ct = Async.CancellationToken
         return ctx.Walk(ctx.StreamId streamName, batchSize, ct, minIndex = index) }
 
@@ -1584,14 +1585,14 @@ module Events =
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let get (ctx : EventsContext) (streamName : string) (MinPosition index : int64) (maxCount : int) : Async<ITimelineEvent<EventBody>[]> = async {
+    let get (ctx: EventsContext) (streamName: string) (MinPosition index: int64) (maxCount: int): Async<ITimelineEvent<EventBody>[]> = async {
         let! ct = Async.CancellationToken
         return! ctx.Read(ctx.StreamId streamName, ct, ?position = index, maxCount = maxCount) |> dropPosition }
 
     /// Appends a batch of events to a stream at the specified expected sequence number.
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
-    let append (ctx : EventsContext) (streamName : string) (index : int64) (events : IEventData<_>[]) : Async<AppendResult<int64>> = async {
+    let append (ctx: EventsContext) (streamName: string) (index: int64) (events: IEventData<_>[]): Async<AppendResult<int64>> = async {
         let! ct = Async.CancellationToken
         return! ctx.Sync(ctx.StreamId streamName, Position.fromI index, events, ct) |> stripSyncResult }
 
@@ -1599,14 +1600,14 @@ module Events =
     /// NB typically, it is recommended to ensure idempotency of operations by using the `append` and related API as
     /// this facilitates ensuring consistency is maintained, and yields reduced latency and Request Charges impacts
     /// (See equivalent APIs on `Context` that yield `Position` values)
-    let appendAtEnd (ctx : EventsContext) (streamName : string) (events : IEventData<_>[]) : Async<int64> =
+    let appendAtEnd (ctx: EventsContext) (streamName: string) (events: IEventData<_>[]): Async<int64> =
         ctx.NonIdempotentAppend(ctx.StreamId streamName, events) |> stripPosition
 
     /// Requests deletion of events up and including the specified <c>index</c>.
     /// Due to the need to preserve ordering of data in the stream, only complete Batches will be removed.
     /// If the <c>index</c> is within the Tip, events are removed via an etag-checked update. Does not alter the unfolds held in the Tip, or remove the Tip itself.
     /// Returns count of events deleted this time, events that could not be deleted due to partial batches, and the stream's lowest remaining sequence number.
-    let pruneUntil (ctx : EventsContext) (streamName : string) (index : int64) : Async<int * int * int64> = async {
+    let pruneUntil (ctx: EventsContext) (streamName: string) (index: int64): Async<int * int * int64> = async {
         let! ct = Async.CancellationToken
         return! ctx.Prune(ctx.StreamId streamName, index, ct) |> Async.AwaitTaskCorrect }
 
@@ -1614,7 +1615,7 @@ module Events =
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getAllBackwards (ctx : EventsContext) (streamName : string) (index : int64) (batchSize : int) : Async<IAsyncEnumerable<ITimelineEvent<EventBody>[]>> = async {
+    let getAllBackwards (ctx: EventsContext) (streamName: string) (index: int64) (batchSize: int): Async<IAsyncEnumerable<ITimelineEvent<EventBody>[]>> = async {
         let! ct = Async.CancellationToken
         return ctx.Walk(ctx.StreamId streamName, batchSize, ct, maxIndex = index, direction = Direction.Backward) }
 
@@ -1622,10 +1623,10 @@ module Events =
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getBackwards (ctx : EventsContext) (streamName : string) (MaxPosition index : int64) (maxCount : int) : Async<ITimelineEvent<EventBody>[]> = async {
+    let getBackwards (ctx: EventsContext) (streamName: string) (MaxPosition index: int64) (maxCount: int): Async<ITimelineEvent<EventBody>[]> = async {
         let! ct = Async.CancellationToken
         return! ctx.Read(ctx.StreamId streamName, ct, ?position = index, maxCount = maxCount, direction = Direction.Backward) |> dropPosition }
 
     /// Obtains the `index` from the current write Position
-    let getNextIndex (ctx : EventsContext) (streamName : string) : Async<int64> =
+    let getNextIndex (ctx: EventsContext) (streamName: string): Async<int64> =
         ctx.Sync(ctx.StreamId streamName) |> stripPosition

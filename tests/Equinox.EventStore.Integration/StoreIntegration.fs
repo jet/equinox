@@ -14,7 +14,7 @@ let defaultBatchSize = 500
 open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.Postgres
 
-let connectToLocalStore (_ : ILogger) =
+let connectToLocalStore (_: ILogger) =
     Connector("Host=localhost;User Id=postgres;password=password;database=EQUINOX_TEST_DB",autoCreate=true).Establish()
 
 type Context = SqlStreamStoreContext
@@ -24,7 +24,7 @@ type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state,
 open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.MsSql
 
-let connectToLocalStore (_ : ILogger) =
+let connectToLocalStore (_: ILogger) =
     Connector("Server=localhost,1433;User=sa;Password=mssql1Ipw;Database=EQUINOX_TEST_DB", autoCreate = true).Establish()
 
 (* WORKAROUND FOR https://github.com/microsoft/mssql-docker/issues/2#issuecomment-1059819719
@@ -37,7 +37,7 @@ type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state,
 open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.MySql
 
-let connectToLocalStore (_ : ILogger) =
+let connectToLocalStore (_: ILogger) =
     Connector(sprintf "Server=localhost;User=root;Database=EQUINOX_TEST_DB",autoCreate=true).Establish()
 
 type Context = SqlStreamStoreContext
@@ -60,7 +60,7 @@ type Category<'event, 'state, 'context> = MessageDbCategory<'event, 'state, 'con
 open Equinox.EventStoreDb
 
 /// Connect directly to a locally running EventStoreDB Node using gRPC, without using Gossip-driven discovery
-let connectToLocalStore (_log : ILogger) = async {
+let connectToLocalStore (_log: ILogger) = async {
     let c = EventStoreConnector(reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, (*, log=Logger.SerilogVerbose log,*) tags=["I",Guid.NewGuid() |> string])
     let conn = c.Establish("Equinox-integration", Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false", ConnectionStrategy.ClusterSingle EventStore.Client.NodePreference.Leader)
     return conn }
@@ -256,7 +256,7 @@ type GeneralTests(testOutputHelper) =
                     do! addAndThenRemoveItemsManyTimesExceptTheLastOne ctx cartId skuId service1 addRemoveCount
                     return Some (skuId, addRemoveCount) }
 
-        let act prepare (service : Cart.Service) log skuId count =
+        let act prepare (service: Cart.Service) log skuId count =
             service.ExecuteManyAsync(cartId, false, prepare = prepare, commands = [Cart.SyncItem (ctx, skuId, Some count, None)])
 
         let eventWaitSet () = let e = new ManualResetEvent(false) in (Async.AwaitWaitHandle e |> Async.Ignore), async { e.Set() |> ignore }
@@ -429,7 +429,7 @@ type GeneralTests(testOutputHelper) =
         let batchSize = 3
         let context = createContext connection batchSize
         let id = Guid.NewGuid()
-        let toStreamId (x : Guid) = x.ToString "N"
+        let toStreamId (x: Guid) = x.ToString "N"
         let decider = SimplestThing.resolve log context SimplestThing.Category (Equinox.StreamId.gen toStreamId id)
 
         let! before, after = decider.TransactEx(
@@ -547,7 +547,7 @@ type RollingSnapshotTests(testOutputHelper) =
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 1
         // and we _could_ reload the 24 events with a single read if reading backwards. However we are using the cache, which last saw it with 10 events, which necessitates two reads
         let! _ = service2.Read cartId
-        let suboptimalExtraSlice : EsAct list = sliceForward
+        let suboptimalExtraSlice: EsAct list = sliceForward
         test <@ singleBatchBackwards @ batchBackwardsAndAppend @ suboptimalExtraSlice @ singleBatchForward = capture.ExternalCalls @>
     }
 #endif

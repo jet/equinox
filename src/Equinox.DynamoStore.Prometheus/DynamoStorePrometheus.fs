@@ -9,9 +9,9 @@ module private Histograms =
 
     let labelNames tagNames = Array.append tagNames [| "rut"; "facet"; "op"; "table"; "cat" |]
     let labelValues tagValues (rut, facet, op, table, cat) = Array.append tagValues [| rut; facet; op; table; cat |]
-    let private mkHistogram (cfg : Prometheus.HistogramConfiguration) name desc =
+    let private mkHistogram (cfg: Prometheus.HistogramConfiguration) name desc =
         let h = Prometheus.Metrics.CreateHistogram(name, desc, cfg)
-        fun tagValues (rut, facet : string, op : string) (table, cat : string) s ->
+        fun tagValues (rut, facet: string, op: string) (table, cat: string) s ->
             h.WithLabels(labelValues tagValues (rut, facet, op, table, cat)).Observe(s)
     // Given we also have summary metrics with equivalent labels, we focus the bucketing on LAN latencies
     let private sHistogram tagNames =
@@ -26,7 +26,7 @@ module private Histograms =
         let baseName, baseDesc = Impl.baseName stat, Impl.baseDesc desc
         let observeS = sHistogram tagNames (baseName + "_seconds") (baseDesc + " latency")
         let observeRu = ruHistogram tagNames (baseName + "_ru") (baseDesc + " charge")
-        fun (rut, facet, op) (table, cat, s : System.TimeSpan, ru) ->
+        fun (rut, facet, op) (table, cat, s: System.TimeSpan, ru) ->
             observeS tagValues (rut, facet, op) (table, cat) s.TotalSeconds
             observeRu tagValues (rut, facet, op) (table, cat) ru
 
@@ -34,9 +34,9 @@ module private Summaries =
 
     let labelNames tagNames = Array.append tagNames [| "facet"; "table" |]
     let labelValues tagValues (facet, table) = Array.append tagValues [| facet; table |]
-    let private mkSummary (cfg : Prometheus.SummaryConfiguration) name desc  =
+    let private mkSummary (cfg: Prometheus.SummaryConfiguration) name desc  =
         let s = Prometheus.Metrics.CreateSummary(name, desc, cfg)
-        fun tagValues (facet : string) table o -> s.WithLabels(labelValues tagValues (facet, table)).Observe(o)
+        fun tagValues (facet: string) table o -> s.WithLabels(labelValues tagValues (facet, table)).Observe(o)
     let config tagNames =
         let inline qep q e = Prometheus.QuantileEpsilonPair(q, e)
         let objectives = [| qep 0.50 0.05; qep 0.95 0.01; qep 0.99 0.01 |]
@@ -45,7 +45,7 @@ module private Summaries =
         let baseName, baseDesc = Impl.baseName stat, Impl.baseDesc desc
         let observeS = mkSummary (config tagNames) (baseName + "_seconds") (baseDesc + " latency") tagValues
         let observeRu = mkSummary (config tagNames) (baseName + "_ru") (baseDesc + " charge") tagValues
-        fun facet (table, s : System.TimeSpan, ru) ->
+        fun facet (table, s: System.TimeSpan, ru) ->
             observeS facet table s.TotalSeconds
             observeRu facet table ru
 
@@ -53,9 +53,9 @@ module private Counters =
 
     let labelNames tagNames = Array.append tagNames [| "facet"; "op"; "outcome"; "table"; "cat" |]
     let labelValues tagValues (facet, op, outcome, table, cat) = Array.append tagValues [| facet; op; outcome; table; cat |]
-    let private mkCounter (cfg : Prometheus.CounterConfiguration) name desc =
+    let private mkCounter (cfg: Prometheus.CounterConfiguration) name desc =
         let h = Prometheus.Metrics.CreateCounter(name, desc, cfg)
-        fun tagValues (facet : string, op : string, outcome : string) (table, cat) c ->
+        fun tagValues (facet: string, op: string, outcome: string) (table, cat) c ->
             h.WithLabels(labelValues tagValues (facet, op, outcome, table, cat)).Inc(c)
     let config tagNames = Prometheus.CounterConfiguration(LabelNames = labelNames tagNames)
     let total (tagNames, tagValues) stat desc =
@@ -91,7 +91,7 @@ type LogSink(customTags: seq<string * string>) =
         observeLatencyAndCharge (rut, facet, op) (table, cat, s, ru)
         payloadCounters (facet, op, outcome) (table, cat, float count, if bytes = -1 then None else Some (float bytes))
 
-    let (|CatSRu|) ({ interval = i; ru = ru } : Measurement as m) =
+    let (|CatSRu|) ({ interval = i; ru = ru }: Measurement as m) =
         struct (m.table, m.Category, i.Elapsed, ru)
     let observeRes (_rut, facet, _op as stat) (CatSRu (table, cat, s, ru)) =
         roundtripHistogram stat (table, cat, s, ru)

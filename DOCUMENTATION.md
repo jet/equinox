@@ -273,9 +273,11 @@ Stored Procedure         | JavaScript code stored in a Container that (repeatedl
 
 Term                     | Description
 -------------------------|------------
-Table                    | Defined storage in DynamoDB, defining a schema and (optionally), a Streams configuration. (There's no notion of a Database)
+Table                    | Defined storage area in DynamoDB, defining a schema and (optionally), a Streams configuration. (There's no notion of a Database)
 Streams                  | Buffer used to record information about all changes with a 24h retention window
-Transactions             | Feature allowing up to 100 atomic updates across multiple tables and logical partitions. Doubles the RU cost of a write 
+Transactions             | Feature allowing up to 100 atomic updates across multiple tables and logical partitions. Doubles the RU cost of a write
+DynamoStore Index        | Custom implementation (in Propulsion) that indexes the DynamoDB Streams output to enable traversing all the events in the store akin to how the CosmosDB ChangeFeed enables that
+Export                   | A Table can be exported in full to an S3 bucket as a set of json files containing all items
 
 ## EventStore
 
@@ -294,6 +296,7 @@ Term       | Description
 -----------|------------
 Cache      | `System.Net.MemoryCache` or equivalent holding _State_ and/or `etag` information for a Stream with a view to reducing roundtrips, latency and/or Request Charges
 Unfolds    | Snapshot information, stored in an appropriate storage location (not as a Stream's actual Events), _but represented as Events_, to minimize Queries and the attendant Request Charges when there is a Cache miss
+Version    | When a decision function is invoked, it's presented with a State derived from the Stream's Events and/or Unfolds up to a given position. If the newest event has Index `9` (or it was loaded from an Unfold with `i=9`) the Version is `10`
 
 # Programming Model
 
@@ -711,7 +714,7 @@ follow!
 #### Decider Members
 
 ```fsharp
-type Equinox.Decider(stream : IStream<'event, 'state>, log, maxAttempts) =
+type Equinox.Decider(...) =
 StoreIntegration
     // Run interpret function with present state, retrying with Optimistic Concurrency
     member _.Transact(interpret : State -> Event list) : Async<unit>
@@ -2443,16 +2446,12 @@ The pruner cyclically (i.e., when it reaches the end, it loops back to the start
 This is a very loose laundry list of items that have occurred to us to do,
 given infinite time. No conclusions of likelihood of starting, finishing, or
 even committing to adding a feature should be inferred, but most represent
-things that would be likely to be accepted into the codebase (please [read and]
-raise Issues first though ;) ).
+things that would be likely to be accepted into the codebase.
 
 - Extend samples and templates; see
   [#57](https://github.com/jet/equinox/issues/57)
 
 ## Wouldn't it be nice - `Equinox.EventStoreDb`
-
-EventStore, and it's Store adapter is the most proven and is pretty feature
-rich relative to the need of consumers to date. Some things remain though:
 
 - Provide a low level walking events in F# API akin to
   `Equinox.CosmosStore.Core.Events`; this would allow consumers to jump from direct
@@ -2489,4 +2488,5 @@ rich relative to the need of consumers to date. Some things remain though:
   that's no longer in use gets removed)
   [#108](https://github.com/jet/equinox/issues/108)
 - low level performance improvements in loading logic (reducing allocations etc)
-- `Propulsion.CosmosStore`: provide a Serverless mode that can be used with Azure Functions to execute batch of projections based on a set of documents from the change feed
+- `Propulsion.CosmosStore`: provide a Serverless mode that can be used with Azure
+  Functions to execute batch of projections based on a set of documents from the change feed

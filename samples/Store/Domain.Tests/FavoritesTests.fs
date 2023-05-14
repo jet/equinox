@@ -11,10 +11,10 @@ let mkFavorite skuId    = Favorited { date = DateTimeOffset.UtcNow; skuId = skuI
 let mkUnfavorite skuId  = Unfavorited { skuId = skuId }
 
 type Command =
-    | Favorite      of date : DateTimeOffset * skuIds : SkuId list
-    | Unfavorite    of skuId : SkuId
+    | Favorite      of date: DateTimeOffset * skuIds: SkuId list
+    | Unfavorite    of skuId: SkuId
 
-let interpret (command : Command) =
+let interpret (command: Command) =
     match command with
     | Favorite (date, skus) ->  decideFavorite date skus
     | Unfavorite sku ->         decideUnfavorite sku
@@ -29,7 +29,7 @@ let verifyCorrectEventGenerationWhenAppropriate command (originState: State) =
     let state' = fold state events
 
     let hadSkuId, hasSkuId =
-        let stateHasSku (s : State) (skuId : SkuId) = s |> Array.exists (function { skuId = sSkuId } -> sSkuId = skuId)
+        let stateHasSku (s: State) (skuId: SkuId) = s |> Array.exists (function { skuId = sSkuId } -> sSkuId = skuId)
         stateHasSku state, stateHasSku state'
     match command, events with
     | Unfavorite skuId, [ Unfavorited e] ->

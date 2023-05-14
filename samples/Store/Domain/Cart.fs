@@ -33,15 +33,15 @@ module Fold =
     type ItemInfo =                 { skuId: SkuId; quantity: int; returnsWaived: bool option }
     type State =                    { items: ItemInfo list }
     module State =
-        let toSnapshot (s: State) : Events.Compaction.State =
+        let toSnapshot (s: State): Events.Compaction.State =
             { items = [| for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } |] }
-        let ofSnapshot (s: Events.Compaction.State) : State =
+        let ofSnapshot (s: Events.Compaction.State): State =
             { items = [ for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } ] }
     let initial = { items = [] }
     // NOTE Should match the event type that is stored, which does not necessarily match the case name
     // e.g. if you override the name via [<DataMember(Name="snapshot-2")>], it needs to reflect that
     let snapshotEventCaseName = nameof Events.Snapshotted
-    let evolve (state : State) event =
+    let evolve (state: State) event =
         let updateItems f = { state with items = f state.items }
         match event with
         | Events.Snapshotted s ->
@@ -60,21 +60,21 @@ module Fold =
             updateItems (List.map (function
                 | i when i.skuId = e.skuId -> { i with returnsWaived = Some e.waived }
                 | i -> i))
-    let fold : State -> Events.Event seq -> State = Seq.fold evolve
+    let fold: State -> Events.Event seq -> State = Seq.fold evolve
     let isOrigin = function Events.Snapshotted _ -> true | _ -> false
     let snapshot = State.toSnapshot >> Events.Snapshotted
 
-type Context =              { time: System.DateTime; requestId : RequestId }
+type Context =              { time: System.DateTime; requestId: RequestId }
 type Command =
     | SyncItem              of Context * SkuId * quantity: int option * waived: bool option
 
-let interpret command (state : Fold.State) =
+let interpret command (state: Fold.State) =
     let itemExists f                                    = state.items |> List.exists f
     let itemExistsWithDifferentWaiveStatus skuId waive  = itemExists (fun x -> x.skuId = skuId && x.returnsWaived <> Some waive)
     let itemExistsWithDifferentQuantity skuId quantity  = itemExists (fun x -> x.skuId = skuId && x.quantity <> quantity)
     let itemExistsWithSkuId skuId                       = itemExists (fun x -> x.skuId = skuId)
-    let toEventContext (reqContext: Context)            = { requestId = reqContext.requestId; time = reqContext.time } : Events.ContextInfo
-    let (|Context|) (context : Context)                 = toEventContext context
+    let toEventContext (reqContext: Context)            = { requestId = reqContext.requestId; time = reqContext.time }: Events.ContextInfo
+    let (|Context|) (context: Context)                 = toEventContext context
     let maybePropChanges c skuId = function
         | None -> []
         | Some waived ->
@@ -101,46 +101,46 @@ let interpret command (state : Fold.State) =
 // it remains here solely to serve as an example; the PR details the considerations leading to this conclusion
 
 /// Maintains a rolling folded State while Accumulating Events pended as part of a decision flow
-type Accumulator<'event, 'state>(fold : 'state -> 'event seq -> 'state, originState : 'state) =
+type Accumulator<'event, 'state>(fold: 'state -> 'event seq -> 'state, originState: 'state) =
     let accumulated = ResizeArray<'event>()
 
     /// The Events that have thus far been pended via the `decide` functions `Execute`/`Decide`d during the course of this flow
-    member _.Accumulated : 'event list =
+    member _.Accumulated: 'event list =
         accumulated |> List.ofSeq
 
     /// The current folded State, based on the Stream's `originState` + any events that have been Accumulated during the the decision flow
-    member _.State : 'state =
+    member _.State: 'state =
         accumulated |> fold originState
 
     /// Invoke a decision function, gathering the events (if any) that it decides are necessary into the `Accumulated` sequence
-    member x.Transact(interpret : 'state -> 'event list) : unit =
+    member x.Transact(interpret: 'state -> 'event list): unit =
         interpret x.State |> accumulated.AddRange
     /// Invoke an Async decision function, gathering the events (if any) that it decides are necessary into the `Accumulated` sequence
-    member x.Transact(interpret : 'state -> Async<'event list>) : Async<unit> = async {
+    member x.Transact(interpret: 'state -> Async<'event list>): Async<unit> = async {
         let! events = interpret x.State
         accumulated.AddRange events }
     /// Invoke a decision function, while also propagating a result yielded as the fst of an (result, events) pair
-    member x.Transact(decide : 'state -> 'result * 'event list) : 'result =
+    member x.Transact(decide: 'state -> 'result * 'event list): 'result =
         let result, newEvents = decide x.State
         accumulated.AddRange newEvents
         result
     /// Invoke a decision function, while also propagating a result yielded as the fst of an (result, events) pair
-    member x.Transact(decide : 'state -> Async<'result * 'event list>) : Async<'result> = async {
+    member x.Transact(decide: 'state -> Async<'result * 'event list>): Async<'result> = async {
         let! result, newEvents = decide x.State
         accumulated.AddRange newEvents
         return result }
 #else
-let interpretMany fold interpreters (state : 'state) : 'state * 'event list =
+let interpretMany fold interpreters (state: 'state): 'state * 'event list =
     ((state,[]),interpreters)
-    ||> Seq.fold (fun (state : 'state, acc : 'event list) interpret ->
+    ||> Seq.fold (fun (state: 'state, acc: 'event list) interpret ->
         let events = interpret state
         let state' = fold state events
         state', acc @ events)
 #endif
 
-type Service internal (resolve : CartId -> Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (resolve: CartId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    member _.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
+    member _.Run(cartId, optimistic, commands: Command seq, ?prepare): Async<Fold.State> =
         let interpret state = async {
             match prepare with None -> () | Some prep -> do! prep
 #if ACCUMULATOR
@@ -155,7 +155,7 @@ type Service internal (resolve : CartId -> Equinox.Decider<Events.Event, Fold.St
         let opt = if optimistic then Equinox.AllowStale else Equinox.RequireLoad
         decider.TransactAsync(interpret, opt)
 
-    member x.ExecuteManyAsync(cartId, optimistic, commands : Command seq, ?prepare) : Async<unit> =
+    member x.ExecuteManyAsync(cartId, optimistic, commands: Command seq, ?prepare): Async<unit> =
         x.Run(cartId, optimistic, commands, ?prepare=prepare) |> Async.Ignore
 
     member x.Execute(cartId, command) =

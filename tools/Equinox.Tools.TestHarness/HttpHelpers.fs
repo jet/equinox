@@ -23,19 +23,19 @@ type InvalidHttpResponseException =
     inherit Exception
 
     // TODO: include headers
-    val private userMessage : string
-    val private requestMethod : string
-    val RequestUri : Uri
-    val RequestBody : string
-    val StatusCode : HttpStatusCode
-    val ReasonPhrase : string
-    val ResponseBody : string
+    val private userMessage: string
+    val private requestMethod: string
+    val RequestUri: Uri
+    val RequestBody: string
+    val StatusCode: HttpStatusCode
+    val ReasonPhrase: string
+    val ResponseBody: string
 
     member x.RequestMethod = HttpMethod(x.requestMethod)
 
-    private new (userMessage : string, requestMethod : HttpMethod, requestUri : Uri, requestBody : string,
-                   statusCode : HttpStatusCode, reasonPhrase : string, responseBody : string,
-                   ?innerException : exn) =
+    private new (userMessage: string, requestMethod: HttpMethod, requestUri: Uri, requestBody: string,
+                   statusCode: HttpStatusCode, reasonPhrase: string, responseBody: string,
+                   ?innerException: exn) =
         {
             inherit Exception(message = null, innerException = defaultArg innerException null) ; userMessage = userMessage ;
             requestMethod = string requestMethod ; RequestUri = requestUri ; RequestBody = requestBody ;
@@ -50,13 +50,13 @@ type InvalidHttpResponseException =
             sb.Appendfn "ResponseBody=%s" (getBodyString e.ResponseBody))
 
     interface ISerializable with
-        member e.GetObjectData(si : SerializationInfo, sc : StreamingContext) =
+        member e.GetObjectData(si: SerializationInfo, sc: StreamingContext) =
             let add name (value:obj) = si.AddValue(name, value)
             base.GetObjectData(si, sc) ; add "userMessage" e.userMessage ;
             add "requestUri" e.RequestUri ; add "requestMethod" e.requestMethod ; add "requestBody" e.RequestBody
             add "statusCode" e.StatusCode ; add "reasonPhrase" e.ReasonPhrase ; add "responseBody" e.ResponseBody
 
-    new (si : SerializationInfo, sc : StreamingContext) =
+    new (si: SerializationInfo, sc: StreamingContext) =
         let get name = si.GetValue(name, typeof<'a>) :?> 'a
         {
             inherit Exception(si, sc) ; userMessage = get "userMessage" ;
@@ -64,7 +64,7 @@ type InvalidHttpResponseException =
             StatusCode = get "statusCode" ; ReasonPhrase = get "reasonPhrase" ; ResponseBody = get "responseBody"
         }
 
-    static member Create(userMessage : string, response : HttpResponseMessage, ?innerException : exn) = async {
+    static member Create(userMessage: string, response: HttpResponseMessage, ?innerException: exn) = async {
         let request = response.RequestMessage
         let! responseBodyC = response.Content.ReadAsStringDiapered() |> Async.StartChild
         let! requestBody = request.Content.ReadAsStringDiapered()
@@ -76,5 +76,5 @@ type InvalidHttpResponseException =
                 ?innerException = innerException)
     }
 
-    static member Create(response : HttpResponseMessage, ?innerException : exn) =
+    static member Create(response: HttpResponseMessage, ?innerException: exn) =
         InvalidHttpResponseException.Create("HTTP request yielded unexpected response.", response, ?innerException = innerException)

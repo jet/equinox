@@ -23,7 +23,7 @@ module Events =
     let codec = EventCodec.gen<Event>
 
 module Fold =
-    type State = { items : Events.Todo list; nextId : int }
+    type State = { items: Events.Todo list; nextId: int }
     let initial = { items = []; nextId = 0 }
     let evolve s e =
         match e with
@@ -32,13 +32,13 @@ module Fold =
         | Events.Deleted          { id=id } -> { s with items = s.items  |> List.filter (fun x -> x.id <> id) }
         | Events.Cleared ->       { s with items = [] }
         | Events.Snapshotted      { items = items } -> { s with items = List.ofArray items }
-    let fold : State -> Events.Event seq -> State = Seq.fold evolve
+    let fold: State -> Events.Event seq -> State = Seq.fold evolve
     let isOrigin = function Events.Cleared | Events.Snapshotted _ -> true | _ -> false
     let snapshot state = Events.Snapshotted { items = Array.ofList state.items }
 
 type Command = Add of Events.Todo | Update of Events.Todo | Delete of id: int | Clear
 
-let interpret c (state : Fold.State) =
+let interpret c (state: Fold.State) =
     match c with
     | Add value -> [Events.Added { value with id = state.nextId }]
     | Update value ->
@@ -48,7 +48,7 @@ let interpret c (state : Fold.State) =
     | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Events.Deleted {id=id}] else []
     | Clear -> if state.items |> List.isEmpty then [] else [Events.Cleared]
 
-type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
     let execute clientId command =
         let decider = resolve clientId
@@ -63,20 +63,20 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
             let state' = Fold.fold state events
             state'.items, events)
 
-    member _.List(clientId) : Async<Events.Todo seq> =
+    member _.List(clientId): Async<Events.Todo seq> =
         query clientId (fun s -> s.items |> Seq.ofList)
 
     member _.TryGet(clientId, id) =
         query clientId (fun x -> x.items |> List.tryFind (fun x -> x.id = id))
 
-    member _.Execute(clientId, command) : Async<unit> =
+    member _.Execute(clientId, command): Async<unit> =
         execute clientId command
 
-    member _.Create(clientId, template: Events.Todo) : Async<Events.Todo> = async {
+    member _.Create(clientId, template: Events.Todo): Async<Events.Todo> = async {
         let! state' = handle clientId (Command.Add template)
         return List.head state' }
 
-    member _.Patch(clientId, item: Events.Todo) : Async<Events.Todo> = async {
+    member _.Patch(clientId, item: Events.Todo): Async<Events.Todo> = async {
         let! state' = handle clientId (Command.Update item)
         return List.find (fun x -> x.id = item.id) state' }
 

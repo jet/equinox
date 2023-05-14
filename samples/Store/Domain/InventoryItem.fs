@@ -18,15 +18,15 @@ module Events =
         interface TypeShape.UnionContract.IUnionContract
 
 module Fold =
-    type State = { active : bool; name: string; quantity: int }
-    let initial : State = { active = true; name = null; quantity = 0 }
+    type State = { active: bool; name: string; quantity: int }
+    let initial: State = { active = true; name = null; quantity = 0 }
     let private evolve state = function
         | Events.Created name
         | Events.Renamed name -> { state with name = name }
         | Events.Deactivated -> { state with active = false }
         | Events.Removed count -> { state with quantity = state.quantity - count}
         | Events.CheckedIn count -> { state with quantity = state.quantity + count}
-    let fold (state: State) (events: seq<Events.Event>) : State =
+    let fold (state: State) (events: seq<Events.Event>): State =
         Seq.fold evolve state events
 
 type Command =
@@ -37,7 +37,7 @@ type Command =
     | Deactivate
 
 // TODO make commands/event representations idempotent
-let interpret command (state : Fold.State) =
+let interpret command (state: Fold.State) =
     match command with
     | Create name ->
         if String.IsNullOrEmpty name then invalidArg "name" ""
@@ -57,7 +57,7 @@ let interpret command (state : Fold.State) =
         if not state.active then invalidOp "Already deactivated"
         [ Events.Deactivated ]
 
-type Service internal (resolve : InventoryItemId -> Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (resolve: InventoryItemId -> Equinox.Decider<Events.Event, Fold.State>) =
 
     member _.Execute(itemId, command) =
         let decider = resolve itemId

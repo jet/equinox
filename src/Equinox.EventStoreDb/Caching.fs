@@ -16,10 +16,10 @@ type internal Decorator<'event, 'state, 'context>
             inner.Load(log, categoryName, streamId, streamName, allowStale, requireLeader, ct) |> cache streamName
         member _.TrySync(log, categoryName, streamId, streamName, context, maybeInit, streamToken, state, events, ct) = task {
             match! inner.TrySync((log, categoryName, streamId, streamName, context, maybeInit, streamToken, state, events, ct)) with
-            | SyncResult.Conflict resync -> return SyncResult.Conflict (fun ct -> resync ct |> cache streamName)
             | SyncResult.Written (token', state') ->
                 do! updateCache streamName (token', state')
-                return SyncResult.Written (token', state') }
+                return SyncResult.Written (token', state')
+            | SyncResult.Conflict resync -> return SyncResult.Conflict (fun ct -> resync ct |> cache streamName) }
 
 let applyCacheUpdatesWithSlidingExpiration
         (cache : ICache)

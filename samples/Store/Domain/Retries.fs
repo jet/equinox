@@ -19,10 +19,10 @@ module Backoff =
     else x
 
   /// Stops immediately.
-  let never : Backoff = konst None
+  let never: Backoff = konst None
 
   /// Always returns a fixed interval.
-  let linear i : Backoff = konst (Some i)
+  let linear i: Backoff = konst (Some i)
 
   /// Modifies the interval.
   let bind (f:int -> int option) (b:Backoff) =
@@ -32,7 +32,7 @@ module Backoff =
       | None -> None
 
   /// Modifies the interval.
-  let map (f:int -> int) (b:Backoff) : Backoff =
+  let map (f:int -> int) (b:Backoff): Backoff =
     fun i ->
       match b i with
       | Some x -> f x |> checkOverflow |> Some
@@ -42,7 +42,7 @@ module Backoff =
   let bound mx = map (min mx)
 
   /// Creates a back-off strategy which increases the interval exponentially.
-  let exp (initialIntervalMs:int) (multiplier:float) : Backoff =
+  let exp (initialIntervalMs:int) (multiplier:float): Backoff =
     fun i -> (float initialIntervalMs) * (pown multiplier i) |> int |> checkOverflow |> Some
 
   /// Randomizes the output produced by a back-off strategy:
@@ -53,7 +53,7 @@ module Backoff =
     map (fun x -> (float x) * (rand.NextDouble() * (maxRand - minRand) + minRand) |> int)
 
   /// Uses a fibonacci sequence to genereate timeout intervals starting from the specified initial interval.
-  let fib (initialIntervalMs:int) : Backoff =
+  let fib (initialIntervalMs:int): Backoff =
     let rec fib n =
       if n < 2 then initialIntervalMs
       else fib (n - 1) + fib (n - 2)
@@ -61,13 +61,13 @@ module Backoff =
 
   /// Creates a stateful back-off strategy which keeps track of the number of attempts,
   /// and a reset function which resets attempts to zero.
-  let keepCount (b:Backoff) : (unit -> int option) * (unit -> unit) =
+  let keepCount (b:Backoff): (unit -> int option) * (unit -> unit) =
     let i = ref -1
     (fun () -> System.Threading.Interlocked.Increment i |> b),
     (fun () -> i := -1)
 
   /// Bounds a backoff strategy to a specified maximum number of attempts.
-  let maxAttempts (max:int) (b:Backoff) : Backoff =
+  let maxAttempts (max:int) (b:Backoff): Backoff =
     fun n -> if n > max then None else b n
 
 

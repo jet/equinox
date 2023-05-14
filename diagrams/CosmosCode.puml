@@ -93,7 +93,7 @@ Aggregate --> IStream: state'
 IStream -> Aggregate: snapshot state'
 Aggregate --> IStream: { snapshot = Snapshotted (encoded(state')) }
 IStream -> Aggregate: codec.Encode snapshot
-Aggregate --> IStream: { eventType = "Snapshotted"; body : JsonElement }
+Aggregate --> IStream: { eventType = "Snapshotted"; body: JsonElement }
 IStream -> CosmosDB: ExecuteStoredProcedure("Sync", "Favorites-clientId", token,\n        events, unfolds = [{ c: eventType, d: body }])
 alt Normal, conflict-free case
 CosmosDB -[#green]-> IStream: {result = 200; etag = etag'; version = version' }

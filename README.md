@@ -120,7 +120,7 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
       - `Equinox.Cosmos.Core.Events.appendAtEnd`/`NonIdempotentAppend` has not been ported (there's no obvious clean and efficient way to do a conditional insert/update/split as the CosmosDB stored proc can, and this is a low usage feature)
       - The implementation uses [the excellent `FSharp.AWS.DynamoDB` library](https://github.com/fsprojects/FSharp.AWS.DynamoDB)) (which wraps the standard AWS `AWSSDK.DynamoDBv2` SDK Package), and leans on [significant preparatory research](https://github.com/pierregoudjo/dynamodb_conditional_writes) :pray: [@pierregoudjo](https://github.com/pierregoudjo)
       - `CosmosStore` dictates (as of V4) that event bodies be supplied as `System.Text.Json.JsonElement`s (in order that events can be included in the Document/ Items as JSON directly. This is also to underscore the fact that the only reasonable format to use is valid JSON; binary data would need to be base64 encoded. `DynamoStore` accepts and yields event bodies as arbitrary `ReadOnlyMemory<byte>` BLOBs (the AWS SDK round-trips such blobs as a `MemoryStream` and does not impose any restrictions on the blobs in terms of required format).
-      - `CosmosStore` defaults to compressing (with `System.IO.Compression.DeflateStream`) event bodies for Unfolds; `DynamoStore` round-trips an `encoding : int` value, which enables the `IEventCodec` to manage that concern. Regardless, minimizing Request Charges is imperative when request size directly maps to financial charges, 429s, reduced throughput and a lowered scaling ceiling.
+      - `CosmosStore` defaults to compressing (with `System.IO.Compression.DeflateStream`) event bodies for Unfolds; `DynamoStore` round-trips an `encoding: int` value, which enables the `IEventCodec` to manage that concern. Regardless, minimizing Request Charges is imperative when request size directly maps to financial charges, 429s, reduced throughput and a lowered scaling ceiling.
     - Azure CosmosDB's ChangeFeed API intrinsically supports replays of all the events in a Store, whereas the DynamoDB Streams facility only retains 24h of actions. As a result, there are ancillary components that provide equivalent functionality composed of:
       - `Propulsion.DynamoStore.Lambda`: an AWS Lambda that is configured via a DynamoDB Streams Trigger to Index the Events (represented as Equinox Streams, typically in a separated `<tableName>-index` Table) as they are appended 
       - `Propulsion.DynamoStore.DynamoStoreSource`: consumes the Index Streams akin to how `Propulsion.CosmosStore.CosmosStoreSource` consumes the CosmosDB Change Feed 
@@ -579,6 +579,11 @@ DynamoDB is supported in the samples and the `eqx` tool equivalent to the Cosmos
     eqx dump "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" dynamo # show stored JSON (Guid shown in eqx run output) 
     ```
 
+3. Useful articles
+
+- [Troubleshooting throttling issues in Amazon DynamoDB](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/TroubleshootingThrottling.html)
+- [Troubleshooting latency issues in Amazon DynamoDB](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/TroubleshootingLatency.html)
+
 ### BENCHMARKS
 
 A key facility of this repo is being able to run load tests, either in process against a nominated store, or via HTTP to a nominated instance of `samples/Web` ASP.NET Core host app. The following test suites are implemented at present:
@@ -983,7 +988,7 @@ With the Equinox `type Decider`, the typical `decide` signature used with the `T
 
       context -> inputsAndOrCommand -> 'State -> Event list
 
-> NOTE: There are more advanced forms that allow the `decide` function to be `Async` and/or to also return a `'result`, which will be yielded to the caller driving the Decision as the return value of the `Transact` function.
+> NOTE: There are more advanced forms that allow the `decide` function to be `Async`, inspect the State's `Version` and/or to also return a `'result`, which will be yielded to the caller driving the Decision as the return value of the `Transact` function.
 
 #### So what kind of a thing is a Decider then?
 
