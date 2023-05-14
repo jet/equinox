@@ -10,9 +10,9 @@ type StorageConfig =
     | Memory of Equinox.MemoryStore.VolatileStore<ReadOnlyMemory<byte>>
     | Cosmos of Equinox.CosmosStore.CosmosStoreContext * Equinox.CosmosStore.CachingStrategy * unfolds: bool
     | Dynamo of Equinox.DynamoStore.DynamoStoreContext * Equinox.DynamoStore.CachingStrategy * unfolds: bool
-    | Es     of Equinox.EventStoreDb.EventStoreContext * Equinox.EventStoreDb.CachingStrategy option * unfolds: bool
-    | Mdb    of Equinox.MessageDb.MessageDbContext * Equinox.MessageDb.CachingStrategy option
-    | Sql    of Equinox.SqlStreamStore.SqlStreamStoreContext * Equinox.SqlStreamStore.CachingStrategy option * unfolds: bool
+    | Es     of Equinox.EventStoreDb.EventStoreContext * Equinox.CachingStrategy option * unfolds: bool
+    | Mdb    of Equinox.MessageDb.MessageDbContext * Equinox.CachingStrategy option
+    | Sql    of Equinox.SqlStreamStore.SqlStreamStoreContext * Equinox.CachingStrategy option * unfolds: bool
 
 module MemoryStore =
     type [<NoEquality; NoComparison>] Parameters =
@@ -258,7 +258,7 @@ module EventStore =
         let timeout, retries as operationThrottling = a.Timeout, a.Retries
         log.Information("EventStoreDB {connectionString} {timeout}s retries {retries}", a.ConnectionString, timeout.TotalSeconds, retries)
         let connection = connect a.ConnectionString a.Credentials operationThrottling
-        let cacheStrategy = cache |> Option.map (fun c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.))
+        let cacheStrategy = cache |> Option.map (fun c -> Equinox.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.))
         StorageConfig.Es (EventStoreContext(connection, batchSize = a.BatchSize), cacheStrategy, unfolds)
 
 // see https://github.com/jet/equinox#provisioning-mssql
@@ -266,7 +266,7 @@ module Sql =
 
     open Equinox.SqlStreamStore
 
-    let cacheStrategy cache = cache |> Option.map (fun c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.))
+    let cacheStrategy cache = cache |> Option.map (fun c -> Equinox.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.))
     module Ms =
         type [<NoEquality; NoComparison>] Parameters =
             | [<AltCommandLine "-c"; Mandatory>] ConnectionString of string
@@ -366,5 +366,5 @@ module MessageDb =
     let config (log : ILogger) cache (p : ParseResults<Parameters>) =
         let a = Arguments(p)
         let connection = connect log a.ConnectionString
-        let cache = cache |> Option.map (fun c -> CachingStrategy.SlidingWindow(c, TimeSpan.FromMinutes 20.))
+        let cache = cache |> Option.map (fun c -> Equinox.CachingStrategy.SlidingWindow(c, TimeSpan.FromMinutes 20.))
         StorageConfig.Mdb(MessageDbContext(connection, batchSize = a.BatchSize), cache)

@@ -1069,72 +1069,39 @@ type StoreClient(container: Container, archive: Container option, query: QueryOp
         Prune.until log (container, stream) query.MaxItems index ct
 
 type internal Category<'event, 'state, 'context>
-    (   store: StoreClient, codec: IEventCodec<'event, EventBody, 'context>) =
-    member _.Load(log, stream, initial, checkUnfolds, fold, isOrigin, ct): Task<struct (StreamToken * 'state)> = task {
-        let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds, ct)
-        return struct (token, fold initial events) }
-    member _.Reload(log, streamName, (Token.Unpack pos as streamToken), state, fold, isOrigin, ct, ?preloaded): Task<struct (StreamToken * 'state)> = task {
+    (   store: StoreClient, codec: IEventCodec<'event, EventBody, 'context>,
+        fold: 'state -> 'event seq -> 'state, initial: 'state, isOrigin: 'event -> bool,
+        checkUnfolds, compressUnfolds, mapUnfolds: Choice<unit, 'event[] -> 'state -> 'event[], 'event[] -> 'state -> 'event[] * 'event[]>) =
+
+    let reload (log, streamName, (Token.Unpack pos as streamToken), state) preloaded ct: Task<struct (StreamToken * 'state)> = task {
         match! store.Reload(log, (streamName, pos), (codec.TryDecode, isOrigin), ct, ?preview = preloaded) with
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
-    member cat.Sync(log, streamName, (Token.Unpack pos as streamToken), state, events, mapUnfolds, fold, isOrigin, context, compressUnfolds, ct): Task<SyncResult<'state>> = task {
-        let state' = fold state (Seq.ofArray events)
-        let encode e = codec.Encode(context, e)
-        let exp, events, eventsEncoded, projectionsEncoded =
-            match mapUnfolds with
-            | Choice1Of3 () ->     SyncExp.Version pos.index, events, Array.map encode events, Seq.empty
-            | Choice2Of3 unfold -> SyncExp.Version pos.index, events, Array.map encode events, Array.map encode (unfold events state')
-            | Choice3Of3 transmute ->
-                let events', unfolds = transmute events state'
-                SyncExp.Etag (defaultArg pos.etag null), events', Array.map encode events', Seq.map encode unfolds
-        let baseIndex = pos.index + int64 (Array.length events)
-        let renderElement = if compressUnfolds then JsonElement.undefinedToNull >> JsonElement.deflate else JsonElement.undefinedToNull
-        let projections = projectionsEncoded |> Seq.map (Sync.mkUnfold renderElement baseIndex)
-        let batch = Sync.mkBatch streamName eventsEncoded projections
-        match! store.Sync(log, streamName, exp, batch, ct) with
-        | InternalSyncResult.Conflict (pos', tipEvents) -> return SyncResult.Conflict (fun ct -> cat.Reload(log, streamName, streamToken, state, fold, isOrigin, ct, (pos', pos.index, tipEvents)))
-        | InternalSyncResult.ConflictUnknown _token' -> return SyncResult.Conflict (fun ct -> cat.Reload(log, streamName, streamToken, state, fold, isOrigin, ct))
-        | InternalSyncResult.Written token' -> return SyncResult.Written (token', state') }
-
-module internal Caching =
-
-    let applyCacheUpdatesWithSlidingExpiration (cache : ICache, prefix : string) (slidingExpiration : TimeSpan) =
-        let mkCacheEntry struct (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState)
-        let options = CacheItemOptions.RelativeExpiration slidingExpiration
-        fun streamName value ->
-            cache.UpdateIfNewer(prefix + streamName, options, Token.supersedes, mkCacheEntry value)
-
-    let applyCacheUpdatesWithFixedTimeSpan (cache : ICache, prefix : string) (period : TimeSpan) =
-        let mkCacheEntry struct (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState)
-        fun streamName value ->
-            let expirationPoint = let creationDate = DateTimeOffset.UtcNow in creationDate.Add period
-            let options = CacheItemOptions.AbsoluteExpiration expirationPoint
-            cache.UpdateIfNewer(prefix + streamName, options, Token.supersedes, mkCacheEntry value)
-
-    type CachingCategory<'event, 'state, 'context>
-        (   category : Category<'event, 'state, 'context>,
-            fold : 'state -> 'event seq -> 'state, initial : 'state, isOrigin : 'event -> bool,
-            tryReadCache : string -> Task<voption<struct (StreamToken * 'state)>>, updateCache : string -> struct (StreamToken * 'state) -> Task<unit>,
-            checkUnfolds, compressUnfolds,
-            mapUnfolds : Choice<unit, 'event array -> 'state -> 'event array, 'event array -> 'state -> 'event array * 'event array>) =
-        let cache streamName (inner : CancellationToken -> Task<struct (StreamToken * 'state)>) ct = task {
-            let! tokenAndState = inner ct
-            do! updateCache streamName tokenAndState
-            return tokenAndState }
-        interface ICategory<'event, 'state, 'context> with
-            member _.Load(log, _categoryName, _streamId, streamName, allowStale, _requireLeader, ct) = task {
-                match! tryReadCache streamName with
-                | ValueNone -> return! cache streamName (fun ct -> category.Load(log, streamName, initial, checkUnfolds, fold, isOrigin, ct)) ct
-                | ValueSome tokenAndState when allowStale -> return tokenAndState // read already updated TTL, no need to write
-                | ValueSome (token, state) -> return! cache streamName (fun ct -> category.Reload(log, streamName, token, state, fold, isOrigin, ct)) ct }
-            member _.TrySync(log : ILogger, _categoryName, _streamId, streamName, context, maybeInit, streamToken, state, events, ct) : Task<SyncResult<'state>> = task {
-                match maybeInit with ValueNone -> () | ValueSome i -> do! i ct
-                match! category.Sync(log, streamName, streamToken, state, events, mapUnfolds, fold, isOrigin, context, compressUnfolds, ct) with
-                | SyncResult.Written tokenAndState' ->
-                    do! updateCache streamName tokenAndState'
-                    return SyncResult.Written tokenAndState'
-                | SyncResult.Conflict resync ->
-                    return SyncResult.Conflict (cache streamName resync) }
+    interface Caching.IReloadableCategory<'event, 'state, 'context> with
+        member _.Load(log, _categoryName, _streamId, stream, _allowStale, _requireLeader, ct): Task<struct (StreamToken * 'state)> = task {
+            let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds, ct)
+            return struct (token, fold initial events) }
+        member cat.Reload(log, stream, _requireLeader, streamToken, state, ct): Task<struct (StreamToken * 'state)> =
+            reload (log, stream, streamToken, state) None ct
+        member cat.TrySync(log, _categoryName, _streamId, streamName, ctx, maybeInit, (Token.Unpack pos as streamToken), state, events, ct): Task<SyncResult<'state>> = task {
+            let state' = fold state events
+            let exp, events, eventsEncoded, projectionsEncoded =
+                let encode e = codec.Encode(ctx, e)
+                match mapUnfolds with
+                | Choice1Of3 () ->        SyncExp.Version pos.index, events, Array.map encode events, Seq.empty
+                | Choice2Of3 unfold ->    SyncExp.Version pos.index, events, Array.map encode events, Array.map encode (unfold events state')
+                | Choice3Of3 transmute -> let events', unfolds = transmute events state'
+                                          SyncExp.Etag (defaultArg pos.etag null), events', Array.map encode events', Seq.map encode unfolds
+            let baseIndex = pos.index + int64 (Array.length events)
+            let renderElement = if compressUnfolds then JsonElement.undefinedToNull >> JsonElement.deflate else JsonElement.undefinedToNull
+            let projections = projectionsEncoded |> Seq.map (Sync.mkUnfold renderElement baseIndex)
+            let batch = Sync.mkBatch streamName eventsEncoded projections
+            match maybeInit with ValueNone -> () | ValueSome i -> do! i ct
+            match! store.Sync(log, streamName, exp, batch, ct) with
+            | InternalSyncResult.Written token' -> return SyncResult.Written (token', state')
+            | InternalSyncResult.ConflictUnknown _token' -> return SyncResult.Conflict (reload (log, streamName, streamToken, state) None)
+            | InternalSyncResult.Conflict (pos', tipEvents) ->
+                return SyncResult.Conflict (reload (log, streamName, streamToken, state) (Some (pos', pos.index, tipEvents))) }
 
 module ConnectionString =
 
@@ -1154,10 +1121,10 @@ open System.Threading.Tasks
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =
     /// Separated Account Uri and Key (for interop with previous versions)
-    | AccountUriAndKey of accountUri : Uri * key : string
+    | AccountUriAndKey of accountUri: Uri * key: string
     /// Cosmos SDK Connection String
-    | ConnectionString of connectionString : string
-    member x.Endpoint : Uri = x |> function
+    | ConnectionString of connectionString: string
+    member x.Endpoint: Uri = x |> function
         | Discovery.AccountUriAndKey (u, _k) -> u
         | Discovery.ConnectionString (ConnectionString.AccountEndpoint e) -> Uri e
 
@@ -1165,20 +1132,20 @@ type Discovery =
 [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
 type CosmosClientFactory
     (   // Timeout to apply to individual reads/write round-trips going to CosmosDB. CosmosDB Default: 1m.
-        requestTimeout : TimeSpan,
-        // Maximum number of times to attempt when failure reason is a 429 from CosmosDB, signifying RU limits have been breached. CosmosDB default : 9
-        maxRetryAttemptsOnRateLimitedRequests : int,
-        // Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDB in the 429 response). CosmosDB default : 30s
-        maxRetryWaitTimeOnRateLimitedRequests : TimeSpan,
+        requestTimeout: TimeSpan,
+        // Maximum number of times to attempt when failure reason is a 429 from CosmosDB, signifying RU limits have been breached. CosmosDB default: 9
+        maxRetryAttemptsOnRateLimitedRequests: int,
+        // Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDB in the 429 response). CosmosDB default: 30s
+        maxRetryWaitTimeOnRateLimitedRequests: TimeSpan,
         // Connection mode (default: ConnectionMode.Direct (best performance, same as Microsoft.Azure.Cosmos SDK default)
         // NOTE: default for Equinox.Cosmos.Connector (i.e. V2) was Gateway (worst performance, least trouble, Microsoft.Azure.DocumentDb SDK default)
-        [<O; D null>] ?mode : ConnectionMode,
+        [<O; D null>] ?mode: ConnectionMode,
         // Connection limit for Gateway Mode. CosmosDB default: 50
         [<O; D null>] ?gatewayModeMaxConnectionLimit,
         // consistency mode (default: ConsistencyLevel.Session)
-        [<O; D null>] ?defaultConsistencyLevel : ConsistencyLevel,
+        [<O; D null>] ?defaultConsistencyLevel: ConsistencyLevel,
         // Inhibits certificate verification when set to <c>true</c>, i.e. for working with the CosmosDB Emulator (default <c>false</c>)
-        [<O; D null>] ?bypassCertificateValidation : bool) =
+        [<O; D null>] ?bypassCertificateValidation: bool) =
 
     /// CosmosClientOptions for this CosmosClientFactory as configured
     member val Options =
@@ -1206,12 +1173,12 @@ type CosmosClientFactory
     /// Creates an instance of CosmosClient without actually validating or establishing the connection
     /// It's recommended to use <c>Connect()</c> and/or <c>CosmosStoreClient.Connect()</c> in preference to this API
     ///   in order to avoid latency spikes, and/or deferring discovery of connectivity or permission issues.
-    member x.CreateUninitialized(discovery : Discovery) = discovery |> function
+    member x.CreateUninitialized(discovery: Discovery) = discovery |> function
         | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> new CosmosClient(string uri, key, x.Options)
         | Discovery.ConnectionString cs -> new CosmosClient(cs, x.Options)
 
     /// Creates and validates a Client [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
-    member x.CreateAndInitialize(discovery : Discovery, containers) = async {
+    member x.CreateAndInitialize(discovery: Discovery, containers) = async {
         let! ct = Async.CancellationToken
         match discovery with
         | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> return! CosmosClient.CreateAndInitializeAsync(string uri, key, containers, x.Options, ct) |> Async.AwaitTaskCorrect
@@ -1220,22 +1187,22 @@ type CosmosClientFactory
 /// Manages establishing a CosmosClient, which is used by CosmosStoreClient to read from the underlying Cosmos DB Container.
 type CosmosStoreConnector
     (   // CosmosDB endpoint/credentials specification.
-        discovery : Discovery,
+        discovery: Discovery,
         // Timeout to apply to individual reads/write round-trips going to CosmosDB. CosmosDB Default: 1m.
-        requestTimeout : TimeSpan,
+        requestTimeout: TimeSpan,
         // Maximum number of times to attempt when failure reason is a 429 from CosmosDB, signifying RU limits have been breached. CosmosDB default: 9
-        maxRetryAttemptsOnRateLimitedRequests : int,
+        maxRetryAttemptsOnRateLimitedRequests: int,
         // Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDB in the 429 response). CosmosDB default: 30s
-        maxRetryWaitTimeOnRateLimitedRequests : TimeSpan,
+        maxRetryWaitTimeOnRateLimitedRequests: TimeSpan,
         // Connection mode (default: ConnectionMode.Direct (best performance, same as Microsoft.Azure.Cosmos SDK default)
         // NOTE: default for Equinox.Cosmos.Connector (i.e. V2) was Gateway (worst performance, least trouble, Microsoft.Azure.DocumentDb SDK default)
-        [<O; D null>] ?mode : ConnectionMode,
+        [<O; D null>] ?mode: ConnectionMode,
         // Connection limit for Gateway Mode. CosmosDB default: 50
         [<O; D null>] ?gatewayModeMaxConnectionLimit,
         // consistency mode (default: ConsistencyLevel.Session)
-        [<O; D null>] ?defaultConsistencyLevel : ConsistencyLevel,
+        [<O; D null>] ?defaultConsistencyLevel: ConsistencyLevel,
         // Inhibits certificate verification when set to <c>true</c>, i.e. for working with the CosmosDB Emulator (default <c>false</c>)
-        [<O; D null>] ?bypassCertificateValidation : bool) =
+        [<O; D null>] ?bypassCertificateValidation: bool) =
 
     let factory =
         CosmosClientFactory
@@ -1262,10 +1229,10 @@ type CosmosStoreConnector
 /// - The (singleton) per Container Stored Procedure initialization state
 type CosmosStoreClient
     (   // Facilitates custom mapping of Stream Category Name to underlying Cosmos Database/Container names
-        categoryAndStreamNameToDatabaseContainerStream : string * string -> string * string * string,
-        createContainer : string * string -> Container,
-        createFallbackContainer : string * string -> Container option,
-        [<O; D null>] ?primaryDatabaseAndContainerToArchive : string * string -> string * string,
+        categoryAndStreamNameToDatabaseContainerStream: string * string -> string * string * string,
+        createContainer: string * string -> Container,
+        createFallbackContainer: string * string -> Container option,
+        [<O; D null>] ?primaryDatabaseAndContainerToArchive: string * string -> string * string,
         // Admits a hook to enable customization of how <c>Equinox.CosmosStore</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
         [<O; D null>] ?createGateway,
         // Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
@@ -1274,26 +1241,26 @@ type CosmosStoreClient
     let primaryDatabaseAndContainerToArchive = defaultArg primaryDatabaseAndContainerToArchive id
     // Index of database*container -> Initialization Context
     let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string*string, Initialization.ContainerInitializerGuard>()
-    new(client, databaseId : string, containerId : string,
+    new(client, databaseId: string, containerId: string,
         // Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
         [<O; D null>] ?disableInitialization,
         // Admits a hook to enable customization of how <c>Equinox.CosmosStore</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
-        [<O; D null>] ?createGateway : Container -> Container,
+        [<O; D null>] ?createGateway: Container -> Container,
         // Client to use for fallback Containers. Default: use <c>client</c>
-        [<O; D null>] ?archiveClient : CosmosClient,
+        [<O; D null>] ?archiveClient: CosmosClient,
         // Database Name to use for locating missing events. Default: use <c>databaseId</c>
         [<O; D null>] ?archiveDatabaseId,
         // Container Name to use for locating missing events. Default: use <c>containerId</c>
         [<O; D null>] ?archiveContainerId) =
         let genStreamName (categoryName, streamId) = if categoryName = null then streamId else StreamName.render categoryName streamId
         let catAndStreamToDatabaseContainerStream (categoryName, streamId) = databaseId, containerId, genStreamName (categoryName, streamId)
-        let primaryContainer (d, c) = (client : CosmosClient).GetDatabase(d).GetContainer(c)
+        let primaryContainer (d, c) = (client: CosmosClient).GetDatabase(d).GetContainer(c)
         let fallbackContainer =
             if Option.isNone archiveClient && Option.isNone archiveDatabaseId && Option.isNone archiveContainerId then fun (_, _) -> None
             else fun (d, c) -> Some ((defaultArg archiveClient client).GetDatabase(defaultArg archiveDatabaseId d).GetContainer(defaultArg archiveContainerId c))
         CosmosStoreClient(catAndStreamToDatabaseContainerStream, primaryContainer, fallbackContainer,
             ?disableInitialization = disableInitialization, ?createGateway = createGateway)
-    member internal _.ResolveContainerGuardAndStreamName(categoryName, streamId) : struct (Initialization.ContainerInitializerGuard * string) =
+    member internal _.ResolveContainerGuardAndStreamName(categoryName, streamId): struct (Initialization.ContainerInitializerGuard * string) =
         let createContainerInitializerGuard (d, c) =
             let init =
                 if Some true = disableInitialization then None
@@ -1312,20 +1279,20 @@ type CosmosStoreClient
     ///     let connector = CosmosStoreConnector(Discovery.ConnectionString connectionString, System.TimeSpan.FromSeconds 5., 2, System.TimeSpan.FromSeconds 5.)
     ///     CosmosStoreClient.Connect(connector.CreateAndInitialize, database, container)
     /// </code></example>
-    static member Connect(connectContainers, databaseId : string, containerId : string) : Async<CosmosStoreClient> = async {
+    static member Connect(connectContainers, databaseId: string, containerId: string): Async<CosmosStoreClient> = async {
         let! client = connectContainers [| struct (databaseId, containerId) |]
         return CosmosStoreClient(client, databaseId, containerId) }
 
     /// Connect to a hot-warm CosmosStore pair within the same account
     /// Events that have been archived and purged (and hence are determined to be missing from the primary) are retrieved from the archive via a fallback request where necessary.
     /// NOTE: The returned CosmosStoreClient instance should be held as a long-lived singleton within the application.
-    static member Connect(connectContainers, databaseId : string, containerId : string, archiveContainerId) : Async<CosmosStoreClient> = async {
+    static member Connect(connectContainers, databaseId: string, containerId: string, archiveContainerId): Async<CosmosStoreClient> = async {
         let! client = connectContainers [| struct (databaseId, containerId); struct (databaseId, archiveContainerId) |]
         return CosmosStoreClient(client, databaseId, containerId, archiveContainerId = archiveContainerId) }
 
 /// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
-type CosmosStoreContext(storeClient : CosmosStoreClient, tipOptions, queryOptions) =
-    new(storeClient : CosmosStoreClient,
+type CosmosStoreContext(storeClient: CosmosStoreClient, tipOptions, queryOptions) =
+    new(storeClient: CosmosStoreClient,
         // Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
         // NOTE <c>Equinox.Cosmos</c> versions <= 3.0.0 cannot read events in Tip, hence using a non-zero value will not be interoperable.
         tipMaxEvents,
@@ -1365,12 +1332,12 @@ type CachingStrategy =
     /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
     // NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
     // track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the `u`nfolds in Tip
-    | SlidingWindow of ICache * window : TimeSpan
+    | SlidingWindow of ICache * window: TimeSpan
     /// Retain a single 'state per streamName, together with the associated etag.
     /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
     /// Typically combined with `Equinox.LoadOption.AllowStale` to minimize loads.
     /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
-    | FixedTimeSpan of ICache * period : TimeSpan
+    | FixedTimeSpan of ICache * period: TimeSpan
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event, 'state> =
@@ -1389,20 +1356,20 @@ type AccessStrategy<'event, 'state> =
     /// in lieu of folding all the events from the start of the stream, as a performance optimization.
     /// <c>toSnapshot</c> is used to generate the <c>unfold</c> that will be held in the Tip document in order to
     /// enable efficient reading without having to query the Event documents.
-    | Snapshot of isOrigin : ('event -> bool) * toSnapshot : ('state -> 'event)
+    | Snapshot of isOrigin: ('event -> bool) * toSnapshot: ('state -> 'event)
     /// Allow any events that pass the `isOrigin` test to be used in lieu of folding all the events from the start of the stream
     /// When writing, uses `toSnapshots` to 'unfold' the <c>'state</c>, representing it as one or more Event records to be stored in
     /// the Tip with efficient read cost.
-    | MultiSnapshot of isOrigin : ('event -> bool) * toSnapshots : ('state -> 'event[])
+    | MultiSnapshot of isOrigin: ('event -> bool) * toSnapshots: ('state -> 'event[])
     /// Instead of actually storing the events representing the decisions, only ever update a snapshot stored in the Tip document
     /// <remarks>In this mode, Optimistic Concurrency Control is necessarily based on the _etag</remarks>
-    | RollingState of toSnapshot : ('state -> 'event)
+    | RollingState of toSnapshot: ('state -> 'event)
     /// Allow produced events to be filtered, transformed or removed completely and/or to be transmuted to unfolds.
     /// <remarks>
     /// In this mode, Optimistic Concurrency Control is based on the _etag (rather than the normal Expected Version strategy)
     /// in order that conflicting updates to the state not involving the writing of an event can trigger retries.
     /// </remarks>
-    | Custom of isOrigin : ('event -> bool) * transmute : ('event[] -> 'state -> 'event[] * 'event[])
+    | Custom of isOrigin: ('event -> bool) * transmute: ('event[] -> 'state -> 'event[] * 'event[])
 
 type CosmosStoreCategory<'event, 'state, 'context> internal (resolveInner, empty) =
     inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
@@ -1411,24 +1378,23 @@ type CosmosStoreCategory<'event, 'state, 'context> internal (resolveInner, empty
         // NOTE when set to <c>false</c>, requires Equinox.CosmosStore or Equinox.Cosmos Version >= 2.3.0 to be able to read
         [<O; D null>] ?compressUnfolds) =
         let compressUnfolds = defaultArg compressUnfolds true
+        let isOrigin, checkUnfolds, mapUnfolds =
+            match access with
+            | AccessStrategy.Unoptimized ->                      (fun _ -> false), false, Choice1Of3 ()
+            | AccessStrategy.LatestKnownEvent ->                 (fun _ -> true),  true,  Choice2Of3 (fun events _ -> events |> Array.last |> Array.singleton)
+            | AccessStrategy.Snapshot (isOrigin, toSnapshot) ->  isOrigin,         true,  Choice2Of3 (fun _ state  -> toSnapshot state |> Array.singleton)
+            | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         true,  Choice2Of3 (fun _ state  -> unfold state)
+            | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> Array.empty, toSnapshot state |> Array.singleton)
+            | AccessStrategy.Custom (isOrigin, transmute) ->     isOrigin,         true,  Choice3Of3 transmute
+        let caching = caching |> function
+            | CachingStrategy.NoCaching -> None
+            | CachingStrategy.SlidingWindow (cache, window) -> Some (Equinox.CachingStrategy.SlidingWindow (cache, window))
+            | CachingStrategy.FixedTimeSpan (cache, period) -> Some (Equinox.CachingStrategy.FixedTimeSpan (cache, period))
         let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<'event, 'state, 'context>>()
         let resolveCategory (categoryName, container) =
             let createCategory _name: ICategory<_, _, 'context> =
-                let tryReadCache, updateCache =
-                    match caching with
-                    | CachingStrategy.NoCaching -> (fun _ -> Task.FromResult ValueNone), fun _ _ -> Task.FromResult ()
-                    | CachingStrategy.SlidingWindow (cache, window) -> cache.TryGet, Caching.applyCacheUpdatesWithSlidingExpiration (cache, null) window
-                    | CachingStrategy.FixedTimeSpan (cache, period) -> cache.TryGet, Caching.applyCacheUpdatesWithFixedTimeSpan (cache, null) period
-                let isOrigin, checkUnfolds, mapUnfolds =
-                    match access with
-                    | AccessStrategy.Unoptimized ->                      (fun _ -> false), false, Choice1Of3 ()
-                    | AccessStrategy.LatestKnownEvent ->                 (fun _ -> true),  true,  Choice2Of3 (fun events _ -> events |> Array.last |> Array.singleton)
-                    | AccessStrategy.Snapshot (isOrigin, toSnapshot) ->  isOrigin,         true,  Choice2Of3 (fun _ state  -> toSnapshot state |> Array.singleton)
-                    | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         true,  Choice2Of3 (fun _ state  -> unfold state)
-                    | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> Array.empty, toSnapshot state |> Array.singleton)
-                    | AccessStrategy.Custom (isOrigin, transmute) ->     isOrigin,         true,  Choice3Of3 transmute
-                let cosmosCat = Category<'event, 'state, 'context>(container, codec)
-                Caching.CachingCategory<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, tryReadCache, updateCache, checkUnfolds, compressUnfolds, mapUnfolds) :> _
+                Category<'event, 'state, 'context>(container, codec, fold, initial, isOrigin, checkUnfolds, compressUnfolds, mapUnfolds)
+                |> Caching.apply Token.supersedes caching
             categories.GetOrAdd(categoryName, createCategory)
         let resolveInner categoryName streamId =
             let struct (container, streamName, maybeContainerInitializationGate) = context.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId)

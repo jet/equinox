@@ -383,7 +383,7 @@ type AccessStrategy<'event, 'state> =
     /// </summary>
     | AdjacentSnapshots of snapshotEventCaseName: string * toSnapshot: ('state -> 'event)
 
-type private Category<'event, 'state, 'context>(context: MessageDbContext, codec: IEventCodec<_, _, 'context>, access) =
+type private Category<'event, 'state, 'context>(context: MessageDbContext, codec: IEventCodec<_, _, 'context>, fold, initial, access) =
     let loadAlgorithm log category streamId streamName requireLeader ct =
         match access with
         | None -> context.LoadBatched(log, streamName, requireLeader, codec.TryDecode, ct)
@@ -394,33 +394,27 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
                 let! token, rest = context.Reload(log, streamName, requireLeader, pos, codec.TryDecode, ct)
                 return token, Array.insertAt 0 snapshotEvent rest
             | ValueNone -> return! context.LoadBatched(log, streamName, requireLeader, codec.TryDecode, ct) }
-
-    let load (fold: 'state -> 'event seq -> 'state) initial (f: Task<_>): Task<struct (StreamToken * 'state)> = task {
-        let! token, events = f
-        return struct (token, fold initial events) }
-
-    member _.Load(log, fold: 'state -> 'event seq -> 'state, initial: 'state, category, streamId, streamName, requireLeader, ct) =
-        load fold initial (loadAlgorithm log category streamId streamName requireLeader ct)
-    member _.Reload(log, fold: 'state -> 'event seq -> 'state, state: 'state, streamName, requireLeader, token, ct) =
-        load fold state (context.Reload(log, streamName, requireLeader, token, codec.TryDecode, ct))
-
-    member x.TrySync<'context>
-        (   log: ILogger, fold: 'state -> 'event seq -> 'state,
-            categoryName, streamId, streamName, token, state: 'state, events: 'event array, ctx: 'context, ct)
-        : Task<SyncResult<'state>> = task {
-        let encode e = codec.Encode(ctx, e)
-        let encodedEvents: IEventData<EventBody> array = events |> Array.map encode
-        match! context.TrySync(log, categoryName, streamId, streamName, token, encodedEvents, ct) with
-        | GatewaySyncResult.Written token' ->
-            let state' = fold state (Seq.ofArray events)
-            match access with
-            | None | Some AccessStrategy.LatestKnownEvent -> ()
-            | Some (AccessStrategy.AdjacentSnapshots(_, toSnap)) ->
-                if Token.shouldSnapshot context.BatchOptions.BatchSize token token' then
-                    do! x.StoreSnapshot(log, categoryName, streamId, ctx, token', toSnap state', ct)
-            return SyncResult.Written   (token', state')
-        | GatewaySyncResult.ConflictUnknown ->
-            return SyncResult.Conflict  (fun ct -> x.Reload(log, fold, state, streamName, (*requireLeader*)true, token, ct)) }
+    let fetch state f = task { let! token', events = f in return struct (token', fold state (Seq.ofArray events)) }
+    let reload (log, sn, leader, token, state) ct = fetch state (context.Reload(log, sn, leader, token, codec.TryDecode, ct))
+    interface Caching.IReloadableCategory<'event, 'state, 'context> with
+        member _.Load(log, categoryName, streamId, streamName, _allowStale, requireLeader, ct) =
+            fetch initial (loadAlgorithm log categoryName streamId streamName requireLeader ct)
+        member _.Reload(log, streamName, requireLeader, streamToken, state, ct) =
+            reload (log, streamName, requireLeader, streamToken, state) ct
+        member x.TrySync(log, categoryName, streamId, streamName, ctx, _maybeInit, token, state, events, ct) = task {
+            let encode e = codec.Encode(ctx, e)
+            let encodedEvents: IEventData<EventBody>[] = events |> Array.map encode
+            match! context.TrySync(log, categoryName, streamId, streamName, token, encodedEvents, ct) with
+            | GatewaySyncResult.Written token' ->
+                let state' = fold state (Seq.ofArray events)
+                match access with
+                | None | Some AccessStrategy.LatestKnownEvent -> ()
+                | Some (AccessStrategy.AdjacentSnapshots(_, toSnap)) ->
+                    if Token.shouldSnapshot context.BatchOptions.BatchSize token token' then
+                        do! x.StoreSnapshot(log, categoryName, streamId, ctx, token', toSnap state', ct)
+                return SyncResult.Written (token', state')
+            | GatewaySyncResult.ConflictUnknown ->
+                return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, token, state)) }
 
     member _.StoreSnapshot(log, category, streamId, ctx, token, snapshotEvent, ct) =
         let encodedWithMeta =
@@ -428,63 +422,14 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
             FsCodec.Core.EventData.Create(rawEvent.EventType, rawEvent.Data, meta = Snapshot.meta token)
         context.StoreSnapshot(log, category, streamId, encodedWithMeta, ct)
 
-type private Folder<'event, 'state, 'context> internal (category : Category<'event, 'state, 'context>, fold : 'state -> 'event seq -> 'state, initial : 'state, ?readCache) =
-    interface ICategory<'event, 'state, 'context> with
-        member _.Load(log, categoryName, streamId, streamName, allowStale, requireLeader, ct) = task {
-            match readCache with
-            | None -> return! category.Load(log, fold, initial, categoryName, streamId, streamName, requireLeader, ct)
-            | Some (cache : ICache, prefix : string) ->
-                let! cacheItem = cache.TryGet(prefix + streamName)
-                let act = Activity.Current
-                if act <> null then act.AddCacheHit(match cacheItem with ValueNone -> false | _ -> true) |> ignore
-                match cacheItem with
-                | ValueNone -> return! category.Load(log, fold, initial, categoryName, streamId, streamName, requireLeader, ct)
-                | ValueSome tokenAndState when allowStale -> return tokenAndState
-                | ValueSome (token, state) -> return! category.Reload(log, fold, state, streamName, requireLeader, token, ct) }
-        member _.TrySync(log, categoryName, streamId, streamName, context, _init, token, originState, events, ct) = task {
-            match! category.TrySync(log, fold, categoryName, streamId, streamName, token, originState, events, context, ct) with
-            | SyncResult.Written (token', state') -> return SyncResult.Written (token', state')
-            | SyncResult.Conflict resync ->          return SyncResult.Conflict resync }
-
-/// For MessageDb, caching is less critical than it is for e.g. CosmosDB
-/// As such, it can often be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
-[<NoComparison; NoEquality; RequireQualifiedAccess>]
-type CachingStrategy =
-    /// Retain a single 'state per streamName.
-    /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
-    /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
-    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
-    | SlidingWindow of ICache * window : TimeSpan
-    /// Retain a single 'state per streamName
-    /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
-    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
-    | FixedTimeSpan of ICache * period : TimeSpan
-    /// Prefix is used to segregate multiple folds per stream when they are stored in the cache.
-    /// Semantics are identical to <c>SlidingWindow</c>.
-    | SlidingWindowPrefixed of ICache * window : TimeSpan * prefix : string
-
 type MessageDbCategory<'event, 'state, 'context> internal (resolveInner, empty) =
     inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
     new(context: MessageDbContext, codec: IEventCodec<_, _, 'context>, fold, initial,
-            [<O; D(null)>]?caching,
-            [<O; D(null)>]?access) =
-        let inner = Category<'event, 'state, 'context>(context, codec, access)
-        let readCacheOption =
-            match caching with
-            | None -> None
-            | Some (CachingStrategy.SlidingWindow (cache, _))
-            | Some (CachingStrategy.FixedTimeSpan (cache, _)) -> Some (cache, null)
-            | Some (CachingStrategy.SlidingWindowPrefixed (cache, _, prefix)) -> Some (cache, prefix)
-        let folder = Folder<'event, 'state, 'context>(inner, fold, initial, ?readCache = readCacheOption)
-        let category : ICategory<_, _, 'context> =
-            match caching with
-            | None -> folder :> _
-            | Some (CachingStrategy.SlidingWindow (cache, window)) ->
-                Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder Token.supersedes
-            | Some (CachingStrategy.FixedTimeSpan (cache, period)) ->
-                Caching.applyCacheUpdatesWithFixedTimeSpan cache null period folder Token.supersedes
-            | Some (CachingStrategy.SlidingWindowPrefixed (cache, window, prefix)) ->
-                Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder Token.supersedes
-        let resolveInner categoryName streamId = struct (category, StreamName.render categoryName streamId, ValueNone)
+        // For MessageDb, caching is less critical than it is for e.g. CosmosDB
+        // As such, it can often be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
+        [<O; D(null)>]?caching,
+        [<O; D(null)>]?access) =
+        let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.supersedes caching
+        let resolveInner categoryName streamId = struct (cat, StreamName.render categoryName streamId, ValueNone)
         let empty = struct (context.TokenEmpty, initial)
         MessageDbCategory(resolveInner, empty)
