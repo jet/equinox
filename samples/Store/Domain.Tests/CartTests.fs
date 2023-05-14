@@ -13,8 +13,8 @@ let mkChangeWaived skuId value  = Events.ItemPropertiesChanged { empty<Events.It
 
 /// Represents the high level primitives that can be expressed in a SyncItem Command
 type Command =
-    | AddItem of Context * SkuId * quantity : int * waiveStatus : bool option
-    | PatchItem of Context * SkuId * quantity : int option * waiveStatus : bool option
+    | AddItem of Context * SkuId * quantity: int * waiveStatus: bool option
+    | PatchItem of Context * SkuId * quantity: int option * waiveStatus: bool option
     | RemoveItem of Context * SkuId
 
 let interpret = function
@@ -104,7 +104,7 @@ let isValid = function
 
 // For the origin state, we only do basic filtering, which can provide good fuzz testing even if our implementation
 // might not happen to ever trigger such a state (as opposed to neutering an entire scenario as we do with isValue)
-let (|ValidOriginState|) : Fold.State -> Fold.State =
+let (|ValidOriginState|): Fold.State -> Fold.State =
     let updateItems f = function { items = i } -> { items = f i }
     updateItems (List.choose (function { quantity = q } as x when q > 0 -> Some x | _ -> None))
 

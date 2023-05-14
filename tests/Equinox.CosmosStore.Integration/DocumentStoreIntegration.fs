@@ -151,7 +151,7 @@ type Tests(testOutputHelper) =
         let context = createPrimaryContextEx log queryMaxBatches eventsInTip
         let service = Cart.createServiceWithSnapshotStrategy log context
 
-        let cartId : CartId = % Guid.NewGuid()
+        let cartId: CartId = % Guid.NewGuid()
 
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne cartContext cartId skuId service addRemoveCount
 
@@ -186,7 +186,7 @@ type Tests(testOutputHelper) =
                     do! addAndThenRemoveItemsManyTimesExceptTheLastOne cartContext cartId skuId service1 addRemoveCount
                     return Some (skuId, addRemoveCount) }
 
-        let act prepare (service : Cart.Service) skuId count =
+        let act prepare (service: Cart.Service) skuId count =
             service.ExecuteManyAsync(cartId, false, prepare = prepare, commands = [Cart.SyncItem (cartContext, skuId, Some count, None)])
 
         let eventWaitSet () = let e = new ManualResetEvent(false) in (Async.AwaitWaitHandle e |> Async.Ignore), async { e.Set() |> ignore }
@@ -251,7 +251,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can correctly read and update Contacts against DocStore with LatestKnownEvent without Caching`` (eventsInTip, value : ContactPreferences.Events.Preferences) = Async.RunSynchronously <| async {
+    let ``Can correctly read and update Contacts against DocStore with LatestKnownEvent without Caching`` (eventsInTip, value: ContactPreferences.Events.Preferences) = Async.RunSynchronously <| async {
         let context = createPrimaryContextEx log 1 (if eventsInTip then 1 else 0)
         let service = ContactPreferences.createServiceWithoutCaching log context
         // We need to be sure every Update changes something as we rely on an expected number of events in the end
@@ -350,7 +350,7 @@ type Tests(testOutputHelper) =
                     do! addAndThenRemoveItemsManyTimesExceptTheLastOne cartContext cartId skuId service1 addRemoveCount
                     return Some (skuId, addRemoveCount) }
 
-        let act prepare (service : Cart.Service) skuId count =
+        let act prepare (service: Cart.Service) skuId count =
             service.ExecuteManyAsync(cartId, false, prepare = prepare, commands = [Cart.SyncItem (cartContext, skuId, Some count, None)])
 
         let eventWaitSet () = let e = new ManualResetEvent(false) in (Async.AwaitWaitHandle e |> Async.Ignore), async { e.Set() |> ignore }

@@ -11,20 +11,20 @@ type [<NoEquality; NoComparison>] CacheItemOptions =
 type CacheEntry<'state>(initialToken: StreamToken, initialState: 'state) =
     let mutable currentToken = initialToken
     let mutable currentState = initialState
-    member x.UpdateIfNewer(supersedes : struct (StreamToken * StreamToken) -> bool, other : CacheEntry<'state>) =
+    member x.UpdateIfNewer(supersedes: struct (StreamToken * StreamToken) -> bool, other: CacheEntry<'state>) =
         lock x <| fun () ->
             let struct (otherToken, otherState) = other.Value
             if supersedes (currentToken, otherToken) then
                 currentToken <- otherToken
                 currentState <- otherState
 
-    member x.Value : struct (StreamToken * 'state) =
+    member x.Value: struct (StreamToken * 'state) =
         lock x <| fun () ->
             currentToken, currentState
 
 type ICache =
-    abstract member UpdateIfNewer : key: string * options: CacheItemOptions * (struct (StreamToken * StreamToken) -> bool) * entry: CacheEntry<'state> -> Task<unit>
-    abstract member TryGet : key: string -> Task<struct (StreamToken * 'state) voption>
+    abstract member UpdateIfNewer: key: string * options: CacheItemOptions * (struct (StreamToken * StreamToken) -> bool) * entry: CacheEntry<'state> -> Task<unit>
+    abstract member TryGet: key: string -> Task<struct (StreamToken * 'state) voption>
 
 namespace Equinox
 
@@ -32,7 +32,7 @@ open Equinox.Core
 open System.Runtime.Caching
 open System.Threading.Tasks
 
-type Cache(name, sizeMb : int) =
+type Cache(name, sizeMb: int) =
 
     let cache =
         let config = System.Collections.Specialized.NameValueCollection(1)

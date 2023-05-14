@@ -23,28 +23,28 @@ module Fold =
     type State = Events.Favorited []
 
     type private InternalState(input: State) =
-        let dict = new System.Collections.Generic.Dictionary<SkuId, Events.Favorited>()
-        let favorite (e : Events.Favorited) =   dict.[e.skuId] <- e
+        let dict = System.Collections.Generic.Dictionary<SkuId, Events.Favorited>()
+        let favorite (e: Events.Favorited) =   dict.[e.skuId] <- e
         let favoriteAll (xs: Events.Favorited seq) = for x in xs do favorite x
         do favoriteAll input
         member _.ReplaceAllWith xs =           dict.Clear(); favoriteAll xs
-        member _.Favorite(e : Events.Favorited) =  favorite e
+        member _.Favorite(e: Events.Favorited) = favorite e
         member _.Unfavorite id =               dict.Remove id |> ignore
         member _.AsState() =                   Seq.toArray dict.Values
 
-    let initial : State = [||]
+    let initial: State = [||]
     let private evolve (s: InternalState) = function
         | Events.Snapshotted { net = net } ->   s.ReplaceAllWith net
         | Events.Favorited e ->                 s.Favorite e
         | Events.Unfavorited { skuId = id } ->  s.Unfavorite id
-    let fold (state: State) (events: seq<Events.Event>) : State =
+    let fold (state: State) (events: seq<Events.Event>): State =
         let s = InternalState state
         for e in events do evolve s e
         s.AsState()
     let isOrigin = function Events.Snapshotted _ -> true | _ -> false
     let snapshot state = Events.Snapshotted { net = state }
 
-let doesntHave skuId (state : Fold.State) = state |> Array.exists (fun x -> x.skuId = skuId) |> not
+let doesntHave skuId (state: Fold.State) = state |> Array.exists (fun x -> x.skuId = skuId) |> not
 
 let decideFavorite date skuIds state =
     [ for skuId in Seq.distinct skuIds do
@@ -55,7 +55,7 @@ let decideUnfavorite skuId state =
     if state |> doesntHave skuId then [] else
     [ Events.Unfavorited { skuId = skuId } ]
 
-type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
     member _.Favorite(clientId, skus, ?at) =
         let decider = resolve clientId
@@ -65,11 +65,11 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
         let decider = resolve clientId
         decider.Transact(decideUnfavorite sku)
 
-    member _.List clientId : Async<Events.Favorited []> =
+    member _.List clientId: Async<Events.Favorited []> =
         let decider = resolve clientId
         decider.Query(id)
 
-    member _.ListWithVersion clientId : Async<int64 * Events.Favorited []> =
+    member _.ListWithVersion clientId: Async<int64 * Events.Favorited []> =
         let decider = resolve clientId
         decider.QueryEx(fun ctx -> ctx.Version, ctx.State)
 

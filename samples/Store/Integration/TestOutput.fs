@@ -22,14 +22,14 @@ type LogCaptureBuffer() =
     member _.Clear () = captured.Clear()
     member _.ChooseCalls chooser = captured |> Seq.choose chooser |> List.ofSeq
 
-type TestOutput(testOutput : Xunit.Abstractions.ITestOutputHelper) =
+type TestOutput(testOutput: Xunit.Abstractions.ITestOutputHelper) =
 
-    let write (m : string) =
+    let write (m: string) =
         m.TrimEnd '\n' |> testOutput.WriteLine
         m |> System.Diagnostics.Trace.WriteLine
     let testOutputAndTrace = TestOutputRendererSink(write)
 
-    member _.CreateLogger(?sink : Serilog.Core.ILogEventSink) =
+    member _.CreateLogger(?sink: Serilog.Core.ILogEventSink) =
         LoggerConfiguration()
             .WriteTo.Sink(testOutputAndTrace)
             .WriteTo.Seq("http://localhost:5341")

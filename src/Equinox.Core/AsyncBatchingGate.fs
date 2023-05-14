@@ -4,7 +4,7 @@ namespace Equinox.Core
 /// - requests arriving together can be coalesced into the batch during the linger period via TryAdd
 /// - callers that have had items admitted can concurrently await the shared fate of the dispatch via AwaitResult
 /// - callers whose TryAdd has been denied can await the completion of the in-flight batch via AwaitCompletion
-type internal AsyncBatch<'Req, 'Res>(dispatch : 'Req[] -> Async<'Res>, lingerMs : int) =
+type internal AsyncBatch<'Req, 'Res>(dispatch: 'Req[] -> Async<'Res>, lingerMs: int) =
     // Yes, naive impl in the absence of a cleaner way to have callers sharing the AwaitCompletion coordinate the adding
     let queue = new System.Collections.Concurrent.BlockingCollection<'Req>()
     let task = lazy if lingerMs = 0 then task { queue.CompleteAdding(); return! dispatch (queue.ToArray()) }
@@ -30,11 +30,11 @@ type internal AsyncBatch<'Req, 'Res>(dispatch : 'Req[] -> Async<'Res>, lingerMs 
     /// Wait for dispatch to conclude (for any reason: ok/exn/cancel; we only care about the channel being clear)
     member _.AwaitCompletion() =
         Async.FromContinuations(fun (cont, _, _) ->
-            task.Value.ContinueWith(fun (_ : System.Threading.Tasks.Task<'Res>) -> cont ())
+            task.Value.ContinueWith(fun (_: System.Threading.Tasks.Task<'Res>) -> cont ())
             |> ignore)
 
 /// Manages concurrent work such that requests arriving while a batch is in flight converge to wait for the next window
-type AsyncBatchingGate<'Req, 'Res>(dispatch : 'Req[] -> Async<'Res>, ?linger : System.TimeSpan) =
+type AsyncBatchingGate<'Req, 'Res>(dispatch: 'Req[] -> Async<'Res>, ?linger: System.TimeSpan) =
     let linger = match linger with None -> 1 | Some x -> int x.TotalMilliseconds
     let mutable cell = AsyncBatch(dispatch, linger)
 

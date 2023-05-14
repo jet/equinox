@@ -15,11 +15,11 @@ type private Format = ReadOnlyMemory<byte>
 type ExpectedVersion = Any | StreamVersion of int64
 
 module private Sql =
-    let addExpectedVersion name (value : ExpectedVersion) (p: NpgsqlParameterCollection) =
+    let addExpectedVersion name (value: ExpectedVersion) (p: NpgsqlParameterCollection) =
         match value with
         | StreamVersion value -> p.AddWithValue(name, NpgsqlDbType.Bigint, value) |> ignore
         | Any                 -> p.AddWithValue(name, NpgsqlDbType.Bigint, DBNull.Value) |> ignore
-    let addNullableString name (value : string option) (p: NpgsqlParameterCollection) =
+    let addNullableString name (value: string option) (p: NpgsqlParameterCollection) =
         match value with
         | Some value -> p.AddWithValue(name, NpgsqlDbType.Text, value) |> ignore
         | None       -> p.AddWithValue(name, NpgsqlDbType.Text, DBNull.Value) |> ignore
@@ -43,9 +43,9 @@ module private Npgsql =
         do! conn.OpenAsync(ct)
         return conn }
 
-type internal MessageDbWriter(connectionString : string) =
+type internal MessageDbWriter(connectionString: string) =
 
-    let prepareAppend (streamName : string) (expectedVersion : ExpectedVersion) (e : IEventData<Format>) =
+    let prepareAppend (streamName: string) (expectedVersion: ExpectedVersion) (e: IEventData<Format>) =
         let cmd = NpgsqlBatchCommand(CommandText = "select * from write_message(@Id::text, @StreamName, @EventType, @Data, @Meta, @ExpectedVersion)")
 
         cmd.Parameters.AddWithValue("Id", NpgsqlDbType.Uuid, e.EventId) |> ignore
@@ -57,7 +57,7 @@ type internal MessageDbWriter(connectionString : string) =
 
         cmd
 
-    member _.WriteMessages(streamName, events : _[], version, ct) = task {
+    member _.WriteMessages(streamName, events: _[], version, ct) = task {
         use! conn = Npgsql.connect connectionString ct
         use transaction = conn.BeginTransaction()
         use batch = new NpgsqlBatch(conn, transaction)
@@ -73,11 +73,11 @@ type internal MessageDbWriter(connectionString : string) =
         with :? PostgresException as ex when ex.Message.Contains("Wrong expected version") ->
             return MdbSyncResult.ConflictUnknown }
 
-type internal MessageDbReader (connectionString : string, leaderConnectionString : string) =
+type internal MessageDbReader (connectionString: string, leaderConnectionString: string) =
 
     let connect requiresLeader = Npgsql.connect (if requiresLeader then leaderConnectionString else connectionString)
 
-    let parseRow (reader : DbDataReader) : ITimelineEvent<Format> =
+    let parseRow (reader: DbDataReader): ITimelineEvent<Format> =
         let inline readNullableString idx = if reader.IsDBNull(idx) then None else Some (reader.GetString idx)
         let et, data, meta = reader.GetString(1), reader |> Json.fromReader 2, reader |> Json.fromReader 3
         FsCodec.Core.TimelineEvent.Create(
@@ -87,7 +87,7 @@ type internal MessageDbReader (connectionString : string, leaderConnectionString
             timestamp = DateTimeOffset(DateTime.SpecifyKind(reader.GetDateTime(7), DateTimeKind.Utc)),
             size = et.Length + data.Length + meta.Length)
 
-    member _.ReadLastEvent(streamName : string, requiresLeader, ct, ?eventType) = task {
+    member _.ReadLastEvent(streamName: string, requiresLeader, ct, ?eventType) = task {
         use! conn = connect requiresLeader ct
         use cmd = conn.CreateCommand(CommandText =
             "select
@@ -103,7 +103,7 @@ type internal MessageDbReader (connectionString : string, leaderConnectionString
         if reader.Read() then return [| parseRow reader |]
         else return Array.empty }
 
-    member _.ReadStream(streamName : string, fromPosition : int64, batchSize : int64, requiresLeader, ct) = task {
+    member _.ReadStream(streamName: string, fromPosition: int64, batchSize: int64, requiresLeader, ct) = task {
         use! conn = connect requiresLeader ct
         use cmd = conn.CreateCommand(CommandText =
             "select

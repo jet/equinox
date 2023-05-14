@@ -19,35 +19,35 @@ module Log =
     let [<Literal>] PropertyTag = "mdbEvt"
 
     [<NoEquality; NoComparison>]
-    type Measurement = { stream : string; interval : StopwatchInterval; bytes : int; count : int }
+    type Measurement = { stream: string; interval: StopwatchInterval; bytes: int; count: int }
     [<NoEquality; NoComparison>]
     type Metric =
         | Slice of Measurement
-        | Batch of slices : int * Measurement
+        | Batch of slices: int * Measurement
         | ReadLast of Measurement
         | WriteSuccess of Measurement
         | WriteConflict of Measurement
-    let [<return: Struct>] (|MetricEvent|_|) (logEvent : Serilog.Events.LogEvent) : Metric voption =
+    let [<return: Struct>] (|MetricEvent|_|) (logEvent: Serilog.Events.LogEvent): Metric voption =
         let mutable p = Unchecked.defaultof<_>
         logEvent.Properties.TryGetValue(PropertyTag, &p) |> ignore
         match p with Log.ScalarValue (:? Metric as e) -> ValueSome e | _ -> ValueNone
 
     /// Attach a property to the captured event record to hold the metric information
-    let internal event (value : Metric) = Internal.Log.withScalarProperty PropertyTag value
-    let prop name value (log : ILogger) = log.ForContext(name, value)
+    let internal event (value: Metric) = Internal.Log.withScalarProperty PropertyTag value
+    let prop name value (log: ILogger) = log.ForContext(name, value)
     let bytesToString (bytes: EventBody) = System.Text.Encoding.UTF8.GetString bytes.Span
-    let propEvents name (kvps : System.Collections.Generic.KeyValuePair<string, string> seq) (log : ILogger) =
+    let propEvents name (kvps: System.Collections.Generic.KeyValuePair<string, string> seq) (log: ILogger) =
         let items = seq { for kv in kvps do yield sprintf "{\"%s\": %s}" kv.Key kv.Value }
         log.ForContext(name, sprintf "[%s]" (String.concat ",\n\r" items))
-    let propEventData name (events : IEventData<EventBody>[]) (log : ILogger) =
+    let propEventData name (events: IEventData<EventBody>[]) (log: ILogger) =
         log |> propEvents name (seq {
             for x in events do
                 yield System.Collections.Generic.KeyValuePair<_, _>(x.EventType, bytesToString x.Data) })
-    let propResolvedEvents name (events : ITimelineEvent<EventBody>[]) (log : ILogger) =
+    let propResolvedEvents name (events: ITimelineEvent<EventBody>[]) (log: ILogger) =
         log |> propEvents name (seq {
             for x in events do
                 yield System.Collections.Generic.KeyValuePair<_, _>(x.EventType, bytesToString x.Data) })
-    let withLoggedRetries<'t> retryPolicy (contextLabel : string) (f : ILogger -> CancellationToken -> Task<'t>) log ct : Task<'t> =
+    let withLoggedRetries<'t> retryPolicy (contextLabel: string) (f: ILogger -> CancellationToken -> Task<'t>) log ct: Task<'t> =
         match retryPolicy with
         | None -> f log ct
         | Some retryPolicy ->
@@ -62,7 +62,7 @@ module Log =
     module InternalMetrics =
 
         module Stats =
-            let inline (|Stats|) ({ interval = i } : Measurement) = int64 i.ElapsedMilliseconds
+            let inline (|Stats|) ({ interval = i }: Measurement) = int64 i.ElapsedMilliseconds
 
             let (|Read|ReadL|Write|Resync|Rollup|) = function
                 | Slice (Stats s) -> Read s
@@ -72,7 +72,7 @@ module Log =
                 | WriteSuccess (Stats s) -> Write s
                 | WriteConflict (Stats s) -> Resync s
             type Counter =
-                { mutable count : int64; mutable ms : int64 }
+                { mutable count: int64; mutable ms: int64 }
                 static member Create() = { count = 0L; ms = 0L }
                 member x.Ingest(ms) =
                     Interlocked.Increment(&x.count) |> ignore
@@ -102,7 +102,7 @@ module Log =
 
         /// Relies on feeding of metrics from Log through to Stats.LogSink
         /// Use Stats.LogSink.Restart() to reset the start point (and stats) where relevant
-        let dump (log : ILogger) =
+        let dump (log: ILogger) =
             let stats =
               [ "Read", Stats.LogSink.Read
                 "ReadL", Stats.LogSink.ReadL
@@ -121,24 +121,24 @@ module Log =
             // Yes, there's a minor race here between the use of the values and the reset
             let duration = Stats.LogSink.Restart()
             if rows > 1 then logActivity "TOTAL" totalCount totalMs
-            let measures : (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
+            let measures: (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
             let logPeriodicRate name count = log.Information("rp{name} {count:n0}", name, count)
             for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64)
 
 module private Write =
 
-    let private writeEventsAsync (writer : MessageDbWriter) streamName version events ct : Task<MdbSyncResult> =
+    let private writeEventsAsync (writer: MessageDbWriter) streamName version events ct: Task<MdbSyncResult> =
         writer.WriteMessages(streamName, events, version, ct)
     let inline len (bytes: EventBody) = bytes.Length
-    let private eventDataLen (x : IEventData<EventBody>) = len x.Data + len x.Meta
+    let private eventDataLen (x: IEventData<EventBody>) = len x.Data + len x.Meta
     let private eventDataBytes events = events |> Array.sumBy eventDataLen
-    let private writeEventsLogged writer streamName version events (act : Activity) (log : ILogger) ct : Task<MdbSyncResult> = task {
+    let private writeEventsLogged writer streamName version events (act: Activity) (log: ILogger) ct: Task<MdbSyncResult> = task {
         let log = if not (log.IsEnabled Events.LogEventLevel.Debug) then log else log |> Log.propEventData "Json" events
         let bytes, count = eventDataBytes events, events.Length
         let log = log |> Log.prop "bytes" bytes
         if act <> null then act.AddExpectedVersion(version).IncMetric(count, bytes) |> ignore
         let! t, result = writeEventsAsync writer streamName version events |> Stopwatch.time ct
-        let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
+        let reqMetric: Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let resultLog, evt =
             match result with
             | MdbSyncResult.Written x ->
@@ -154,7 +154,7 @@ module private Write =
         (resultLog |> Log.event evt).Information("Mdb{action:l} count={count} conflict={conflict}",
                                                  "Write", count, match evt with Log.WriteConflict _ -> true | _ -> false)
         return result }
-    let writeEvents log retryPolicy writer (category, streamId, streamName) version events ct : Task<MdbSyncResult> = task {
+    let writeEvents log retryPolicy writer (category, streamId, streamName) version events ct: Task<MdbSyncResult> = task {
         use act = source.StartActivity("WriteEvents", ActivityKind.Client)
         if act <> null then act.AddStream(category, streamId, streamName) |> ignore
         let call = writeEventsLogged writer streamName version events act
@@ -163,33 +163,33 @@ module private Write =
 module Read =
 
     [<NoComparison;NoEquality>]
-    type StreamEventsSlice = { Messages : ITimelineEvent<EventBody>[]; IsEnd : bool; LastVersion : int64 }
+    type StreamEventsSlice = { Messages: ITimelineEvent<EventBody>[]; IsEnd: bool; LastVersion: int64 }
 
     open FSharp.Control
 
-    let private toSlice (events : ITimelineEvent<EventBody>[]) isLast : StreamEventsSlice=
+    let private toSlice (events: ITimelineEvent<EventBody>[]) isLast: StreamEventsSlice=
         let lastVersion = match Array.tryLast events with Some ev -> ev.Index | None -> -1L
         { Messages = events; IsEnd = isLast; LastVersion = lastVersion }
 
-    let private readSliceAsync (reader : MessageDbReader) (streamName : string) (batchSize : int64) (startPos : int64) (requiresLeader : bool) ct = task {
+    let private readSliceAsync (reader: MessageDbReader) (streamName: string) (batchSize: int64) (startPos: int64) (requiresLeader: bool) ct = task {
         let! page = reader.ReadStream(streamName, startPos, batchSize, requiresLeader, ct)
         let isLast = int64 page.Length < batchSize
         return toSlice page isLast }
 
-    let private readLastEventAsync (reader : MessageDbReader) (streamName : string) (requiresLeader : bool) (eventType : string option) ct = task {
+    let private readLastEventAsync (reader: MessageDbReader) (streamName: string) (requiresLeader: bool) (eventType: string option) ct = task {
         let! events = reader.ReadLastEvent(streamName, requiresLeader, ct, ?eventType = eventType)
         return toSlice events false }
 
-    let inline len (bytes : EventBody) = bytes.Length
-    let private resolvedEventLen (x : ITimelineEvent<EventBody>) = len x.Data + len x.Meta
+    let inline len (bytes: EventBody) = bytes.Length
+    let private resolvedEventLen (x: ITimelineEvent<EventBody>) = len x.Data + len x.Meta
     let private resolvedEventBytes events = events |> Array.sumBy resolvedEventLen
-    let private loggedReadSlice reader streamName batchSize requiresLeader startPos batchIndex (log : ILogger) ct : Task<_> = task {
+    let private loggedReadSlice reader streamName batchSize requiresLeader startPos batchIndex (log: ILogger) ct: Task<_> = task {
         let parentAct = Activity.Current
         use act = source.StartActivity("ReadSlice", ActivityKind.Client)
         if act <> null then act.AddStreamFromParent(parentAct).AddBatch(batchSize, batchIndex).AddStartPosition(startPos).AddLeader(requiresLeader) |> ignore
         let! t, slice = readSliceAsync reader streamName batchSize startPos requiresLeader |> Stopwatch.time ct
         let bytes, count = slice.Messages |> resolvedEventBytes, slice.Messages.Length
-        let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
+        let reqMetric: Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Slice reqMetric
         if act <> null then act.IncMetric(count, bytes).AddLastVersion(slice.LastVersion) |> ignore
         if parentAct <> null then parentAct.IncMetric(count, bytes) |> ignore
@@ -198,10 +198,10 @@ module Read =
             "Read", count, slice.LastVersion)
         return slice }
 
-    let private readBatches (log : ILogger) (readSlice : int64 -> int -> ILogger -> CancellationToken -> Task<StreamEventsSlice>)
-            (maxPermittedBatchReads : int option) (startPosition : int64) ct
+    let private readBatches (log: ILogger) (readSlice: int64 -> int -> ILogger -> CancellationToken -> Task<StreamEventsSlice>)
+            (maxPermittedBatchReads: int option) (startPosition: int64) ct
         : taskSeq<int64 * ITimelineEvent<EventBody>[]> =
-        let rec loop batchCount pos : taskSeq<int64 * ITimelineEvent<EventBody>[]> = taskSeq {
+        let rec loop batchCount pos: taskSeq<int64 * ITimelineEvent<EventBody>[]> = taskSeq {
             match maxPermittedBatchReads with
             | Some mpbr when batchCount >= mpbr -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
             | _ -> ()
@@ -213,9 +213,9 @@ module Read =
                 yield! loop (batchCount + 1) (slice.LastVersion + 1L) }
         loop 0 startPosition
 
-    let private logBatchRead (act: Activity) streamName t events (batchSize: int64) version (log : ILogger) =
+    let private logBatchRead (act: Activity) streamName t events (batchSize: int64) version (log: ILogger) =
         let bytes, count = resolvedEventBytes events, events.Length
-        let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
+        let reqMetric: Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let batches = (events.Length - 1)/ (int batchSize) + 1
         let action = "Load"
         let evt = Log.Metric.Batch (batches, reqMetric)
@@ -224,10 +224,10 @@ module Read =
             "Mdb{action:l} stream={stream} count={count}/{batches} version={version}",
             action, streamName, count, batches, version)
 
-    let private logLastEventRead (parent : Activity) (act : Activity) streamName t events (version: int64) (log: ILogger) =
+    let private logLastEventRead (parent: Activity) (act: Activity) streamName t events (version: int64) (log: ILogger) =
         let bytes = resolvedEventBytes events
         let count = events.Length
-        let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
+        let reqMetric: Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Metric.ReadLast reqMetric
         if act <> null then act.IncMetric(count, bytes).AddLastVersion(version) |> ignore
         if parent <> null then parent.IncMetric(count, bytes) |> ignore
@@ -235,7 +235,7 @@ module Read =
             "Mdb{action:l} stream={stream} count={count} version={version}",
             "ReadL", streamName, count, version)
 
-    let internal loadLastEvent (log : ILogger) retryPolicy (reader : MessageDbReader) requiresLeader streamName eventType ct
+    let internal loadLastEvent (log: ILogger) retryPolicy (reader: MessageDbReader) requiresLeader streamName eventType ct
         : Task<int64 * ITimelineEvent<EventBody>[]> = task {
         let parentAct = Activity.Current
         if parentAct <> null then parentAct.AddLoadMethod("Last") |> ignore
@@ -248,11 +248,11 @@ module Read =
         log |> logLastEventRead parentAct act streamName t page.Messages page.LastVersion
         return page.LastVersion, page.Messages }
 
-    let internal loadForwardsFrom (log : ILogger) retryPolicy reader batchSize maxPermittedBatchReads streamName startPosition requiresLeader ct
+    let internal loadForwardsFrom (log: ILogger) retryPolicy reader batchSize maxPermittedBatchReads streamName startPosition requiresLeader ct
         : Task<int64 * ITimelineEvent<EventBody>[]> = task {
-        let mergeBatches (batches : taskSeq<int64 * ITimelineEvent<EventBody>[]>) = task {
+        let mergeBatches (batches: taskSeq<int64 * ITimelineEvent<EventBody>[]>) = task {
             let mutable versionFromStream = -1L
-            let! (events : ITimelineEvent<EventBody>[]) =
+            let! (events: ITimelineEvent<EventBody>[]) =
                 batches
                 |> TaskSeq.collectSeq (fun (reportedVersion, events)-> versionFromStream <- max reportedVersion versionFromStream; events)
                 |> TaskSeq.toArrayAsync
@@ -263,7 +263,7 @@ module Read =
         let call = loggedReadSlice reader streamName batchSize requiresLeader
         let retryingLoggingReadSlice pos batchIndex = Log.withLoggedRetries retryPolicy "readAttempt" (call pos batchIndex)
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
-        let batches ct : Task<int64 * ITimelineEvent<EventBody>[]> =
+        let batches ct: Task<int64 * ITimelineEvent<EventBody>[]> =
             readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition ct
             |> mergeBatches
         let! t, (version, events) = batches |> Stopwatch.time ct
@@ -273,12 +273,12 @@ module Read =
 module private Token =
 
     // NOTE MessageDB's streamVersion is -1 based, similar to ESDB and SSS
-    let create streamVersion : StreamToken =
+    let create streamVersion: StreamToken =
         { value = box streamVersion
           // The `Version` exposed on the `ISyncContext` is 0-based
           version = streamVersion + 1L
           streamBytes = -1 }
-    let inline streamVersion (token : StreamToken) = unbox<int64> token.value
+    let inline streamVersion (token: StreamToken) = unbox<int64> token.value
     let shouldSnapshot batchSize prev next =
         let previousVersion = prev.version
         let nextVersion = next.version
@@ -291,14 +291,14 @@ module private Token =
 module private Snapshot =
 
     let inline snapshotCategory original = original + ":snapshot"
-    let inline streamName category (streamId : string) = Equinox.Core.StreamName.render (snapshotCategory category) streamId
-    type Meta = {| streamVersion : int64 |} // STJ doesn't want to serialize it unless its anonymous
+    let inline streamName category (streamId: string) = Equinox.Core.StreamName.render (snapshotCategory category) streamId
+    type Meta = {| streamVersion: int64 |} // STJ doesn't want to serialize it unless its anonymous
     let private streamVersion (evt: ITimelineEvent<EventBody>) =
         let meta = evt.Meta // avoid defensive copy
         JsonSerializer.Deserialize<Meta>(meta.Span).streamVersion
 
     let meta token = {| streamVersion = Token.streamVersion token |} |> JsonSerializer.SerializeToUtf8Bytes |> ReadOnlyMemory
-    let decode tryDecode (events : ITimelineEvent<EventBody>[]) =
+    let decode tryDecode (events: ITimelineEvent<EventBody>[]) =
         match events |> Array.tryFirstV |> ValueOption.bind tryDecode with
         | ValueSome decoded -> ValueSome struct(events[0] |> streamVersion |> Token.create, decoded)
         | ValueNone -> ValueNone
@@ -308,10 +308,10 @@ type MessageDbClient internal (reader, writer, ?readRetryPolicy, ?writeRetryPoli
     member val ReadRetryPolicy = readRetryPolicy
     member val internal Writer = writer
     member val WriteRetryPolicy = writeRetryPolicy
-    new(connectionString : string,
+    new(connectionString: string,
         // Can be used to divert reads to a replica
         // Conflicts detected on write trigger a resync, reading via the `connectionString` to maximize the freshness of the data for the retry
-        [<O; D(null)>]?readConnectionString : string,
+        [<O; D(null)>]?readConnectionString: string,
         [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
 
         let readConnectionString = defaultArg readConnectionString connectionString
@@ -319,7 +319,7 @@ type MessageDbClient internal (reader, writer, ?readRetryPolicy, ?writeRetryPoli
         let writer = MessageDbWriter(connectionString)
         MessageDbClient(reader, writer, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
 
-type BatchOptions(getBatchSize : Func<int>, [<O; D(null)>]?batchCountLimit) =
+type BatchOptions(getBatchSize: Func<int>, [<O; D(null)>]?batchCountLimit) =
     new (batchSize) = BatchOptions(fun () -> batchSize)
     member _.BatchSize = getBatchSize.Invoke()
     member val MaxBatches = batchCountLimit
@@ -327,18 +327,18 @@ type BatchOptions(getBatchSize : Func<int>, [<O; D(null)>]?batchCountLimit) =
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
 type internal GatewaySyncResult = Written of StreamToken | ConflictUnknown
 
-type MessageDbContext(client : MessageDbClient, batchOptions : BatchOptions) =
-    new(client : MessageDbClient,
+type MessageDbContext(client: MessageDbClient, batchOptions: BatchOptions) =
+    new(client: MessageDbClient,
         // Max number of Events to retrieve in a single batch. Also affects frequency of Snapshots. Default: 500.
         [<O; D null>] ?batchSize) =
         MessageDbContext(client, BatchOptions(batchSize = defaultArg batchSize 500))
     member val BatchOptions = batchOptions
 
     member _.TokenEmpty = Token.create -1L
-    member _.LoadBatched(log, streamName, requireLeader, tryDecode, ct) : Task<StreamToken * 'event[]> = task {
+    member _.LoadBatched(log, streamName, requireLeader, tryDecode, ct): Task<StreamToken * 'event[]> = task {
         let! version, events = Read.loadForwardsFrom log client.ReadRetryPolicy client.Reader batchOptions.BatchSize batchOptions.MaxBatches streamName 0L requireLeader ct
         return Token.create version, Array.chooseV tryDecode events }
-    member _.LoadLast(log, streamName, requireLeader, tryDecode, ct) : Task<StreamToken * 'event[]> = task {
+    member _.LoadLast(log, streamName, requireLeader, tryDecode, ct): Task<StreamToken * 'event[]> = task {
         let! version, events = Read.loadLastEvent log client.ReadRetryPolicy client.Reader requireLeader streamName None ct
         return Token.create version, Array.chooseV tryDecode events }
     member _.LoadSnapshot(log, category, streamId, requireLeader, tryDecode, eventType, ct) = task {
@@ -346,13 +346,13 @@ type MessageDbContext(client : MessageDbClient, batchOptions : BatchOptions) =
         let! _, events = Read.loadLastEvent log client.ReadRetryPolicy client.Reader requireLeader snapshotStream (Some eventType) ct
         return Snapshot.decode tryDecode events }
 
-    member _.Reload(log, streamName, requireLeader, token, tryDecode, ct) : Task<StreamToken * 'event[]> = task {
+    member _.Reload(log, streamName, requireLeader, token, tryDecode, ct): Task<StreamToken * 'event[]> = task {
         let streamVersion = Token.streamVersion token
         let startPos = streamVersion + 1L // Reading a stream uses {inclusive} positions, but the streamVersion is `-1`-based
         let! version, events = Read.loadForwardsFrom log client.ReadRetryPolicy client.Reader batchOptions.BatchSize batchOptions.MaxBatches streamName startPos requireLeader ct
         return Token.create (max streamVersion version), Array.chooseV tryDecode events }
 
-    member internal _.TrySync(log, category, streamId, streamName, token, encodedEvents : IEventData<EventBody>[], ct): Task<GatewaySyncResult> = task {
+    member internal _.TrySync(log, category, streamId, streamName, token, encodedEvents: IEventData<EventBody>[], ct): Task<GatewaySyncResult> = task {
         let streamVersion = Token.streamVersion token
         match! Write.writeEvents log client.WriteRetryPolicy client.Writer (category, streamId, streamName) (StreamVersion streamVersion) encodedEvents ct with
         | MdbSyncResult.Written version' ->
@@ -381,7 +381,7 @@ type AccessStrategy<'event, 'state> =
     /// The <c>toSnapshot</c> function is used to generate the event to store in the snapshot stream.
     /// It should return the event case whose name matches <c>snapshotEventCaseName</c>
     /// </summary>
-    | AdjacentSnapshots of snapshotEventCaseName: string * toSnapshot : ('state -> 'event)
+    | AdjacentSnapshots of snapshotEventCaseName: string * toSnapshot: ('state -> 'event)
 
 type private Category<'event, 'state, 'context>(context: MessageDbContext, codec: IEventCodec<_, _, 'context>, access) =
     let loadAlgorithm log category streamId streamName requireLeader ct =
@@ -395,21 +395,21 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
                 return token, Array.insertAt 0 snapshotEvent rest
             | ValueNone -> return! context.LoadBatched(log, streamName, requireLeader, codec.TryDecode, ct) }
 
-    let load (fold : 'state -> 'event seq -> 'state) initial (f : Task<_>) : Task<struct (StreamToken * 'state)> = task {
+    let load (fold: 'state -> 'event seq -> 'state) initial (f: Task<_>): Task<struct (StreamToken * 'state)> = task {
         let! token, events = f
         return struct (token, fold initial events) }
 
-    member _.Load(log, fold : 'state -> 'event seq -> 'state, initial : 'state, category, streamId, streamName, requireLeader, ct) =
+    member _.Load(log, fold: 'state -> 'event seq -> 'state, initial: 'state, category, streamId, streamName, requireLeader, ct) =
         load fold initial (loadAlgorithm log category streamId streamName requireLeader ct)
-    member _.Reload(log, fold : 'state -> 'event seq -> 'state, state : 'state, streamName, requireLeader, token, ct) =
+    member _.Reload(log, fold: 'state -> 'event seq -> 'state, state: 'state, streamName, requireLeader, token, ct) =
         load fold state (context.Reload(log, streamName, requireLeader, token, codec.TryDecode, ct))
 
     member x.TrySync<'context>
-        (   log : ILogger, fold : 'state -> 'event seq -> 'state,
-            categoryName, streamId, streamName, token, state : 'state, events : 'event array, ctx : 'context, ct)
+        (   log: ILogger, fold: 'state -> 'event seq -> 'state,
+            categoryName, streamId, streamName, token, state: 'state, events: 'event array, ctx: 'context, ct)
         : Task<SyncResult<'state>> = task {
         let encode e = codec.Encode(ctx, e)
-        let encodedEvents : IEventData<EventBody> array = events |> Array.map encode
+        let encodedEvents: IEventData<EventBody> array = events |> Array.map encode
         match! context.TrySync(log, categoryName, streamId, streamName, token, encodedEvents, ct) with
         | GatewaySyncResult.Written token' ->
             let state' = fold state (Seq.ofArray events)

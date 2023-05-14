@@ -5,7 +5,7 @@ open System
 type AutoDataAttribute() =
     inherit FsCheck.Xunit.PropertyAttribute(Arbitrary = [|typeof<FsCheckGenerators>|], MaxTest = 1, QuietOnSuccess = true)
 
-    member val SkipIfRequestedViaEnvironmentVariable : string = null with get, set
+    member val SkipIfRequestedViaEnvironmentVariable: string = null with get, set
 
     member x.SkipRequested =
         match Option.ofObj x.SkipIfRequestedViaEnvironmentVariable |> Option.map Environment.GetEnvironmentVariable |> Option.bind Option.ofObj with

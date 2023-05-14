@@ -29,12 +29,12 @@ open Equinox.EventStore
 module SerilogHelpers =
     open Serilog.Events
 
-    let (|SerilogScalar|_|) : LogEventPropertyValue -> obj option = function
+    let (|SerilogScalar|_|): LogEventPropertyValue -> obj option = function
         | :? ScalarValue as x -> Some x.Value
         | _ -> None
     [<RequireQualifiedAccess>]
     type EsAct = Append | AppendConflict | SliceForward | SliceBackward | BatchForward | BatchBackward | ReadLast
-    let (|EsAction|) (evt : Log.Metric) =
+    let (|EsAction|) (evt: Log.Metric) =
         match evt with
         | Log.WriteSuccess _ -> EsAct.Append
         | Log.WriteConflict _ -> EsAct.AppendConflict
@@ -50,17 +50,17 @@ module SerilogHelpers =
         | Log.Batch (Direction.Forward,_,_) -> EsAct.BatchForward
         | Log.Batch (Direction.Backward,_,_) -> EsAct.BatchBackward
 #endif
-    let (|EsEvent|_|) (logEvent : LogEvent) : Log.Metric option =
+    let (|EsEvent|_|) (logEvent: LogEvent): Log.Metric option =
         logEvent.Properties.Values |> Seq.tryPick (function
             | SerilogScalar (:? Log.Metric as e) -> Some e
             | _ -> None)
 
-    let (|HasProp|_|) (name : string) (e : LogEvent) : LogEventPropertyValue option =
+    let (|HasProp|_|) (name: string) (e: LogEvent): LogEventPropertyValue option =
         match e.Properties.TryGetValue name with
         | true, (SerilogScalar _ as s) -> Some s
         | _ -> None
-    let (|SerilogString|_|) : LogEventPropertyValue -> string option = function SerilogScalar (:? string as y) -> Some y | _ -> None
-    let (|SerilogBool|_|) : LogEventPropertyValue -> bool option = function SerilogScalar (:? bool as y) -> Some y | _ -> None
+    let (|SerilogString|_|): LogEventPropertyValue -> string option = function SerilogScalar (:? string as y) -> Some y | _ -> None
+    let (|SerilogBool|_|): LogEventPropertyValue -> bool option = function SerilogScalar (:? bool as y) -> Some y | _ -> None
 
 type LogCapture() =
     inherit LogCaptureBuffer()

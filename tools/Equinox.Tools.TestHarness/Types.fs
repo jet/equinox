@@ -73,7 +73,7 @@ type LoadTestEvent =
     | SingleTestRun of info:TestRunInfo
     | LoadTestCompleting of reason:string option
     | LoadTestCompleted
-    static member IsErrorEvent (e : LoadTestEvent) =
+    static member IsErrorEvent (e: LoadTestEvent) =
         match e with
         | SessionCreationFailed _ -> true
         | SingleTestRun { error = Some _ } -> true
