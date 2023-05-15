@@ -434,11 +434,9 @@ type private Category<'event, 'state, 'context>(context: SqlStreamStoreContext, 
         | Some (AccessStrategy.RollingSnapshots (isValid, _)) -> Some isValid
     let fetch state f = task { let! token', events = f in return struct (token', fold state (Seq.ofArray events)) }
     let reload (log, sn, leader, token, state) ct = fetch state (context.Reload(log, sn, leader, token, tryDecode, compactionPredicate, ct))
-    interface Caching.IReloadableCategory<'event, 'state, 'context> with
+    interface ICategory<'event, 'state, 'context> with
         member _.Load(log, _categoryName, _streamId, streamName, _allowStale, requireLeader, ct) =
             fetch initial (loadAlgorithm log streamName requireLeader ct)
-        member _.Reload(log, streamName, requireLeader, streamToken, state, ct) =
-            reload (log, streamName, requireLeader, streamToken, state) ct
         member _.TrySync(log, _categoryName, _streamId, streamName, ctx, _maybeInit, (Token.Unpack token as streamToken), state, events, ct) = task {
             let events =
                 match access with
@@ -451,6 +449,7 @@ type private Category<'event, 'state, 'context>(context: SqlStreamStoreContext, 
             match! context.TrySync(log, streamName, streamToken, events, encodedEvents, compactionPredicate, ct) with
             | GatewaySyncResult.Written token' ->  return SyncResult.Written  (token', fold state events)
             | GatewaySyncResult.ConflictUnknown -> return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, streamToken, state)) }
+    interface Caching.IReloadable<'state> with member _.Reload(log, sn, leader, token, state, ct) = reload (log, sn, leader, token, state) ct
 
 type SqlStreamStoreCategory<'event, 'state, 'context> internal (resolveInner, empty) =
     inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
