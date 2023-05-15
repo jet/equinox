@@ -1077,13 +1077,11 @@ type internal Category<'event, 'state, 'context>
         match! store.Reload(log, (streamName, pos), (codec.TryDecode, isOrigin), ct, ?preview = preloaded) with
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
-    interface Caching.IReloadableCategory<'event, 'state, 'context> with
+    interface ICategory<'event, 'state, 'context> with
         member _.Load(log, _categoryName, _streamId, stream, _allowStale, _requireLeader, ct): Task<struct (StreamToken * 'state)> = task {
             let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds, ct)
             return struct (token, fold initial events) }
-        member cat.Reload(log, stream, _requireLeader, streamToken, state, ct): Task<struct (StreamToken * 'state)> =
-            reload (log, stream, streamToken, state) None ct
-        member cat.TrySync(log, _categoryName, _streamId, streamName, ctx, maybeInit, (Token.Unpack pos as streamToken), state, events, ct): Task<SyncResult<'state>> = task {
+        member _.TrySync(log, _categoryName, _streamId, streamName, ctx, maybeInit, (Token.Unpack pos as streamToken), state, events, ct) = task {
             let state' = fold state events
             let exp, events, eventsEncoded, projectionsEncoded =
                 let encode e = codec.Encode(ctx, e)
@@ -1102,6 +1100,7 @@ type internal Category<'event, 'state, 'context>
             | InternalSyncResult.ConflictUnknown _token' -> return SyncResult.Conflict (reload (log, streamName, streamToken, state) None)
             | InternalSyncResult.Conflict (pos', tipEvents) ->
                 return SyncResult.Conflict (reload (log, streamName, streamToken, state) (Some (pos', pos.index, tipEvents))) }
+    interface Caching.IReloadable<'state> with member _.Reload(log, sn, _leader, token, state, ct) = reload (log, sn, token, state) None ct
 
 module ConnectionString =
 
@@ -1116,7 +1115,6 @@ open Equinox.Core
 open Equinox.CosmosStore.Core
 open Microsoft.Azure.Cosmos
 open System
-open System.Threading.Tasks
 
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =

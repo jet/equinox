@@ -1131,11 +1131,9 @@ type internal Category<'event, 'state, 'context>
         match! store.Reload(log, (streamNam, pos), requireLeader, (codec.TryDecode, isOrigin), ct) with
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
-    interface Caching.IReloadableCategory<'event, 'state, 'context> with
+    interface ICategory<'event, 'state, 'context> with
         member _.Load(log, _categoryName, _streamId, streamName, _allowStale, requireLeader, ct) =
             fetch initial (store.Load(log, (streamName, None), requireLeader, (codec.TryDecode, isOrigin), checkUnfolds, ct))
-        member _.Reload(log, streamName, requireLeader, streamToken, state, ct) =
-            reload (log, streamName, requireLeader, streamToken, state) ct
         member _.TrySync(log, _categoryName, _streamId, streamName, ctx, _maybeInit, (Token.Unpack pos as streamToken), state, events, ct) = task {
             let state' = fold state events
             let exp, events, eventsEncoded, unfoldsEncoded =
@@ -1150,13 +1148,13 @@ type internal Category<'event, 'state, 'context>
             match! store.Sync(log, streamName, pos, exp, baseVer, eventsEncoded, unfoldsEncoded, ct) with
             | InternalSyncResult.Written token' -> return SyncResult.Written (token', state')
             | InternalSyncResult.ConflictUnknown -> return SyncResult.Conflict (reload (log, streamName, true, streamToken, state)) }
+    interface Caching.IReloadable<'state> with member _.Reload(log, sn, leader, token, state, ct) = reload (log, sn, leader, token, state) ct
 
 namespace Equinox.DynamoStore
 
 open Equinox.Core
 open Equinox.DynamoStore.Core
 open System
-open System.Threading.Tasks
 
 type [<RequireQualifiedAccess>] ConnectionMode = AwsEnvironment of systemName: string | AwsKeyCredentials of serviceUrl: string
 
