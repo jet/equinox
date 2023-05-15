@@ -198,7 +198,7 @@ module Read =
 
     let private readBatches (log: ILogger) batchSize (readSlice: int64 -> int -> ILogger -> CancellationToken -> Task<StreamEventsSlice>)
             (maxPermittedBatchReads: int option) (startPosition: int64) ct
-        : Task<int64 * ITimelineEvent<EventBody>[]> = task {
+        : Task<int64 * ITimelineEvent<EventBody>[]> =
         let mutable batchCount, pos = 0, startPosition
         let mutable version = -1L
         let result = ResizeArray(int batchSize) // pre allocate batchSize as the vast majority of reads will only have a single batch
@@ -214,10 +214,10 @@ module Read =
             if not slice.IsEnd then
                 batchCount <- batchCount + 1
                 pos <- slice.LastVersion  + 1L
-                do! loop () }
-
-        do! loop ()
-        return version, Array.ofSeq result }
+                return! loop () }
+        task {
+            do! loop ()
+            return version, Array.ofSeq result }
 
     let private logBatchRead (act: Activity) streamName t events (batchSize: int64) version (log: ILogger) =
         let bytes, count = resolvedEventBytes events, events.Length
