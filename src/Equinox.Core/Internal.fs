@@ -12,6 +12,7 @@ module Log =
         | :? Serilog.Events.ScalarValue as x -> ValueSome x.Value
         | _ -> ValueNone
 
+#if !NO_TASK_SEQ
 module TaskSeq =
 
     open FSharp.Control
@@ -43,3 +44,4 @@ module TaskSeq =
             else
                 go <- false
     }
+#endif

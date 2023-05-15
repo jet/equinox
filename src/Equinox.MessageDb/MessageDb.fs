@@ -165,8 +165,6 @@ module Read =
     [<NoComparison;NoEquality>]
     type StreamEventsSlice = { Messages: ITimelineEvent<EventBody>[]; IsEnd: bool; LastVersion: int64 }
 
-    open FSharp.Control
-
     let private toSlice (events: ITimelineEvent<EventBody>[]) isLast: StreamEventsSlice=
         let lastVersion = match Array.tryLast events with Some ev -> ev.Index | None -> -1L
         { Messages = events; IsEnd = isLast; LastVersion = lastVersion }
@@ -198,20 +196,28 @@ module Read =
             "Read", count, slice.LastVersion)
         return slice }
 
-    let private readBatches (log: ILogger) (readSlice: int64 -> int -> ILogger -> CancellationToken -> Task<StreamEventsSlice>)
+    let private readBatches (log: ILogger) batchSize (readSlice: int64 -> int -> ILogger -> CancellationToken -> Task<StreamEventsSlice>)
             (maxPermittedBatchReads: int option) (startPosition: int64) ct
-        : taskSeq<int64 * ITimelineEvent<EventBody>[]> =
-        let rec loop batchCount pos: taskSeq<int64 * ITimelineEvent<EventBody>[]> = taskSeq {
+        : Task<int64 * ITimelineEvent<EventBody>[]> = task {
+        let mutable batchCount, pos = 0, startPosition
+        let mutable version = -1L
+        let result = ResizeArray(int batchSize) // pre allocate batchSize as the vast majority of reads will only have a single batch
+        let rec loop () : Task<unit> = task {
             match maxPermittedBatchReads with
             | Some mpbr when batchCount >= mpbr -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
             | _ -> ()
 
             let batchLog = log |> Log.prop "batchIndex" batchCount
-            let! slice = readSlice pos batchCount batchLog ct
-            yield slice.LastVersion, slice.Messages
+            let! slice = readSlice pos batchCount batchLog ct |> Async.AwaitTaskCorrect
+            version <- max version slice.LastVersion
+            result.AddRange(slice.Messages)
             if not slice.IsEnd then
-                yield! loop (batchCount + 1) (slice.LastVersion + 1L) }
-        loop 0 startPosition
+                batchCount <- batchCount + 1
+                pos <- slice.LastVersion  + 1L
+                do! loop () }
+
+        do! loop ()
+        return version, Array.ofSeq result }
 
     let private logBatchRead (act: Activity) streamName t events (batchSize: int64) version (log: ILogger) =
         let bytes, count = resolvedEventBytes events, events.Length
@@ -250,23 +256,12 @@ module Read =
 
     let internal loadForwardsFrom (log: ILogger) retryPolicy reader batchSize maxPermittedBatchReads streamName startPosition requiresLeader ct
         : Task<int64 * ITimelineEvent<EventBody>[]> = task {
-        let mergeBatches (batches: taskSeq<int64 * ITimelineEvent<EventBody>[]>) = task {
-            let mutable versionFromStream = -1L
-            let! (events: ITimelineEvent<EventBody>[]) =
-                batches
-                |> TaskSeq.collectSeq (fun (reportedVersion, events)-> versionFromStream <- max reportedVersion versionFromStream; events)
-                |> TaskSeq.toArrayAsync
-            let version = versionFromStream
-            return version, events }
         let act = Activity.Current
         if act <> null then act.AddBatchSize(batchSize).AddStartPosition(startPosition).AddLoadMethod("BatchForward") |> ignore
         let call = loggedReadSlice reader streamName batchSize requiresLeader
         let retryingLoggingReadSlice pos batchIndex = Log.withLoggedRetries retryPolicy "readAttempt" (call pos batchIndex)
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
-        let batches ct: Task<int64 * ITimelineEvent<EventBody>[]> =
-            readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition ct
-            |> mergeBatches
-        let! t, (version, events) = batches |> Stopwatch.time ct
+        let! t, (version, events) = readBatches log batchSize retryingLoggingReadSlice maxPermittedBatchReads startPosition |> Stopwatch.time ct
         log |> logBatchRead act streamName t events batchSize version
         return version, events }
 
