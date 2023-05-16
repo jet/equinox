@@ -24,7 +24,10 @@ type private Decorator<'event, 'state, 'context, 'cat when 'cat :> ICategory<'ev
         return tokenAndState }
     interface ICategory<'event, 'state, 'context> with
         member _.Load(log, categoryName, streamId, streamName, allowStale, requireLeader, ct) = task {
-            match! tryRead streamName with
+            let! cachedValue = tryRead streamName
+            let act = Activity.Current
+            if act <> null then act.AddCacheHit(ValueOption.isSome cachedValue) |> ignore
+            match cachedValue with
             | ValueNone -> return! save streamName (fun ct -> category.Load(log, categoryName, streamId, streamName, allowStale, requireLeader, ct)) ct
             | ValueSome tokenAndState when allowStale -> return tokenAndState // read already updated TTL, no need to write
             | ValueSome (token, state) -> return! save streamName (fun ct -> category.Reload(log, streamName, requireLeader, token, state, ct)) ct }

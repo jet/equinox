@@ -154,10 +154,8 @@ module private Write =
         (resultLog |> Log.event evt).Information("Mdb{action:l} count={count} conflict={conflict}",
                                                  "Write", count, match evt with Log.WriteConflict _ -> true | _ -> false)
         return result }
-    let writeEvents log retryPolicy writer (category, streamId, streamName) version events ct: Task<MdbSyncResult> = task {
-        let act = Activity.Current
-        if act <> null then act.AddStream(category, streamId, streamName) |> ignore
-        let call = writeEventsLogged writer streamName version events act
+    let writeEvents log retryPolicy writer (_category, _streamId, streamName) version events ct: Task<MdbSyncResult> = task {
+        let call = writeEventsLogged writer streamName version events Activity.Current
         return! Log.withLoggedRetries retryPolicy "writeAttempt" call log ct }
 
 module Read =
