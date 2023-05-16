@@ -32,3 +32,7 @@ type ActivityExtensions =
     [<System.Runtime.CompilerServices.Extension>]
     static member AddLoadMethod(act: Activity, method: string) =
         act.AddTag("eqx.load_method", method)
+
+    [<System.Runtime.CompilerServices.Extension>]
+    static member RecordConflict(act: Activity) =
+        act.AddTag("eqx.conflict", true).SetStatus(ActivityStatusCode.Error, "WrongExpectedVersion")
