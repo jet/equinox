@@ -1,7 +1,6 @@
 [<AutoOpen>]
 module internal Equinox.MessageDb.Tracing
 
-open Equinox.Core.Tracing
 open System.Diagnostics
 open Equinox.MessageDb.Core
 
