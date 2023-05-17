@@ -47,7 +47,7 @@ type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state
         new CacheEntry<'state>(Unchecked.defaultof<StreamToken>, Unchecked.defaultof<'state>, 0)
     member x.TryGetValue(): (struct (StreamToken * 'state)) voption =
         lock x tryGet
-    member x.UpdateIfNewer(isStale: Func<StreamToken, StreamToken, bool>, token, state, timestamp) =
+    member x.MergeUpdates(isStale: Func<StreamToken, StreamToken, bool>, token, state, timestamp) =
         lock x <| fun () ->
             if not (isStale.Invoke(currentToken, token)) then
                 currentToken <- token
@@ -59,27 +59,23 @@ type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state
         let now = System.Diagnostics.Stopwatch.GetTimestamp()
         let struct (current, entry) =
             lock x <| fun () -> struct (cell, tryGetWithLastVerified())
-        let next =
+        let freshOrFetch =
             match entry with
             | ValueSome (token, state, lastVerified) ->
                 let cached = struct (token, state)
                 if Stopwatch.ElapsedSeconds(now, lastVerified) <= maxAge.TotalSeconds then Ok cached
                 else Error (load (ValueSome cached))
             | ValueNone -> Error (load ValueNone)
-        match next with
-        | Ok res -> return res
+        match freshOrFetch with
+        | Ok validatedCachedState -> return validatedCachedState
         | Error loadOrReload ->
-
-        let newInstance = AsyncLazy(loadOrReload)
-        let _ = System.Threading.Interlocked.CompareExchange(&cell, newInstance, current)
-        let! struct (token, state) as res = cell.Await()
-        if obj.ReferenceEquals(cell, current) then x.UpdateIfNewer(isStale, token, state, now)
-        return res }
+            let newInstance = AsyncLazy(loadOrReload)
+            let _ = System.Threading.Interlocked.CompareExchange(&cell, newInstance, current)
+            let! struct (token, state) as res = cell.Await()
+            if obj.ReferenceEquals(cell, current) then x.MergeUpdates(isStale, token, state, now)
+            return res }
 
 type Cache private (inner: System.Runtime.Caching.MemoryCache) =
-    static let addCachedFlag wasCached =
-        let act = System.Diagnostics.Activity.Current
-        if act <> null then act.AddCacheHit(wasCached) |> ignore
     let tryLoad key =
         match inner.Get key with
         | null -> ValueNone
@@ -91,33 +87,37 @@ type Cache private (inner: System.Runtime.Caching.MemoryCache) =
         | null -> fresh
         | :? CacheEntry<'state> as existingEntry -> existingEntry
         | x -> failwith $"getElseAddEmptyEntry Incompatible cache entry %A{x}"
+    let addOrMergeCacheEntry isStale key options struct (token, state) =
+        let timestamp = System.Diagnostics.Stopwatch.GetTimestamp()
+        let entry = CacheEntry(token, state, timestamp)
+        match inner.AddOrGetExisting(key, entry, CacheItemOptions.toPolicy options) with
+        | null -> () // Our fresh one got added
+        | :? CacheEntry<'state> as existingEntry -> existingEntry.MergeUpdates(isStale, token, state, timestamp)
+        | x -> failwith $"UpdateIfNewer Incompatible cache entry %A{x}"
     new (name, sizeMb: int) =
         let config = System.Collections.Specialized.NameValueCollection(1)
         config.Add("cacheMemoryLimitMegabytes", string sizeMb);
         Cache(new System.Runtime.Caching.MemoryCache(name, config))
     interface ICache with
+        // if there's a non-zero maxAge, concurrent read attempts share the roundtrip (and its fate, if it throws)
         member x.Load(key, maxAge, isStale, options, loadOrReload) = task {
-            let fetch maybeBaseState () =
-                addCachedFlag (ValueOption.isSome maybeBaseState)
+            let loadOrReload maybeBaseState () =
+                let act = System.Diagnostics.Activity.Current
+                if act <> null then act.AddCacheHit(ValueOption.isSome maybeBaseState) |> ignore
                 loadOrReload maybeBaseState
             if maxAge = TimeSpan.Zero then // Boring algorithm that has each caller independently load/reload the data and then cache it
                 let maybeBaseState = tryLoad key
-                let! struct (token, state) as res = fetch maybeBaseState ()
-                (x : ICache).Save(key, isStale, options, token, state)
+                let! res = loadOrReload maybeBaseState ()
+                addOrMergeCacheEntry isStale key options res
                 return res
             else // ensure we have an entry in the cache for this key; coordinate retrieval via a SingleReaderGate within that
                 let cacheSlot = getElseAddEmptyEntry key options
-                let! struct (token, state) as res = cacheSlot.ReadThrough(maxAge, isStale, fetch)
-                cacheSlot.UpdateIfNewer(isStale, token, state, System.Diagnostics.Stopwatch.GetTimestamp())
+                let! struct (token, state) as res = cacheSlot.ReadThrough(maxAge, isStale, loadOrReload)
+                cacheSlot.MergeUpdates(isStale, token, state, System.Diagnostics.Stopwatch.GetTimestamp())
                 return res }
-        // Newer values get saved; equal values update the last retreival timestamp
+        // Newer values get saved; equal values update the last retrieval timestamp
         member _.Save(key, isStale, options, token, state) =
-            let timestamp = System.Diagnostics.Stopwatch.GetTimestamp()
-            let entry = CacheEntry(token, state, timestamp)
-            match inner.AddOrGetExisting(key, entry, CacheItemOptions.toPolicy options) with
-            | null -> () // Our fresh one got added
-            | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer(isStale, token, state, timestamp)
-            | x -> failwith $"Save Incompatible cache entry %A{x}"
+            addOrMergeCacheEntry isStale key options (token, state)
 
 type [<NoComparison; NoEquality; RequireQualifiedAccess>] CachingStrategy =
     /// Retain a single 'state per streamName.
