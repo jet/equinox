@@ -52,10 +52,10 @@ type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state
             if not (isStale.Invoke(currentToken, token)) then
                 currentToken <- token
                 currentState <- state
-                lastVerified <- timestamp
-    /// Gets or asynchronously recomputes a cached value depending on expiry and availability
+                if lastVerified < timestamp then // Don't count attempts to overwrite with stale state as verification
+                    lastVerified <- timestamp
+    // Follows high level flow of SingleUpdaterGate.await - read the comments there, and the AsyncBatchingGate tests first!
     member x.ReadThrough(maxAge: TimeSpan, isStale, load) : Task<struct (StreamToken * 'state)> = task {
-        // Each concurrent execution takes a copy of the cell, and attempts to reuse the value; later used to ensure only one triggers the workflow
         let now = System.Diagnostics.Stopwatch.GetTimestamp()
         let struct (current, entry) =
             lock x <| fun () -> struct (cell, tryGetWithLastVerified())
@@ -70,45 +70,47 @@ type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state
         | Ok res -> return res
         | Error loadOrReload ->
 
-        // Prepare a new instance, with cancellation under our control (it won't start until the first Await on the LazyTask triggers it though)
         let newInstance = AsyncLazy(loadOrReload)
-        // If there are concurrent executions, the first through the gate wins; everybody else awaits the instance the winner wrote
         let _ = System.Threading.Interlocked.CompareExchange(&cell, newInstance, current)
         let! struct (token, state) as res = cell.Await()
         if obj.ReferenceEquals(cell, current) then x.UpdateIfNewer(isStale, token, state, now)
         return res }
 
 type Cache private (inner: System.Runtime.Caching.MemoryCache) =
-    let addCachedFlag wasCached =
+    static let addCachedFlag wasCached =
         let act = System.Diagnostics.Activity.Current
         if act <> null then act.AddCacheHit(wasCached) |> ignore
+    let tryLoad key =
+        match inner.Get key with
+        | null -> ValueNone
+        | :? CacheEntry<'state> as existingEntry -> existingEntry.TryGetValue()
+        | x -> failwith $"TryGet Incompatible cache entry %A{x}"
+    let getElseAddEmptyEntry key options =
+        let fresh = CacheEntry<'state>.CreateEmpty()
+        match inner.AddOrGetExisting(key, fresh, CacheItemOptions.toPolicy options) with
+        | null -> fresh
+        | :? CacheEntry<'state> as existingEntry -> existingEntry
+        | x -> failwith $"getElseAddEmptyEntry Incompatible cache entry %A{x}"
     new (name, sizeMb: int) =
         let config = System.Collections.Specialized.NameValueCollection(1)
         config.Add("cacheMemoryLimitMegabytes", string sizeMb);
         Cache(new System.Runtime.Caching.MemoryCache(name, config))
     interface ICache with
         member x.Load(key, maxAge, isStale, options, loadOrReload) = task {
-            let fetch cached () = addCachedFlag (ValueOption.isSome cached); loadOrReload cached
-            if maxAge = TimeSpan.Zero then
-                let cached =
-                    match inner.Get key with
-                    | null -> addCachedFlag false; ValueNone
-                    | :? CacheEntry<'state> as existingEntry -> existingEntry.TryGetValue()
-                    | x -> failwith $"TryGet Incompatible cache entry %A{x}"
-                addCachedFlag (ValueOption.isSome cached)
-                let! struct (token, state) as res = fetch cached ()
+            let fetch maybeBaseState () =
+                addCachedFlag (ValueOption.isSome maybeBaseState)
+                loadOrReload maybeBaseState
+            if maxAge = TimeSpan.Zero then // Boring algorithm that has each caller independently load/reload the data and then cache it
+                let maybeBaseState = tryLoad key
+                let! struct (token, state) as res = fetch maybeBaseState ()
                 (x : ICache).Save(key, isStale, options, token, state)
                 return res
-            else
-                let entry =
-                    let fresh = CacheEntry<'state>.CreateEmpty()
-                    match inner.AddOrGetExisting(key, fresh, CacheItemOptions.toPolicy options) with
-                    | null -> fresh
-                    | :? CacheEntry<'state> as existingEntry -> existingEntry
-                    | x -> failwith $"CreateSlot Incompatible cache entry %A{x}"
-                let! struct (token, state) as res = entry.ReadThrough(maxAge, isStale, fetch)
-                entry.UpdateIfNewer(isStale, token, state, System.Diagnostics.Stopwatch.GetTimestamp())
+            else // ensure we have an entry in the cache for this key; coordinate retrieval via a SingleReaderGate within that
+                let cacheSlot = getElseAddEmptyEntry key options
+                let! struct (token, state) as res = cacheSlot.ReadThrough(maxAge, isStale, fetch)
+                cacheSlot.UpdateIfNewer(isStale, token, state, System.Diagnostics.Stopwatch.GetTimestamp())
                 return res }
+        // Newer values get saved; equal values update the last retreival timestamp
         member _.Save(key, isStale, options, token, state) =
             let timestamp = System.Diagnostics.Stopwatch.GetTimestamp()
             let entry = CacheEntry(token, state, timestamp)
