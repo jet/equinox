@@ -10,19 +10,20 @@ type [<NoEquality; NoComparison; Struct>] CacheItemOptions =
 type CacheEntry<'state>(initialToken: StreamToken, initialState: 'state) =
     let mutable currentToken = initialToken
     let mutable currentState = initialState
-    member x.UpdateIfNewer(supersedes: struct (StreamToken * StreamToken) -> bool, other: CacheEntry<'state>) =
+    member x.UpdateIfNewer(compare: struct (StreamToken * StreamToken) -> int64, other: CacheEntry<'state>) =
         lock x <| fun () ->
-            let struct (otherToken, otherState) = other.Value
-            if supersedes (currentToken, otherToken) then
-                currentToken <- otherToken
-                currentState <- otherState
+            let struct (token, state) = other.Value
+            let res = compare (currentToken, token)
+            if res < 0 then // Accept fresher values, ignore equal or older
+                currentToken <- token
+                currentState <- state
 
     member x.Value: struct (StreamToken * 'state) =
         lock x <| fun () ->
             currentToken, currentState
 
 type ICache =
-    abstract member UpdateIfNewer: key: string * options: CacheItemOptions * (struct (StreamToken * StreamToken) -> bool) * entry: CacheEntry<'state> -> Task<unit>
+    abstract member UpdateIfNewer: key: string * options: CacheItemOptions * (struct (StreamToken * StreamToken) -> int64) * entry: CacheEntry<'state> -> Task<unit>
     abstract member TryGet: key: string -> Task<struct (StreamToken * 'state) voption>
 
 namespace Equinox
@@ -56,10 +57,10 @@ type Cache private (inner: MemoryCache) =
         config.Add("cacheMemoryLimitMegabytes", string sizeMb);
         Cache(new MemoryCache(name, config))
     interface ICache with
-        member _.UpdateIfNewer(key, options, supersedes, entry) =
+        member _.UpdateIfNewer(key, options, compare, entry) =
             match inner.AddOrGetExisting(key, box entry, CachingStrategy.toPolicy options) with
             | null -> Task.FromResult()
-            | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer(supersedes, entry); Task.FromResult()
+            | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer(compare, entry); Task.FromResult()
             | x -> failwithf "UpdateIfNewer Incompatible cache entry %A" x
 
         member _.TryGet key =

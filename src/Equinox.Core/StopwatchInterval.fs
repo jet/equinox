@@ -13,14 +13,16 @@ type Stopwatch =
     static member TicksToSeconds(ticks: int64): double =
         let ticksPerSecond = double Stopwatch.Frequency
         double ticks / ticksPerSecond
+    static member ElapsedSeconds(endTicks, startTicks) = Stopwatch.TicksToSeconds(endTicks - startTicks)
+    static member SecondsSince(startTicks) = Stopwatch.ElapsedSeconds(Stopwatch.GetTimestamp(), startTicks)
 
 /// Represents a time measurement of a computation that includes the Stopwatch Timestamp metadata
 and [<Struct; NoEquality; NoComparison>] StopwatchInterval(startTicks: int64, endTicks: int64) =
     // do if startTicks < 0L || startTicks > endTicks then invalidArg "ticks" "tick arguments do not form a valid interval."
     member _.StartTicks = startTicks
     member _.EndTicks = endTicks
-    member _.Elapsed = Stopwatch.TicksToSeconds(endTicks - startTicks) |> TimeSpan.FromSeconds
-    member _.ElapsedMilliseconds = Stopwatch.TicksToSeconds(endTicks - startTicks) * 1000.
+    member _.Elapsed = Stopwatch.ElapsedSeconds(endTicks, startTicks) |> TimeSpan.FromSeconds
+    member _.ElapsedMilliseconds = Stopwatch.ElapsedSeconds(endTicks, startTicks) * 1000.
     override x.ToString () = sprintf "%g ms" x.ElapsedMilliseconds
 
 module Stopwatch =

@@ -963,10 +963,11 @@ module Token =
     //            Alternately, can mirror DynamoStore scheme where the size is maintained in the Tip, and updated as batches are calved
     let create pos: StreamToken = { value = box { pos = pos }; version = pos.index; streamBytes = -1 }
     let (|Unpack|) (token: StreamToken): Position = let t = unbox<Token> token.value in t.pos
-    let supersedes struct (Unpack currentPos, Unpack xPos) =
-        let currentVersion, newVersion = currentPos.index, xPos.index
-        let currentETag, newETag = currentPos.etag, xPos.etag
-        newVersion > currentVersion || currentETag <> newETag
+    /// returns positive if updated is newer, 0 if equal
+    let compare struct (Unpack currentPos, Unpack candidate) =
+        let currentVersion, newVersion = currentPos.index, candidate.index
+        let currentETag, newETag = currentPos.etag, candidate.etag
+        if currentETag <> newETag then 1L else newVersion - currentVersion
 
 [<AutoOpen>]
 module Internal =
@@ -1078,7 +1079,7 @@ type internal Category<'event, 'state, 'context>
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
     interface ICategory<'event, 'state, 'context> with
-        member _.Load(log, _categoryName, _streamId, stream, _allowStale, _requireLeader, ct): Task<struct (StreamToken * 'state)> = task {
+        member _.Load(log, _categoryName, _streamId, stream, _maxStaleness, _requireLeader, ct): Task<struct (StreamToken * 'state)> = task {
             let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds, ct)
             return struct (token, fold initial events) }
         member _.TrySync(log, _categoryName, _streamId, streamName, ctx, maybeInit, (Token.Unpack pos as streamToken), state, events, ct) = task {
@@ -1393,7 +1394,7 @@ type CosmosStoreCategory<'event, 'state, 'context> internal (resolveInner, empty
         let resolveCategory (categoryName, container) =
             let createCategory _name: ICategory<_, _, 'context> =
                 Category<'event, 'state, 'context>(container, codec, fold, initial, isOrigin, checkUnfolds, compressUnfolds, mapUnfolds)
-                |> Caching.apply Token.supersedes caching
+                |> Caching.apply Token.compare caching
             categories.GetOrAdd(categoryName, createCategory)
         let resolveInner categoryName streamId =
             let struct (container, streamName, maybeContainerInitializationGate) = context.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId)

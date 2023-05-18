@@ -20,8 +20,8 @@ type ActivityExtensions =
         if attempt > 1 then act.AddTag("eqx.resync_count", attempt - 1) else act
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddStale(act: Activity, allowStale) =
-        if allowStale then act.AddTag("eqx.allow_stale", true) else act
+    static member AddStale(act: Activity, maxStaleness : System.TimeSpan) =
+        if maxStaleness.Ticks <> 0L then act.AddTag("eqx.allow_stale", true) else act
 
     [<System.Runtime.CompilerServices.Extension>]
     static member AddStream(act: Activity, category: string, streamId: string, streamName: string) =

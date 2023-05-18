@@ -327,9 +327,9 @@ module Token =
     /// Use an event we are about to write to the stream to infer headroom
     let ofPreviousStreamVersionAndCompactionEventDataIndex (Unpack token) compactionEventDataIndex eventsLength batchSize streamVersion': StreamToken =
         ofCompactionEventNumber (Some (token.streamVersion + 1L + int64 compactionEventDataIndex)) eventsLength batchSize streamVersion'
-    let supersedes struct (Unpack current, Unpack x) =
-        let currentVersion, newVersion = current.streamVersion, x.streamVersion
-        newVersion > currentVersion
+    /// returns positive if updated is newer, 0 if equal
+    let compare struct (Unpack current, Unpack candidate) =
+        candidate.streamVersion - current.streamVersion
 
 type SqlStreamStoreConnection(readConnection, [<O; D(null)>]?writeConnection, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     member _.ReadConnection = readConnection
@@ -464,7 +464,7 @@ type SqlStreamStoreCategory<'event, 'state, 'context> internal (resolveInner, em
                 + "mixing AccessStrategy.LatestKnownEvent with Caching at present."
                 |> invalidOp
             | _ -> ()
-        let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.supersedes caching
+        let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.compare caching
         let resolveInner categoryName streamId = struct (cat, StreamName.render categoryName streamId, ValueNone)
         let empty = struct (context.TokenEmpty, initial)
         SqlStreamStoreCategory(resolveInner, empty)

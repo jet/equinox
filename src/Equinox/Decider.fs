@@ -244,9 +244,9 @@ and internal LoadPolicy() =
     static member Fetch<'state, 'event>(x: LoadOption<'state> option)
         : IStream<'event, 'state> -> CancellationToken -> Task<struct (StreamToken * 'state)> =
         match x with
-        | None | Some RequireLoad ->                 fun stream ct ->   stream.Load(allowStale = false,               requireLeader = false, ct = ct)
-        | Some RequireLeader ->                      fun stream ct ->   stream.Load(allowStale = false,               requireLeader = true,  ct = ct)
-        | Some AllowStale ->                         fun stream ct ->   stream.Load(allowStale = true,                requireLeader = false, ct = ct)
+        | None | Some RequireLoad ->                 fun stream ct ->   stream.Load(maxStaleness = TimeSpan.Zero,     requireLeader = false, ct = ct)
+        | Some RequireLeader ->                      fun stream ct ->   stream.Load(maxStaleness = TimeSpan.Zero,     requireLeader = true,  ct = ct)
+        | Some AllowStale ->                         fun stream ct ->   stream.Load(maxStaleness = TimeSpan.MaxValue, requireLeader = false, ct = ct)
         | Some AssumeEmpty ->                        fun stream _ct ->  Task.FromResult(stream.LoadEmpty())
         | Some (FromMemento (streamToken, state)) -> fun _stream _ct -> Task.FromResult(streamToken, state)
 

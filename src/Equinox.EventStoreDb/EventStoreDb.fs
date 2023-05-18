@@ -285,9 +285,9 @@ module Token =
     let ofPreviousStreamVersionAndCompactionEventDataIndex (Unpack token) compactionEventDataIndex eventsLength batchSize streamVersion': StreamToken =
         ofCompactionEventNumber (Some (token.streamVersion + 1L + int64 compactionEventDataIndex)) eventsLength batchSize streamVersion'
 
-    let supersedes struct (Unpack current, Unpack x) =
-        let currentVersion, newVersion = current.streamVersion, x.streamVersion
-        newVersion > currentVersion
+    /// returns positive if updated is newer, 0 if equal
+    let compare struct (Unpack current, Unpack candidate) =
+        candidate.streamVersion - current.streamVersion
 
 type EventStoreConnection(readConnection, [<O; D(null)>] ?writeConnection, [<O; D(null)>] ?readRetryPolicy, [<O; D(null)>] ?writeRetryPolicy) =
     member _.ReadConnection = readConnection
@@ -403,7 +403,7 @@ type private Category<'event, 'state, 'context>(context: EventStoreContext, code
     let reload (log, sn, leader, token, state) ct = fetch state (context.Reload(log, sn, leader, token, tryDecode, compactionPredicate, ct))
     interface Caching.IReloadable<'state> with member _.Reload(log, sn, leader, token, state, ct) = reload (log, sn, leader, token, state) ct
     interface ICategory<'event, 'state, 'context> with
-        member _.Load(log, _categoryName, _streamId, streamName, _allowStale, requireLeader, ct) =
+        member _.Load(log, _categoryName, _streamId, streamName, _maxStaleness, requireLeader, ct) =
             fetch initial (loadAlgorithm log streamName requireLeader ct)
         member _.TrySync(log, _categoryName, _streamId, streamName, ctx, _maybeInit, (Token.Unpack token as streamToken), state, events, ct) = task {
             let events =
@@ -431,7 +431,7 @@ type EventStoreCategory<'event, 'state, 'context> internal (resolveInner, empty)
                 + "mixing AccessStrategy.LatestKnownEvent with Caching at present."
                 |> invalidOp
             | _ -> ()
-        let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.supersedes caching
+        let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.compare caching
         let resolveInner categoryName streamId = struct (cat, StreamName.render categoryName streamId, ValueNone)
         let empty = struct (context.TokenEmpty, initial)
         EventStoreCategory(resolveInner, empty)
