@@ -42,18 +42,19 @@ type private Decorator<'event, 'state, 'context, 'cat when 'cat :> ICategory<'ev
             | SyncResult.Conflict resync ->
                 return SyncResult.Conflict (tee save resync) }
 
-let private mkKey prefix streamName = prefix + streamName
+let private mkKey prefix streamName =
+    prefix + streamName
 
-let private updateWithSlidingExpiration (slidingExpiration: TimeSpan) =
-    fun () -> CacheItemOptions.RelativeExpiration slidingExpiration
-let private updateWithFixedTimeSpan (period: TimeSpan) () =
+let private optionsSlidingExpiration (slidingExpiration: TimeSpan) () =
+    CacheItemOptions.RelativeExpiration slidingExpiration
+let private optionsFixedTimeSpan (period: TimeSpan) () =
     let expirationPoint = let creationDate = DateTimeOffset.UtcNow in creationDate.Add period
     CacheItemOptions.AbsoluteExpiration expirationPoint
 
 let private mapStrategy = function
-    | Equinox.CachingStrategy.FixedTimeSpan (cache, period) -> struct (cache, mkKey null, updateWithFixedTimeSpan period)
-    | Equinox.CachingStrategy.SlidingWindow (cache, window) -> cache, mkKey null, updateWithSlidingExpiration window
-    | Equinox.CachingStrategy.SlidingWindowPrefixed (cache, window, prefix) -> cache, mkKey prefix, updateWithSlidingExpiration window
+    | Equinox.CachingStrategy.FixedTimeSpan (cache, period) -> struct (cache, mkKey null, optionsFixedTimeSpan period)
+    | Equinox.CachingStrategy.SlidingWindow (cache, window) -> cache, mkKey null, optionsSlidingExpiration window
+    | Equinox.CachingStrategy.SlidingWindowPrefixed (cache, window, prefix) -> cache, mkKey prefix, optionsSlidingExpiration window
 
 let apply compare x (cat: 'cat when 'cat :> ICategory<'event, 'state, 'context> and 'cat :> IReloadable<'state>): ICategory<_, _, _> =
     match x with
