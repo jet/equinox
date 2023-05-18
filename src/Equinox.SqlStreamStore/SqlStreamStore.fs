@@ -327,9 +327,8 @@ module Token =
     /// Use an event we are about to write to the stream to infer headroom
     let ofPreviousStreamVersionAndCompactionEventDataIndex (Unpack token) compactionEventDataIndex eventsLength batchSize streamVersion': StreamToken =
         ofCompactionEventNumber (Some (token.streamVersion + 1L + int64 compactionEventDataIndex)) eventsLength batchSize streamVersion'
-    /// returns positive if updated is newer, 0 if equal
-    let compare struct (Unpack current, Unpack candidate) =
-        candidate.streamVersion - current.streamVersion
+    /// Like other .NET CompareTo operators: negative if current is superseded by candidate, 0 if equivalent, positive if candidate stale
+    let compare struct (current, candidate) = current.version - candidate.version
 
 type SqlStreamStoreConnection(readConnection, [<O; D(null)>]?writeConnection, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     member _.ReadConnection = readConnection

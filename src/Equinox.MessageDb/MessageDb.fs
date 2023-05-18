@@ -280,9 +280,8 @@ module private Token =
         let estimatedSnapshotPos = previousVersion - (previousVersion % batchSize)
         nextVersion - estimatedSnapshotPos >= batchSize
 
-    /// returns positive if updated is newer, 0 if equal
-    let compare struct (current, candidate) =
-        candidate.version - current.version
+    /// Like other .NET CompareTo operators: negative if current is superseded by candidate, 0 if equivalent, positive if candidate stale
+    let compare struct (current, candidate) = current.version - candidate.version
 
 module private Snapshot =
 

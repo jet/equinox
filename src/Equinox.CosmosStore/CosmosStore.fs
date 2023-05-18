@@ -963,11 +963,10 @@ module Token =
     //            Alternately, can mirror DynamoStore scheme where the size is maintained in the Tip, and updated as batches are calved
     let create pos: StreamToken = { value = box { pos = pos }; version = pos.index; streamBytes = -1 }
     let (|Unpack|) (token: StreamToken): Position = let t = unbox<Token> token.value in t.pos
-    /// returns positive if updated is newer, 0 if equal
-    let compare struct (Unpack currentPos, Unpack candidate) =
-        let currentVersion, newVersion = currentPos.index, candidate.index
-        let currentETag, newETag = currentPos.etag, candidate.etag
-        if currentETag <> newETag then 1L else newVersion - currentVersion
+    /// Like other .NET CompareTo operators: negative if current is superseded by candidate, 0 if equivalent, positive if candidate stale
+    let compare struct (Unpack current, Unpack candidate) =
+        if current.etag <> candidate.etag then -1L
+        else current.index - candidate.index
 
 [<AutoOpen>]
 module Internal =

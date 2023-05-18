@@ -1003,16 +1003,15 @@ module Token =
     let create: Position -> StreamToken = Some >> create_
     let empty = create_ None
     let (|Unpack|) (token: StreamToken): Position option = let t = unbox<Token> token.value in t.pos
-    /// returns positive if candidate is newer, 0 if equal
-    let compare struct (Unpack currentPos, Unpack candidatePos) =
-        match currentPos, candidatePos with
-        | Some currentPos, Some xPos ->
-            let currentVersion, newVersion = currentPos.index, xPos.index
-            let currentETag, newETag = currentPos.etag, xPos.etag
-            if currentETag <> newETag then 1L else newVersion - currentVersion
-        | None, Some _ -> 1L
-        | Some _, None
-        | None, None  -> 0L
+    /// Like other .NET CompareTo operators: negative if current is superseded by candidate, 0 if equivalent, positive if candidate stale
+    let compare struct (Unpack current, Unpack candidate) =
+        match current, candidate with
+        | Some current, Some candidate ->
+            if current.etag <> candidate.etag then -1L
+            else current.index - candidate.index
+        | None, Some _ -> -1
+        | Some _, None -> 1
+        | None, None -> 0
 
 [<AutoOpen>]
 module Internal =

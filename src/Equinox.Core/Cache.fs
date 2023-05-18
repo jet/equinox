@@ -21,10 +21,10 @@ type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state
     let mutable currentState = initialState
     member x.UpdateIfNewer(compare: struct (StreamToken * StreamToken) -> int64, other: CacheEntry<'state>) =
         lock x <| fun () ->
-            let struct (token, state) = other.Value
-            let res = compare (currentToken, token)
-            if res > 0 then // Accept fresher values, ignore equal or older
-                currentToken <- token
+            let struct (candidateToken, state) = other.Value
+            let res = compare (currentToken, candidateToken)
+            if res < 0 then // Accept fresher values (<0 means currentToken comes *before* token), ignore equal or older
+                currentToken <- candidateToken
                 currentState <- state
 
     member x.Value: struct (StreamToken * 'state) =
