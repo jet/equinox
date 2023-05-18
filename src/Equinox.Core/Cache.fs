@@ -23,7 +23,7 @@ type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state
         lock x <| fun () ->
             let struct (token, state) = other.Value
             let res = compare (currentToken, token)
-            if res < 0 then // Accept fresher values, ignore equal or older
+            if res > 0 then // Accept fresher values, ignore equal or older
                 currentToken <- token
                 currentState <- state
 
