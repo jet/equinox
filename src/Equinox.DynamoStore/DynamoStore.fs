@@ -1010,8 +1010,8 @@ module Token =
             if current.etag <> candidate.etag then -1L
             else current.index - candidate.index
         | None, Some _ -> -1
-        | Some _, None -> 1
         | None, None -> 0
+        | Some _, None -> 1
 
 [<AutoOpen>]
 module Internal =
