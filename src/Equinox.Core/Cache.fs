@@ -19,6 +19,9 @@ type ICache =
 type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state) =
     let mutable currentToken = initialToken
     let mutable currentState = initialState
+    member x.Value: struct (StreamToken * 'state) =
+        lock x <| fun () ->
+            currentToken, currentState
     member x.UpdateIfNewer(compare: struct (StreamToken * StreamToken) -> int64, other: CacheEntry<'state>) =
         lock x <| fun () ->
             let struct (candidateToken, state) = other.Value
@@ -26,10 +29,6 @@ type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state
             if res < 0 then // Accept fresher values (<0 means currentToken comes *before* token), ignore equal or older
                 currentToken <- candidateToken
                 currentState <- state
-
-    member x.Value: struct (StreamToken * 'state) =
-        lock x <| fun () ->
-            currentToken, currentState
 
 namespace Equinox
 
@@ -62,16 +61,14 @@ type Cache private (inner: MemoryCache) =
         config.Add("cacheMemoryLimitMegabytes", string sizeMb);
         Cache(new MemoryCache(name, config))
     interface ICache with
+        member _.TryGet key =
+            match inner.Get key with
+            | null -> ValueNone |> Task.FromResult
+            | :? CacheEntry<'state> as existingEntry -> ValueSome existingEntry.Value |> Task.FromResult
+            | x -> failwithf "TryGet Incompatible cache entry %A" x
         member _.UpdateIfNewer(key, compare, options, token, state) =
             let freshEntry = CacheEntry(token, state)
             match inner.AddOrGetExisting(key, freshEntry, CachingStrategy.toPolicy options) with
             | null -> Task.FromResult()
             | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer(compare, freshEntry); Task.FromResult()
             | x -> failwithf "UpdateIfNewer Incompatible cache entry %A" x
-
-        member _.TryGet key =
-            match inner.Get key with
-            | null -> ValueNone |> Task.FromResult
-            | :? CacheEntry<'state> as existingEntry -> ValueSome existingEntry.Value |> Task.FromResult
-            | x -> failwithf "TryGet Incompatible cache entry %A" x
-
