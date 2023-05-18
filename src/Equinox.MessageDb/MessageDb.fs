@@ -392,7 +392,7 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
     let fetch state f = task { let! token', events = f in return struct (token', fold state (Seq.ofArray events)) }
     let reload (log, sn, leader, token, state) ct = fetch state (context.Reload(log, sn, leader, token, codec.TryDecode, ct))
     interface ICategory<'event, 'state, 'context> with
-        member _.Load(log, categoryName, streamId, streamName, _allowStale, requireLeader, ct) =
+        member _.Load(log, categoryName, streamId, streamName, _maxStaleness, requireLeader, ct) =
             fetch initial (loadAlgorithm log categoryName streamId streamName requireLeader ct)
         member x.TrySync(log, categoryName, streamId, streamName, ctx, _maybeInit, token, state, events, ct) = task {
             let encode e = codec.Encode(ctx, e)

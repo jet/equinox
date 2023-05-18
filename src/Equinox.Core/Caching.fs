@@ -3,7 +3,6 @@ module Equinox.Core.Caching
 open Equinox.Core.Tracing
 open Serilog
 open System
-open System.Diagnostics
 open System.Threading
 open System.Threading.Tasks
 
@@ -15,7 +14,7 @@ type private Decorator<'event, 'state, 'context, 'cat when 'cat :> ICategory<'ev
     (category: 'cat, tryGet, updateCache: string -> struct (StreamToken * 'state) -> Task<unit>) =
     let tryRead key = task {
         let! cacheItem = tryGet key
-        let act = Activity.Current
+        let act = System.Diagnostics.Activity.Current
         if act <> null then act.AddCacheHit(ValueOption.isSome cacheItem) |> ignore
         return cacheItem }
     let save streamName (inner: CancellationToken -> Task<struct (StreamToken * 'state)>) ct = task {

@@ -1313,8 +1313,9 @@ type CosmosStoreContext(storeClient: CosmosStoreClient, tipOptions, queryOptions
         let store = StoreClient(cg.Container, cg.Fallback, x.QueryOptions, x.TipOptions)
         struct (store, streamName, cg.InitializationGate)
 
-/// For CosmosDB, caching is critical in order to reduce RU consumption.
-/// As such, it can often be omitted, particularly if streams are short or there are snapshots being maintained
+/// For CosmosDB, caching is typically a central aspect of managing RU consumption to maintain performance and capacity.
+/// The cache holds the Tip document's etag, which enables use of etag-contingent Reads (which cost only 1RU in the case where the document is unchanged)
+/// Omitting can make sense in specific cases; if cache hit rates are low, or there's always a usable snapshot in a relatively small Tip document
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
     /// Do not apply any caching strategy for this Stream.
@@ -1468,7 +1469,7 @@ type EventsContext internal
             return token, events }
 
     /// Establishes the current position of the stream in as efficient a manner as possible
-    /// (The ideal situation is that the preceding token is supplied as input in order to avail of 1RU low latency state checks)
+    /// (The ideal situation is that the preceding token is supplied as input in order to avail of 1RU low latency validation in the case of an unchanged Tip)
     member _.Sync(stream, [<O; D null>] ?position: Position): Async<Position> = async {
         let! ct = Async.CancellationToken
         let! Token.Unpack pos' = store.GetPosition(log, stream, ct, ?pos = position) |> Async.AwaitTaskCorrect

@@ -1,11 +1,10 @@
 ﻿namespace Equinox.Core
 
-open System
 open System.Threading.Tasks
 
 type [<NoEquality; NoComparison; Struct>] CacheItemOptions =
-    | AbsoluteExpiration of ae: DateTimeOffset
-    | RelativeExpiration of re: TimeSpan
+    | AbsoluteExpiration of ae: System.DateTimeOffset
+    | RelativeExpiration of re: System.TimeSpan
 
 [<AllowNullLiteral>]
 type CacheEntry<'state>(initialToken: StreamToken, initialState: 'state) =
@@ -32,30 +31,6 @@ open Equinox.Core
 open System.Runtime.Caching
 open System.Threading.Tasks
 
-type Cache(name, sizeMb: int) =
-
-    let cache =
-        let config = System.Collections.Specialized.NameValueCollection(1)
-        config.Add("cacheMemoryLimitMegabytes", string sizeMb);
-        new MemoryCache(name, config)
-
-    let toPolicy = function
-        | AbsoluteExpiration absolute -> CacheItemPolicy(AbsoluteExpiration = absolute)
-        | RelativeExpiration relative -> CacheItemPolicy(SlidingExpiration = relative)
-
-    interface ICache with
-        member _.UpdateIfNewer(key, options, supersedes, entry) =
-            match cache.AddOrGetExisting(key, box entry, toPolicy options) with
-            | null -> Task.FromResult()
-            | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer(supersedes, entry); Task.FromResult()
-            | x -> failwithf "UpdateIfNewer Incompatible cache entry %A" x
-
-        member _.TryGet key =
-            match cache.Get key with
-            | null -> ValueNone |> Task.FromResult
-            | :? CacheEntry<'state> as existingEntry -> ValueSome existingEntry.Value |> Task.FromResult
-            | x -> failwithf "TryGet Incompatible cache entry %A" x
-
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
     /// Retain a single 'state per streamName.
@@ -67,6 +42,29 @@ type CachingStrategy =
     /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
     /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
     | FixedTimeSpan of ICache * period: System.TimeSpan
-    /// Prefix is used to segregate multiple folds per stream when they are stored in the cache.
+    /// Prefix is used to segregate multiple folded states per stream when they are stored in the cache.
     /// Semantics are otherwise identical to <c>SlidingWindow</c>.
     | SlidingWindowPrefixed of ICache * window: System.TimeSpan * prefix: string
+module private CachingStrategy =
+    let toPolicy = function
+        | AbsoluteExpiration absolute -> CacheItemPolicy(AbsoluteExpiration = absolute)
+        | RelativeExpiration relative -> CacheItemPolicy(SlidingExpiration = relative)
+
+type Cache private (inner: MemoryCache) =
+    new (name, sizeMb: int) =
+        let config = System.Collections.Specialized.NameValueCollection(1)
+        config.Add("cacheMemoryLimitMegabytes", string sizeMb);
+        Cache(new MemoryCache(name, config))
+    interface ICache with
+        member _.UpdateIfNewer(key, options, supersedes, entry) =
+            match inner.AddOrGetExisting(key, box entry, CachingStrategy.toPolicy options) with
+            | null -> Task.FromResult()
+            | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer(supersedes, entry); Task.FromResult()
+            | x -> failwithf "UpdateIfNewer Incompatible cache entry %A" x
+
+        member _.TryGet key =
+            match inner.Get key with
+            | null -> ValueNone |> Task.FromResult
+            | :? CacheEntry<'state> as existingEntry -> ValueSome existingEntry.Value |> Task.FromResult
+            | x -> failwithf "TryGet Incompatible cache entry %A" x
+
