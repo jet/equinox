@@ -5,6 +5,9 @@ type [<NoEquality; NoComparison; Struct>] CacheItemOptions =
     | RelativeExpiration of re: System.TimeSpan
 
 type ICache =
+    abstract member TryGet:
+                          key: string
+                           -> System.Threading.Tasks.Task<struct (StreamToken * 'state) voption>
     abstract member UpdateIfNewer:
                           key: string
                           * compareTokens:(struct (StreamToken * StreamToken) -> int64)
@@ -12,9 +15,6 @@ type ICache =
                           * token: StreamToken
                           * state: 'state
                            -> System.Threading.Tasks.Task<unit>
-    abstract member TryGet:
-                          key: string
-                           -> System.Threading.Tasks.Task<struct (StreamToken * 'state) voption>
 
 namespace Equinox
 
