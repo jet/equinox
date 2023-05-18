@@ -56,7 +56,7 @@ type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state
         let timestamp = System.Diagnostics.Stopwatch.GetTimestamp()
         let validatedOrTentativeLoadTask =
             let struct (current, cached, lastVerified) = // note we need the lastVerified to be consistent so needs to be under the lock
-                lock x <| fun () -> struct (cell, tryGet(), lastVerified)
+                lock x <| fun () -> struct (cell, tryGet (), lastVerified)
             match cached with
             | ValueSome cachedValue as cachedTokenAndState ->
                 if Stopwatch.TicksToSeconds(timestamp - lastVerified) <= maxAge.TotalSeconds then Ok cachedValue
@@ -75,20 +75,22 @@ type Cache private (inner: System.Runtime.Caching.MemoryCache) =
         match inner.Get key with
         | null -> ValueNone
         | :? CacheEntry<'state> as existingEntry -> existingEntry.TryGetValue()
-        | x -> failwith $"TryGet Incompatible cache entry %A{x}"
+        | x -> failwith $"tryLoad Incompatible cache entry %A{x}"
+    let addOrGet key options entry =
+        match inner.AddOrGetExisting(key, entry, CacheItemOptions.toPolicy options) with
+        | null -> Ok entry
+        | :? CacheEntry<'state> as existingEntry -> Error existingEntry
+        | x -> failwith $"addOrGet Incompatible cache entry %A{x}"
     let getElseAddEmptyEntry key options =
-        let fresh = CacheEntry<'state>.CreateEmpty()
-        match inner.AddOrGetExisting(key, fresh, CacheItemOptions.toPolicy options) with
-        | null -> fresh
-        | :? CacheEntry<'state> as existingEntry -> existingEntry
-        | x -> failwith $"getElseAddEmptyEntry Incompatible cache entry %A{x}"
+        match addOrGet key options (CacheEntry<'state>.CreateEmpty()) with
+        | Ok fresh -> fresh
+        | Error existingEntry -> existingEntry
     let addOrMergeCacheEntry isStale key options struct (token, state) =
         let timestamp = System.Diagnostics.Stopwatch.GetTimestamp()
         let entry = CacheEntry(token, state, timestamp)
-        match inner.AddOrGetExisting(key, entry, CacheItemOptions.toPolicy options) with
-        | null -> () // Our fresh one got added
-        | :? CacheEntry<'state> as existingEntry -> existingEntry.MergeUpdates(isStale, token, state, timestamp)
-        | x -> failwith $"UpdateIfNewer Incompatible cache entry %A{x}"
+        match addOrGet key options entry with
+        | Ok _ -> () // Our fresh one got added
+        | Error existingEntry -> existingEntry.MergeUpdates(isStale, token, state, timestamp)
     new (name, sizeMb: int) =
         let config = System.Collections.Specialized.NameValueCollection(1)
         config.Add("cacheMemoryLimitMegabytes", string sizeMb);
