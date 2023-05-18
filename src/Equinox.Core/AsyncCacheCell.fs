@@ -17,24 +17,20 @@ type AsyncLazy<'T>(workflow: unit -> Task<'T>) =
         if t.Status <> TaskStatus.RanToCompletion then ValueNone
         else ValueSome t.Result
 
+    /// Used to rule out values where the computation yielded an exception or the result has now expired
+    member _.TryAwaitValid() = task {
+        let t = workflow.Value
+
+        // Determines if the last attempt completed, but failed; For TMI see https://stackoverflow.com/a/33946166/11635
+        if t.IsFaulted then return ValueNone
+        else
+            let! res = t
+            return ValueSome res }
+
     /// Await the outcome of the computation.
     member _.Await() = workflow.Value
 
     static member val Empty = AsyncLazy(fun () -> Task.FromException<'T>(System.InvalidOperationException "Uninitialized AsyncLazy"))
-
-module private SingleUpdaterGate =
-
-    /// Gets or asynchronously recomputes a cached value depending on expiry and availability
-    let await check load (cell: byref<AsyncLazy<'T>>) =
-        // Each concurrent execution takes a copy of the cell, and attempts to reuse the value; later used to ensure only one triggers the workflow
-        let current = cell
-        if current.TryCompleted() |> ValueOption.exists check then current
-        else
-            // Prepare a new instance, with cancellation under our control (it won't start until the first Await on the LazyTask triggers it though)
-            let newInstance = AsyncLazy<'T>(load)
-            // If there are concurrent executions, the first through the gate wins; everybody else awaits the instance the winner wrote
-            let _ = Interlocked.CompareExchange(&cell, newInstance, current)
-            cell
 
 /// Generic async lazy caching implementation that admits expiration/recomputation/retry on exception semantics.
 /// If `workflow` fails, all readers entering while the load/refresh is in progress will share the failure
@@ -45,9 +41,18 @@ type AsyncCacheCell<'T>(workflow, ?isExpired: 'T -> bool) =
     let mutable cell = AsyncLazy<'T>.Empty
 
     /// Synchronously check the value remains valid (to enable short-circuiting an Await step where value not required)
-    member _.IsValid() = cell.TryCompleted() |> ValueOption.exists isValid
+    member _.IsValid() =
+        cell.TryCompleted() |> ValueOption.exists isValid
 
     /// Gets or asynchronously recomputes value depending on whether value passes the validity check
-    member _.Await(ct : CancellationToken) =
-        let target = SingleUpdaterGate.await isValid (fun () -> workflow ct) &cell
-        target.Await()
+    member _.Await(ct : CancellationToken) = task {
+        // Each concurrent execution takes a copy of the cell, and attempts to reuse the value; later used to ensure only one triggers the workflow
+        let current = cell
+        match! current.TryAwaitValid() with
+        | ValueSome res when isValid res -> return res
+        | _ ->
+            // Prepare a new instance, with cancellation under our control (it won't start until the first Await on the LazyTask triggers it though)
+            let newInstance = AsyncLazy<'T>(fun () -> workflow ct)
+            // If there are concurrent executions, the first through the gate wins; everybody else awaits the instance the winner wrote
+            let _ = Interlocked.CompareExchange(&cell, newInstance, current)
+            return! cell.Await() }
