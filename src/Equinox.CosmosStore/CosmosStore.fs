@@ -1331,12 +1331,12 @@ type CachingStrategy =
     /// Unless <c>LoadOption.AnyCachedValue</c> or <c>AllowStale</c> are used, cache hits still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
     // NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
     // track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the `u`nfolds in Tip
-    | SlidingWindow of ICache * window: TimeSpan
+    | SlidingWindow of Equinox.Cache * window: TimeSpan
     /// Retain a single 'state per streamName, together with the associated etag.
     /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
     /// Typically combined with an `Equinox.LoadOption` to minimize loads.
     /// Unless <c>LoadOption.AnyCachedValue</c> or <c>AllowStale</c> are used, cache hits still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
-    | FixedTimeSpan of ICache * period: TimeSpan
+    | FixedTimeSpan of Equinox.Cache * period: TimeSpan
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event, 'state> =

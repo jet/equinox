@@ -1287,12 +1287,12 @@ type CachingStrategy =
     /// Unless a <c>LoadOption</c> is used, each cache hit still involves a read roundtrip (RU charges incurred, transport latency) though deserialization is skipped due to etag match
     // NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
     // track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the unfolds in Tip
-    | SlidingWindow of ICache * window: TimeSpan
+    | SlidingWindow of Equinox.Cache * window: TimeSpan
     /// Retain a single 'state per streamName, together with the associated etag.
     /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
     /// Typically combined with an `Equinox.LoadOption` to minimize loads.
     /// Unless a <c>LoadOption</c> is used, each cache hit still involves a read roundtrip (RU charges incurred, transport latency) though deserialization is skipped due to etag match
-    | FixedTimeSpan of ICache * period: TimeSpan
+    | FixedTimeSpan of Equinox.Cache * period: TimeSpan
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event, 'state> =
