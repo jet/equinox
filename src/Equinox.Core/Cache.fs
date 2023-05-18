@@ -36,13 +36,10 @@ type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state
     let mutable currentToken = initialToken
     let mutable currentState = initialState
     let mutable lastVerified = initialVerified
-    let mutable cell = AsyncLazy.Empty
     let tryGet () =
         if lastVerified = 0 then ValueNone
         else ValueSome (struct (currentToken, currentState))
-    let tryGetWithLastVerified () =
-        if lastVerified = 0 then ValueNone
-        else ValueSome (struct (currentToken, currentState, lastVerified))
+    let mutable cell = AsyncLazy.Empty
     static member CreateEmpty() =
         new CacheEntry<'state>(Unchecked.defaultof<StreamToken>, Unchecked.defaultof<'state>, 0)
     member x.TryGetValue(): (struct (StreamToken * 'state)) voption =
@@ -54,25 +51,24 @@ type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state
                 currentState <- state
                 if lastVerified < timestamp then // Don't count attempts to overwrite with stale state as verification
                     lastVerified <- timestamp
-    // Follows high level flow of SingleUpdaterGate.await - read the comments there, and the AsyncBatchingGate tests first!
+    // Follows high level flow of AsyncCacheCell.Await - read the comments there, and the AsyncCacheCell tests first!
     member x.ReadThrough(maxAge: TimeSpan, isStale, load) : Task<struct (StreamToken * 'state)> = task {
-        let now = System.Diagnostics.Stopwatch.GetTimestamp()
-        let struct (current, entry) =
-            lock x <| fun () -> struct (cell, tryGetWithLastVerified())
+        let timestamp = System.Diagnostics.Stopwatch.GetTimestamp()
+        let struct (current, cached, lastVerified) = // note we need the lastVerified to be consistent so needs to be under the lock
+            lock x <| fun () -> struct (cell, tryGet(), lastVerified)
         let freshOrFetch =
-            match entry with
-            | ValueSome (token, state, lastVerified) ->
-                let cached = struct (token, state)
-                if Stopwatch.ElapsedSeconds(now, lastVerified) <= maxAge.TotalSeconds then Ok cached
-                else Error (load (ValueSome cached))
-            | ValueNone -> Error (load ValueNone)
+            match cached with
+            | ValueSome cachedValue as cachedTokenAndState ->
+                if Stopwatch.TicksToSeconds(timestamp - lastVerified) <= maxAge.TotalSeconds then Ok cachedValue
+                else Error (load cachedTokenAndState)
+            | ValueNone as noTokenAndState -> Error (load noTokenAndState)
         match freshOrFetch with
         | Ok validatedCachedState -> return validatedCachedState
         | Error loadOrReload ->
             let newInstance = AsyncLazy(loadOrReload)
             let _ = System.Threading.Interlocked.CompareExchange(&cell, newInstance, current)
             let! struct (token, state) as res = cell.Await()
-            if obj.ReferenceEquals(cell, current) then x.MergeUpdates(isStale, token, state, now)
+            if obj.ReferenceEquals(cell, current) then x.MergeUpdates(isStale, token, state, timestamp)
             return res }
 
 type Cache private (inner: System.Runtime.Caching.MemoryCache) =
