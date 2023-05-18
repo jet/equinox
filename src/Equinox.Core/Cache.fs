@@ -16,20 +16,6 @@ type ICache =
                           key: string
                            -> System.Threading.Tasks.Task<struct (StreamToken * 'state) voption>
 
-type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state) =
-    let mutable currentToken = initialToken
-    let mutable currentState = initialState
-    member x.Value: struct (StreamToken * 'state) =
-        lock x <| fun () ->
-            currentToken, currentState
-    member x.UpdateIfNewer(compare: struct (StreamToken * StreamToken) -> int64, other: CacheEntry<'state>) =
-        lock x <| fun () ->
-            let struct (candidateToken, state) = other.Value
-            let res = compare (currentToken, candidateToken)
-            if res < 0 then // Accept fresher values (<0 means currentToken comes *before* token), ignore equal or older
-                currentToken <- candidateToken
-                currentState <- state
-
 namespace Equinox
 
 open Equinox.Core
@@ -54,6 +40,20 @@ module private CachingStrategy =
     let toPolicy = function
         | AbsoluteExpiration absolute -> CacheItemPolicy(AbsoluteExpiration = absolute)
         | RelativeExpiration relative -> CacheItemPolicy(SlidingExpiration = relative)
+
+type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state) =
+    let mutable currentToken = initialToken
+    let mutable currentState = initialState
+    member x.Value: struct (StreamToken * 'state) =
+        lock x <| fun () ->
+            currentToken, currentState
+    member x.UpdateIfNewer(compare: struct (StreamToken * StreamToken) -> int64, other: CacheEntry<'state>) =
+        lock x <| fun () ->
+            let struct (candidateToken, state) = other.Value
+            let res = compare (currentToken, candidateToken)
+            if res < 0 then // Accept fresher values (<0 means currentToken comes *before* token), ignore equal or older
+                currentToken <- candidateToken
+                currentState <- state
 
 type Cache private (inner: MemoryCache) =
     new (name, sizeMb: int) =
