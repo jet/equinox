@@ -1,13 +1,22 @@
 ﻿namespace Equinox.Core
 
-open System.Threading.Tasks
-
 type [<NoEquality; NoComparison; Struct>] CacheItemOptions =
     | AbsoluteExpiration of ae: System.DateTimeOffset
     | RelativeExpiration of re: System.TimeSpan
 
-[<AllowNullLiteral>]
-type CacheEntry<'state>(initialToken: StreamToken, initialState: 'state) =
+type ICache =
+    abstract member UpdateIfNewer:
+                          key: string
+                          * compareTokens:(struct (StreamToken * StreamToken) -> int64)
+                          * options: CacheItemOptions
+                          * token: StreamToken
+                          * state: 'state
+                           -> System.Threading.Tasks.Task<unit>
+    abstract member TryGet:
+                          key: string
+                           -> System.Threading.Tasks.Task<struct (StreamToken * 'state) voption>
+
+type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state) =
     let mutable currentToken = initialToken
     let mutable currentState = initialState
     member x.UpdateIfNewer(compare: struct (StreamToken * StreamToken) -> int64, other: CacheEntry<'state>) =
@@ -21,10 +30,6 @@ type CacheEntry<'state>(initialToken: StreamToken, initialState: 'state) =
     member x.Value: struct (StreamToken * 'state) =
         lock x <| fun () ->
             currentToken, currentState
-
-type ICache =
-    abstract member UpdateIfNewer: key: string * options: CacheItemOptions * (struct (StreamToken * StreamToken) -> int64) * entry: CacheEntry<'state> -> Task<unit>
-    abstract member TryGet: key: string -> Task<struct (StreamToken * 'state) voption>
 
 namespace Equinox
 
@@ -57,10 +62,11 @@ type Cache private (inner: MemoryCache) =
         config.Add("cacheMemoryLimitMegabytes", string sizeMb);
         Cache(new MemoryCache(name, config))
     interface ICache with
-        member _.UpdateIfNewer(key, options, compare, entry) =
-            match inner.AddOrGetExisting(key, box entry, CachingStrategy.toPolicy options) with
+        member _.UpdateIfNewer(key, compare, options, token, state) =
+            let freshEntry = CacheEntry(token, state)
+            match inner.AddOrGetExisting(key, freshEntry, CachingStrategy.toPolicy options) with
             | null -> Task.FromResult()
-            | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer(compare, entry); Task.FromResult()
+            | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer(compare, freshEntry); Task.FromResult()
             | x -> failwithf "UpdateIfNewer Incompatible cache entry %A" x
 
         member _.TryGet key =

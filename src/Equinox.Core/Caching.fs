@@ -10,48 +10,52 @@ type IReloadable<'state> =
     abstract Reload: log: ILogger * streamName: string * requireLeader: bool * streamToken: StreamToken * state: 'state * ct: CancellationToken
                      -> Task<struct (StreamToken * 'state)>
 
+let private tee f (inner: CancellationToken -> Task<struct (StreamToken * 'state)>) ct = task {
+    let! tokenAndState = inner ct
+    do! f tokenAndState
+    return tokenAndState }
+
 type private Decorator<'event, 'state, 'context, 'cat when 'cat :> ICategory<'event, 'state, 'context> and 'cat :> IReloadable<'state> >
-    (category: 'cat, cache : ICache, compare, updateCache: string -> struct (StreamToken * 'state) -> Task<unit>) =
+    (category: 'cat, cache: ICache, compareTokens, createKey, createOptions) =
     let tryRead key = task {
         let! cacheItem = cache.TryGet key
         let act = System.Diagnostics.Activity.Current
         if act <> null then act.AddCacheHit(ValueOption.isSome cacheItem) |> ignore
         return cacheItem }
-    let save streamName (inner: CancellationToken -> Task<struct (StreamToken * 'state)>) ct = task {
-        let! tokenAndState = inner ct
-        do! updateCache streamName tokenAndState
-        return tokenAndState }
+    let save key (inner: CancellationToken -> Task<struct (StreamToken * 'state)>) ct = task {
+        let! struct (token, state) as res = inner ct
+        do! cache.UpdateIfNewer(key, compareTokens, createOptions (), token, state)
+        return res }
     interface ICategory<'event, 'state, 'context> with
         member _.Load(log, categoryName, streamId, streamName, maxStaleness, requireLeader, ct) = task {
-            match! tryRead streamName with
-            | ValueNone -> return! save streamName (fun ct -> category.Load(log, categoryName, streamId, streamName, maxStaleness, requireLeader, ct)) ct
+            let key = createKey streamName
+            match! tryRead key with
+            | ValueNone -> return! save key (fun ct -> category.Load(log, categoryName, streamId, streamName, maxStaleness, requireLeader, ct)) ct
             | ValueSome tokenAndState when maxStaleness = TimeSpan.MaxValue -> return tokenAndState // read already updated TTL, no need to write
-            | ValueSome (token, state) -> return! save streamName (fun ct -> category.Reload(log, streamName, requireLeader, token, state, ct)) ct }
+            | ValueSome (token, state) -> return! save key (fun ct -> category.Reload(log, streamName, requireLeader, token, state, ct)) ct }
         member _.TrySync(log, categoryName, streamId, streamName, context, maybeInit, streamToken, state, events, ct) = task {
+            let save struct (token, state) = cache.UpdateIfNewer(createKey streamName, compareTokens, createOptions (), token, state)
             match! category.TrySync(log, categoryName, streamId, streamName, context, maybeInit, streamToken, state, events, ct) with
             | SyncResult.Written tokenAndState' ->
-                do! updateCache streamName tokenAndState'
+                do! save tokenAndState'
                 return SyncResult.Written tokenAndState'
             | SyncResult.Conflict resync ->
-                return SyncResult.Conflict (save streamName resync) }
+                return SyncResult.Conflict (tee save resync) }
 
-let private mkCacheEntry struct (initialToken: StreamToken, initialState: 'state) = CacheEntry<'state>(initialToken, initialState)
-let private updateWithSlidingExpiration (cache: ICache) (prefix: string) compare (slidingExpiration: TimeSpan) streamName value =
-    let options = CacheItemOptions.RelativeExpiration slidingExpiration
-    cache.UpdateIfNewer(prefix + streamName, options, compare, mkCacheEntry value)
-let private updateWithFixedTimeSpan (cache: ICache) (prefix: string) compare (period: TimeSpan) streamName value =
+let private mkKey prefix streamName = prefix + streamName
+
+let private updateWithSlidingExpiration (slidingExpiration: TimeSpan) =
+    fun () -> CacheItemOptions.RelativeExpiration slidingExpiration
+let private updateWithFixedTimeSpan (period: TimeSpan) () =
     let expirationPoint = let creationDate = DateTimeOffset.UtcNow in creationDate.Add period
-    let options = CacheItemOptions.AbsoluteExpiration expirationPoint
-    cache.UpdateIfNewer(prefix + streamName, options, compare, mkCacheEntry value)
+    CacheItemOptions.AbsoluteExpiration expirationPoint
 
-let private fixed_ cache compare period = struct (cache, updateWithFixedTimeSpan cache null compare period)
-let private sliding cache prefix compare window = struct (cache, updateWithSlidingExpiration cache prefix compare window)
-let private mapStrategy compare = function
-    | Equinox.CachingStrategy.FixedTimeSpan (cache, period) -> fixed_ cache compare period
-    | Equinox.CachingStrategy.SlidingWindow (cache, window) -> sliding cache null compare window
-    | Equinox.CachingStrategy.SlidingWindowPrefixed (cache, window, prefix) -> sliding cache prefix compare window
+let private mapStrategy = function
+    | Equinox.CachingStrategy.FixedTimeSpan (cache, period) -> struct (cache, mkKey null, updateWithFixedTimeSpan period)
+    | Equinox.CachingStrategy.SlidingWindow (cache, window) -> cache, mkKey null, updateWithSlidingExpiration window
+    | Equinox.CachingStrategy.SlidingWindowPrefixed (cache, window, prefix) -> cache, mkKey prefix, updateWithSlidingExpiration window
 
 let apply compare x (cat: 'cat when 'cat :> ICategory<'event, 'state, 'context> and 'cat :> IReloadable<'state>): ICategory<_, _, _> =
     match x with
     | None -> cat
-    | Some x -> let struct (cache, upd) = mapStrategy compare x in Decorator(cat, cache, compare, upd)
+    | Some x -> let struct (cache, createKey, createOptions) = mapStrategy x in Decorator(cat, cache, compare, createKey, createOptions)
