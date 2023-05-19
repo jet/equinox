@@ -22,25 +22,6 @@ open Equinox.Core
 open System.Runtime.Caching
 open System.Threading.Tasks
 
-[<NoComparison; NoEquality; RequireQualifiedAccess>]
-type CachingStrategy =
-    /// Retain a single 'state per streamName.
-    /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
-    /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
-    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
-    | SlidingWindow of ICache * window: System.TimeSpan
-    /// Retain a single 'state per streamName.
-    /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
-    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
-    | FixedTimeSpan of ICache * period: System.TimeSpan
-    /// Prefix is used to segregate multiple folded states per stream when they are stored in the cache.
-    /// Semantics are otherwise identical to <c>SlidingWindow</c>.
-    | SlidingWindowPrefixed of ICache * window: System.TimeSpan * prefix: string
-module private CachingStrategy =
-    let toPolicy = function
-        | AbsoluteExpiration absolute -> CacheItemPolicy(AbsoluteExpiration = absolute)
-        | RelativeExpiration relative -> CacheItemPolicy(SlidingExpiration = relative)
-
 type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state) =
     let mutable currentToken = initialToken
     let mutable currentState = initialState
@@ -55,6 +36,9 @@ type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state
                 currentState <- state
 
 type Cache private (inner: MemoryCache) =
+    static let toPolicy = function
+        | AbsoluteExpiration absolute -> CacheItemPolicy(AbsoluteExpiration = absolute)
+        | RelativeExpiration relative -> CacheItemPolicy(SlidingExpiration = relative)
     new (name, sizeMb: int) =
         let config = System.Collections.Specialized.NameValueCollection(1)
         config.Add("cacheMemoryLimitMegabytes", string sizeMb);
@@ -67,7 +51,21 @@ type Cache private (inner: MemoryCache) =
             | x -> failwithf "TryGet Incompatible cache entry %A" x
         member _.UpdateIfNewer(key, isStale, options, token, state) =
             let freshEntry = CacheEntry(token, state)
-            match inner.AddOrGetExisting(key, freshEntry, CachingStrategy.toPolicy options) with
+            match inner.AddOrGetExisting(key, freshEntry, toPolicy options) with
             | null -> Task.FromResult()
             | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer(isStale, freshEntry); Task.FromResult()
             | x -> failwithf "UpdateIfNewer Incompatible cache entry %A" x
+
+and [<NoComparison; NoEquality; RequireQualifiedAccess>] CachingStrategy =
+    /// Retain a single 'state per streamName.
+    /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
+    /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
+    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
+    | SlidingWindow of ICache * window: System.TimeSpan
+    /// Retain a single 'state per streamName.
+    /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
+    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
+    | FixedTimeSpan of ICache * period: System.TimeSpan
+    /// Prefix is used to segregate multiple folded states per stream when they are stored in the cache.
+    /// Semantics are otherwise identical to <c>SlidingWindow</c>.
+    | SlidingWindowPrefixed of ICache * window: System.TimeSpan * prefix: string
