@@ -58,11 +58,15 @@ type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state
         match lock x fetchStateConsistently with
         | _, ValueSome cachedValue, ageS when ageS <= maxAge.TotalSeconds ->
             return cachedValue
-        | current, maybeBaseState, _ ->
+        | ourInitialCellState, maybeBaseState, _ -> // If it's not good enough for us, trigger a request (though someone may have beaten us to that)
+            // TODO add tests and complete the impl
+            // TODO guarantee one in-flight request (atm only cases where the check overlaps will share attempts as we do not yet TryAwaitValid etc)
+            // TODO it may be necessary for the cell result to include its timestamp?
             let newInstance = AsyncLazy(load maybeBaseState)
-            let _ = System.Threading.Interlocked.CompareExchange(&cell, newInstance, current)
+            let _ = System.Threading.Interlocked.CompareExchange(&cell, newInstance, ourInitialCellState)
             let! struct (token, state) as res = cell.Await()
-            if obj.ReferenceEquals(cell, current) then x.MergeUpdates(isStale, token, state, timestamp)
+            if obj.ReferenceEquals(cell, ourInitialCellState) then // Only the one that shot the bear
+                x.MergeUpdates(isStale, token, state, timestamp) // gets to dictate the lastVerified timestamp
             return res }
 
 type Cache private (inner: System.Runtime.Caching.MemoryCache) =
@@ -92,7 +96,7 @@ type Cache private (inner: System.Runtime.Caching.MemoryCache) =
         Cache(new System.Runtime.Caching.MemoryCache(name, config))
     interface ICache with
         // if there's a non-zero maxAge, concurrent read attempts share the roundtrip (and its fate, if it throws)
-        member x.Load(key, maxAge, isStale, options, loadOrReload) = task {
+        member _.Load(key, maxAge, isStale, options, loadOrReload) = task {
             let loadOrReload maybeBaseState () =
                 let act = System.Diagnostics.Activity.Current
                 if act <> null then act.AddCacheHit(ValueOption.isSome maybeBaseState) |> ignore
