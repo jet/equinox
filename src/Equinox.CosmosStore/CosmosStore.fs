@@ -963,10 +963,9 @@ module Token =
     //            Alternately, can mirror DynamoStore scheme where the size is maintained in the Tip, and updated as batches are calved
     let create pos: StreamToken = { value = box { pos = pos }; version = pos.index; streamBytes = -1 }
     let (|Unpack|) (token: StreamToken): Position = let t = unbox<Token> token.value in t.pos
-    /// Like other .NET CompareTo operators: negative if current is superseded by candidate, 0 if equivalent, positive if candidate stale
-    let compare struct (Unpack current, Unpack candidate) =
-        if current.etag <> candidate.etag then -1L
-        else current.index - candidate.index
+
+    // TOCONSIDER for RollingState, comparing etags is not meaningful - but the (server assigned) timestamp of the tip document can be used to filter out stale updates
+    let isStale current candidate = current.version > candidate.version
 
 [<AutoOpen>]
 module Internal =
@@ -1393,7 +1392,7 @@ type CosmosStoreCategory<'event, 'state, 'context> internal (resolveInner, empty
         let resolveCategory (categoryName, container) =
             let createCategory _name: ICategory<_, _, 'context> =
                 Category<'event, 'state, 'context>(container, codec, fold, initial, isOrigin, checkUnfolds, compressUnfolds, mapUnfolds)
-                |> Caching.apply Token.compare caching
+                |> Caching.apply Token.isStale caching
             categories.GetOrAdd(categoryName, createCategory)
         let resolveInner categoryName streamId =
             let struct (container, streamName, maybeContainerInitializationGate) = context.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId)

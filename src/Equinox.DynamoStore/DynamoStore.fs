@@ -1003,15 +1003,14 @@ module Token =
     let create: Position -> StreamToken = Some >> create_
     let empty = create_ None
     let (|Unpack|) (token: StreamToken): Position option = let t = unbox<Token> token.value in t.pos
-    /// Like other .NET CompareTo operators: negative if current is superseded by candidate, 0 if equivalent, positive if candidate stale
-    let compare struct (Unpack current, Unpack candidate) =
-        match current, candidate with
-        | Some current, Some candidate ->
-            if current.etag <> candidate.etag then -1L
-            else current.index - candidate.index
-        | None, Some _ -> -1
-        | None, None -> 0
-        | Some _, None -> 1
+
+    // TOCONSIDER for RollingState, comparing etags is not meaningful, and they are under our control;
+    //            => should be replaced with a `revision` that increments if `index` is not changing as part of a write
+    let isStale (Unpack currentPos) (Unpack candidatePos) =
+        match currentPos, candidatePos with
+        | Some _, None -> true
+        | None, _ -> false
+        | Some current, Some candidate -> current.index > candidate.index
 
 [<AutoOpen>]
 module Internal =
@@ -1345,7 +1344,7 @@ type DynamoStoreCategory<'event, 'state, 'context>(resolveInner, empty) =
         let resolveCategory (categoryName, container) =
             let createCategory _name: ICategory<_, _, 'context> =
                 Category<'event, 'state, 'context>(container, codec, fold, initial, isOrigin, checkUnfolds, mapUnfolds)
-                |> Caching.apply Token.compare caching
+                |> Caching.apply Token.isStale caching
             categories.GetOrAdd(categoryName, createCategory)
         let resolveInner categoryName streamId =
             let struct (container, streamName) = context.ResolveContainerClientAndStreamName(categoryName, streamId)

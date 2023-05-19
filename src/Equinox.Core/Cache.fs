@@ -10,7 +10,7 @@ type ICache =
                            -> System.Threading.Tasks.Task<struct (StreamToken * 'state) voption>
     abstract member UpdateIfNewer:
                           key: string
-                          * compareTokens:(struct (StreamToken * StreamToken) -> int64)
+                          * isStale: System.Func<StreamToken, StreamToken, bool>
                           * options: CacheItemOptions
                           * token: StreamToken
                           * state: 'state
@@ -47,11 +47,10 @@ type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state
     member x.Value: struct (StreamToken * 'state) =
         lock x <| fun () ->
             currentToken, currentState
-    member x.UpdateIfNewer(compare: struct (StreamToken * StreamToken) -> int64, other: CacheEntry<'state>) =
+    member x.UpdateIfNewer(isStale: System.Func<StreamToken, StreamToken, bool>, other: CacheEntry<'state>) =
         lock x <| fun () ->
             let struct (candidateToken, state) = other.Value
-            let res = compare (currentToken, candidateToken)
-            if res < 0 then // Accept fresher values (<0 means currentToken comes *before* token), ignore equal or older
+            if not (isStale.Invoke(currentToken, candidateToken)) then
                 currentToken <- candidateToken
                 currentState <- state
 
@@ -66,9 +65,9 @@ type Cache private (inner: MemoryCache) =
             | null -> ValueNone |> Task.FromResult
             | :? CacheEntry<'state> as existingEntry -> ValueSome existingEntry.Value |> Task.FromResult
             | x -> failwithf "TryGet Incompatible cache entry %A" x
-        member _.UpdateIfNewer(key, compare, options, token, state) =
+        member _.UpdateIfNewer(key, isStale, options, token, state) =
             let freshEntry = CacheEntry(token, state)
             match inner.AddOrGetExisting(key, freshEntry, CachingStrategy.toPolicy options) with
             | null -> Task.FromResult()
-            | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer(compare, freshEntry); Task.FromResult()
+            | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer(isStale, freshEntry); Task.FromResult()
             | x -> failwithf "UpdateIfNewer Incompatible cache entry %A" x

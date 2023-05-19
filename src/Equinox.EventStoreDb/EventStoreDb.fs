@@ -285,8 +285,7 @@ module Token =
     let ofPreviousStreamVersionAndCompactionEventDataIndex (Unpack token) compactionEventDataIndex eventsLength batchSize streamVersion': StreamToken =
         ofCompactionEventNumber (Some (token.streamVersion + 1L + int64 compactionEventDataIndex)) eventsLength batchSize streamVersion'
 
-    /// Like other .NET CompareTo operators: negative if current is superseded by candidate, 0 if equivalent, positive if candidate stale
-    let compare struct (current, candidate) = current.version - candidate.version
+    let isStale current candidate = current.version > candidate.version
 
 type EventStoreConnection(readConnection, [<O; D(null)>] ?writeConnection, [<O; D(null)>] ?readRetryPolicy, [<O; D(null)>] ?writeRetryPolicy) =
     member _.ReadConnection = readConnection
@@ -430,7 +429,7 @@ type EventStoreCategory<'event, 'state, 'context> internal (resolveInner, empty)
                 + "mixing AccessStrategy.LatestKnownEvent with Caching at present."
                 |> invalidOp
             | _ -> ()
-        let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.compare caching
+        let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
         let resolveInner categoryName streamId = struct (cat, StreamName.render categoryName streamId, ValueNone)
         let empty = struct (context.TokenEmpty, initial)
         EventStoreCategory(resolveInner, empty)

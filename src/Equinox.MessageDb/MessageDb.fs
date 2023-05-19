@@ -280,8 +280,7 @@ module private Token =
         let estimatedSnapshotPos = previousVersion - (previousVersion % batchSize)
         nextVersion - estimatedSnapshotPos >= batchSize
 
-    /// Like other .NET CompareTo operators: negative if current is superseded by candidate, 0 if equivalent, positive if candidate stale
-    let compare struct (current, candidate) = current.version - candidate.version
+    let isStale current candidate = current.version > candidate.version
 
 module private Snapshot =
 
@@ -423,7 +422,7 @@ type MessageDbCategory<'event, 'state, 'context> internal (resolveInner, empty) 
         // As such, it can often be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
         [<O; D(null)>]?caching,
         [<O; D(null)>]?access) =
-        let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.compare caching
+        let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
         let resolveInner categoryName streamId = struct (cat, StreamName.render categoryName streamId, ValueNone)
         let empty = struct (context.TokenEmpty, initial)
         MessageDbCategory(resolveInner, empty)
