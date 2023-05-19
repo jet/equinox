@@ -54,21 +54,17 @@ type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state
     // Follows high level flow of AsyncCacheCell.Await - read the comments there, and the AsyncCacheCell tests first!
     member x.ReadThrough(maxAge: TimeSpan, isStale, load) : Task<struct (StreamToken * 'state)> = task {
         let timestamp = System.Diagnostics.Stopwatch.GetTimestamp()
-        let validatedOrTentativeLoadTask =
-            let struct (current, cached, lastVerified) = // note we need the lastVerified to be consistent so needs to be under the lock
-                lock x <| fun () -> struct (cell, tryGet (), lastVerified)
-            match cached with
-            | ValueSome cachedValue as cachedTokenAndState ->
-                if Stopwatch.TicksToSeconds(timestamp - lastVerified) <= maxAge.TotalSeconds then Ok cachedValue
-                else Error struct (current, AsyncLazy(load cachedTokenAndState))
-            | ValueNone as noTokenAndState -> Error (current, AsyncLazy(load noTokenAndState))
-        match validatedOrTentativeLoadTask with
-        | Ok validatedCachedState -> return validatedCachedState
-        | Error (current, newInstance) ->
-            let _ = System.Threading.Interlocked.CompareExchange(&cell, newInstance, current)
-            let! struct (token, state) as res = cell.Await()
-            if obj.ReferenceEquals(cell, current) then x.MergeUpdates(isStale, token, state, timestamp)
-            return res }
+        let struct (current, cached, lastVerified) = // we need the lastVerified to be consistent so needs to be under the lock
+            lock x <| fun () -> struct (cell, tryGet (), lastVerified)
+        match cached with
+        | ValueSome cachedValue when Stopwatch.TicksToSeconds(timestamp - lastVerified) <= maxAge.TotalSeconds -> return cachedValue
+        | maybeBaseState ->
+
+        let newInstance = AsyncLazy(load maybeBaseState)
+        let _ = System.Threading.Interlocked.CompareExchange(&cell, newInstance, current)
+        let! struct (token, state) as res = cell.Await()
+        if obj.ReferenceEquals(cell, current) then x.MergeUpdates(isStale, token, state, timestamp)
+        return res }
 
 type Cache private (inner: System.Runtime.Caching.MemoryCache) =
     let tryLoad key =
