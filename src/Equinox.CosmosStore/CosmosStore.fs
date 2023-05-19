@@ -965,6 +965,7 @@ module Token =
     let (|Unpack|) (token: StreamToken): Position = let t = unbox<Token> token.value in t.pos
 
     // TOCONSIDER for RollingState, comparing etags is not meaningful - but the (server assigned) timestamp of the tip document can be used to filter out stale updates
+    //            see also same function in DynamoStore - ideally the scheme would align - perhaps roundtripping a `revision` instead might make sense here too?
     let isStale current candidate = current.version > candidate.version
 
 [<AutoOpen>]

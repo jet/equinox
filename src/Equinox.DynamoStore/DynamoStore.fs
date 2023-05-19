@@ -1006,6 +1006,7 @@ module Token =
 
     // TOCONSIDER for RollingState, comparing etags is not meaningful, and they are under our control;
     //            => should be replaced with a `revision` that increments if `index` is not changing as part of a write
+    //            see also same function in CosmosStore - ideally the scheme would align
     let isStale (Unpack currentPos) (Unpack candidatePos) =
         match currentPos, candidatePos with
         | Some _, None -> true
