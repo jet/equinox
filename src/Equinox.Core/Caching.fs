@@ -59,4 +59,4 @@ let private mapStrategy = function
 let apply isStale x (cat: 'cat when 'cat :> ICategory<'event, 'state, 'context> and 'cat :> IReloadable<'state>): ICategory<_, _, _> =
     match x with
     | None -> cat
-    | Some x -> let struct (cache, createKey, createOptions) = mapStrategy x in Decorator(cat, cache, isStale, createKey, createOptions)
+    | Some x -> mapStrategy x |> fun struct (cache, createKey, createOptions) -> Decorator(cat, cache, isStale, createKey, createOptions)

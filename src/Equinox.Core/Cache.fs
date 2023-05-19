@@ -1,25 +1,33 @@
 ﻿namespace Equinox.Core
 
+open System
+open System.Runtime.Caching
+open System.Threading.Tasks
+
 type [<NoEquality; NoComparison; Struct>] CacheItemOptions =
-    | AbsoluteExpiration of ae: System.DateTimeOffset
-    | RelativeExpiration of re: System.TimeSpan
+    | AbsoluteExpiration of ae: DateTimeOffset
+    | RelativeExpiration of re: TimeSpan
+module internal CacheItemOptions =
+    let toPolicy = function
+        | AbsoluteExpiration absolute -> CacheItemPolicy(AbsoluteExpiration = absolute)
+        | RelativeExpiration relative -> CacheItemPolicy(SlidingExpiration = relative)
 
 type ICache =
     abstract member TryGet:
                           key: string
-                           -> System.Threading.Tasks.Task<struct (StreamToken * 'state) voption>
+                           -> Task<struct (StreamToken * 'state) voption>
     abstract member UpdateIfNewer:
                           key: string
                           * isStale: System.Func<StreamToken, StreamToken, bool>
                           * options: CacheItemOptions
                           * token: StreamToken
                           * state: 'state
-                           -> System.Threading.Tasks.Task<unit>
+                           -> Task<unit>
 
 namespace Equinox
 
 open Equinox.Core
-open System.Runtime.Caching
+open System
 open System.Threading.Tasks
 
 type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state) =
@@ -35,14 +43,11 @@ type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state
                 currentToken <- candidateToken
                 currentState <- state
 
-type Cache private (inner: MemoryCache) =
-    static let toPolicy = function
-        | AbsoluteExpiration absolute -> CacheItemPolicy(AbsoluteExpiration = absolute)
-        | RelativeExpiration relative -> CacheItemPolicy(SlidingExpiration = relative)
+type Cache private (inner: System.Runtime.Caching.MemoryCache) =
     new (name, sizeMb: int) =
         let config = System.Collections.Specialized.NameValueCollection(1)
         config.Add("cacheMemoryLimitMegabytes", string sizeMb);
-        Cache(new MemoryCache(name, config))
+        Cache(new System.Runtime.Caching.MemoryCache(name, config))
     interface ICache with
         member _.TryGet key =
             match inner.Get key with
@@ -51,21 +56,21 @@ type Cache private (inner: MemoryCache) =
             | x -> failwithf "TryGet Incompatible cache entry %A" x
         member _.UpdateIfNewer(key, isStale, options, token, state) =
             let freshEntry = CacheEntry(token, state)
-            match inner.AddOrGetExisting(key, freshEntry, toPolicy options) with
+            match inner.AddOrGetExisting(key, freshEntry, CacheItemOptions.toPolicy options) with
             | null -> Task.FromResult()
             | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer(isStale, freshEntry); Task.FromResult()
             | x -> failwithf "UpdateIfNewer Incompatible cache entry %A" x
 
-and [<NoComparison; NoEquality; RequireQualifiedAccess>] CachingStrategy =
+type [<NoComparison; NoEquality; RequireQualifiedAccess>] CachingStrategy =
     /// Retain a single 'state per streamName.
     /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
     /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
     /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
-    | SlidingWindow of ICache * window: System.TimeSpan
+    | SlidingWindow of ICache * window: TimeSpan
     /// Retain a single 'state per streamName.
     /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
     /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
-    | FixedTimeSpan of ICache * period: System.TimeSpan
+    | FixedTimeSpan of ICache * period: TimeSpan
     /// Prefix is used to segregate multiple folded states per stream when they are stored in the cache.
     /// Semantics are otherwise identical to <c>SlidingWindow</c>.
-    | SlidingWindowPrefixed of ICache * window: System.TimeSpan * prefix: string
+    | SlidingWindowPrefixed of ICache * window: TimeSpan * prefix: string
