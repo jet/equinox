@@ -54,8 +54,9 @@ type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state
     // Follows high level flow of AsyncCacheCell.Await - read the comments there, and the AsyncCacheCell tests first!
     member x.ReadThrough(maxAge: TimeSpan, isStale, load) : Task<struct (StreamToken * 'state)> = task {
         let timestamp = System.Diagnostics.Stopwatch.GetTimestamp()
-        match lock x (fun () -> struct (cell, tryGet (), lastVerified)) with // lastVerified to be consistent so needs to be under the lock
-        | _, ValueSome cachedValue, lastVerified when Stopwatch.TicksToSeconds(timestamp - lastVerified) <= maxAge.TotalSeconds ->
+        let fetchStateConsistently () = struct (cell, tryGet (), Stopwatch.TicksToSeconds(timestamp - lastVerified))
+        match lock x fetchStateConsistently with
+        | _, ValueSome cachedValue, ageS when ageS <= maxAge.TotalSeconds ->
             return cachedValue
         | current, maybeBaseState, _ ->
             let newInstance = AsyncLazy(load maybeBaseState)
