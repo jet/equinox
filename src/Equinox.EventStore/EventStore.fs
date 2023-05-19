@@ -458,7 +458,7 @@ type private Category<'event, 'state, 'context>(context: EventStoreContext, code
     let fetch state f = task { let! token', events = f in return struct (token', fold state (Seq.ofArray events)) }
     let reload (log, sn, leader, token, state) = fetch state (context.Reload(log, sn, leader, token, tryDecode, compactionPredicate))
     interface ICategory<'event, 'state, 'context> with
-        member _.Load(log, _categoryName, _streamId, streamName, _maxStaleness, requireLeader, _ct) =
+        member _.Load(log, _categoryName, _streamId, streamName, _maxAge, requireLeader, _ct) =
             fetch initial (loadAlgorithm log streamName requireLeader)
         member _.TrySync(log, _categoryName, _streamId, streamName, ctx, _maybeInit, (Token.Unpack token as streamToken), state, events, _ct) = task {
             let events =

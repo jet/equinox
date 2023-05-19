@@ -1078,7 +1078,7 @@ type internal Category<'event, 'state, 'context>
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
     interface ICategory<'event, 'state, 'context> with
-        member _.Load(log, _categoryName, _streamId, stream, _maxStaleness, _requireLeader, ct): Task<struct (StreamToken * 'state)> = task {
+        member _.Load(log, _categoryName, _streamId, stream, _maxAge, _requireLeader, ct): Task<struct (StreamToken * 'state)> = task {
             let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds, ct)
             return struct (token, fold initial events) }
         member _.TrySync(log, _categoryName, _streamId, streamName, ctx, maybeInit, (Token.Unpack pos as streamToken), state, events, ct) = task {

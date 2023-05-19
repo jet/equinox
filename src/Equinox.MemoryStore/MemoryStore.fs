@@ -72,7 +72,7 @@ module private Token =
 /// Represents the state of a set of streams in a style consistent withe the concrete Store types - no constraints on memory consumption (but also no persistence!).
 type private Category<'event, 'state, 'context, 'Format>(store: VolatileStore<'Format>, codec: FsCodec.IEventCodec<'event, 'Format, 'context>, fold, initial) =
     interface ICategory<'event, 'state, 'context> with
-        member _.Load(_log, _categoryName, _streamId, streamName, _maxStaleness, _requireLeader, _ct) =
+        member _.Load(_log, _categoryName, _streamId, streamName, _maxAge, _requireLeader, _ct) =
             match store.Load(streamName) with
             | null -> struct (Token.ofEmpty, initial) |> Task.FromResult
             | xs -> struct (Token.ofValue xs, fold initial (Seq.chooseV codec.TryDecode xs)) |> Task.FromResult

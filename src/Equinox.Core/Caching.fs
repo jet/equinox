@@ -27,11 +27,11 @@ type private Decorator<'event, 'state, 'context, 'cat when 'cat :> ICategory<'ev
         do! cache.UpdateIfNewer(key, compareTokens, createOptions (), token, state)
         return res }
     interface ICategory<'event, 'state, 'context> with
-        member _.Load(log, categoryName, streamId, streamName, maxStaleness, requireLeader, ct) = task {
+        member _.Load(log, categoryName, streamId, streamName, maxAge, requireLeader, ct) = task {
             let key = createKey streamName
             match! tryRead key with
-            | ValueNone -> return! save key (fun ct -> category.Load(log, categoryName, streamId, streamName, maxStaleness, requireLeader, ct)) ct
-            | ValueSome tokenAndState when maxStaleness = TimeSpan.MaxValue -> return tokenAndState // read already updated TTL, no need to write
+            | ValueNone -> return! save key (fun ct -> category.Load(log, categoryName, streamId, streamName, maxAge, requireLeader, ct)) ct
+            | ValueSome tokenAndState when maxAge = TimeSpan.MaxValue -> return tokenAndState // read already updated TTL, no need to write
             | ValueSome (token, state) -> return! save key (fun ct -> category.Reload(log, streamName, requireLeader, token, state, ct)) ct }
         member _.TrySync(log, categoryName, streamId, streamName, context, maybeInit, streamToken, state, events, ct) = task {
             let save struct (token, state) = cache.UpdateIfNewer(createKey streamName, compareTokens, createOptions (), token, state)

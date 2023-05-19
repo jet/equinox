@@ -8,7 +8,7 @@ open System.Threading.Tasks
 type ICategory<'event, 'state, 'context> =
     /// Obtain the state from the target stream
     abstract Load: log: ILogger * categoryName: string * streamId: string * streamName: string
-                   * maxStaleness: System.TimeSpan * requireLeader: bool
+                   * maxAge: System.TimeSpan * requireLeader: bool
                    * ct: CancellationToken -> Task<struct (StreamToken * 'state)>
 
     /// Given the supplied `token`, attempt to sync to the proposed updated `state'` by appending the supplied `events` to the underlying stream, yielding:
@@ -41,10 +41,10 @@ type Category<'event, 'state, 'context>
         { new Core.IStream<'event, 'state> with
             member _.LoadEmpty() =
                 empty
-            member _.Load(maxStaleness, requireLeader, ct) = task {
+            member _.Load(maxAge, requireLeader, ct) = task {
                 use act = source.StartActivity("Load", ActivityKind.Client)
-                if act <> null then act.AddStream(categoryName, streamId, streamName).AddLeader(requireLeader).AddStale(maxStaleness) |> ignore
-                return! inner.Load(log, categoryName, streamId, streamName, maxStaleness, requireLeader, ct) }
+                if act <> null then act.AddStream(categoryName, streamId, streamName).AddLeader(requireLeader).AddStale(maxAge) |> ignore
+                return! inner.Load(log, categoryName, streamId, streamName, maxAge, requireLeader, ct) }
             member _.TrySync(attempt, (token, originState), events, ct) = task {
                 use act = source.StartActivity("TrySync", ActivityKind.Client)
                 if act <> null then act.AddStream(categoryName, streamId, streamName).AddSyncAttempt(attempt) |> ignore
