@@ -23,7 +23,8 @@ type private Decorator<'event, 'state, 'context, 'cat when 'cat :> ICategory<'ev
                 | ValueSome (struct (token, state)) -> category.Reload(log, streamName, requireLeader, token, state, ct)
             return! cache.Load(createKey streamName, maxAge, isStale, createOptions (), loadOrReload) }
         member _.TrySync(log, categoryName, streamId, streamName, context, maybeInit, streamToken, state, events, ct) = task {
-            let save struct (token, state) = cache.Save(createKey streamName, isStale, createOptions (), token, state)
+            let timestamp = System.Diagnostics.Stopwatch.GetTimestamp()
+            let save struct (token, state) = cache.Save(createKey streamName, isStale, createOptions (), timestamp, token, state)
             match! category.TrySync(log, categoryName, streamId, streamName, context, maybeInit, streamToken, state, events, ct) with
             | SyncResult.Written tokenAndState' ->
                 save tokenAndState'

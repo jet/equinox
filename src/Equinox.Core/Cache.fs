@@ -22,6 +22,7 @@ type ICache =
     abstract member Save: key: string
                           * isStale: Func<StreamToken, StreamToken, bool>
                           * options: CacheItemOptions
+                          * timestamp: int64
                           * token: StreamToken * state: 'state
                           -> unit
 
@@ -30,7 +31,6 @@ namespace Equinox
 open Equinox.Core
 open Equinox.Core.Tracing
 open System
-open System.Threading.Tasks
 
 type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state, initialVerified: int64) =
     let mutable currentToken = initialToken
@@ -39,12 +39,12 @@ type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state
     let tryGet () =
         if lastVerified = 0 then ValueNone
         else ValueSome (struct (currentToken, currentState))
-    let mutable cell = AsyncLazy.Empty
+    let mutable cell = AsyncLazy<struct(int64 * (struct (StreamToken * 'state)))>.Empty
     static member CreateEmpty() =
         new CacheEntry<'state>(Unchecked.defaultof<StreamToken>, Unchecked.defaultof<'state>, 0)
     member x.TryGetValue(): (struct (StreamToken * 'state)) voption =
         lock x tryGet
-    member x.MergeUpdates(isStale: Func<StreamToken, StreamToken, bool>, token, state, timestamp) =
+    member x.MergeUpdates(isStale: Func<StreamToken, StreamToken, bool>, timestamp, token, state) =
         lock x <| fun () ->
             if not (isStale.Invoke(currentToken, token)) then
                 currentToken <- token
@@ -52,22 +52,26 @@ type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state
                 if lastVerified < timestamp then // Don't count attempts to overwrite with stale state as verification
                     lastVerified <- timestamp
     // Follows high level flow of AsyncCacheCell.Await - read the comments there, and the AsyncCacheCell tests first!
-    member x.ReadThrough(maxAge: TimeSpan, isStale, load) : Task<struct (StreamToken * 'state)> = task {
-        let timestamp = System.Diagnostics.Stopwatch.GetTimestamp()
-        let fetchStateConsistently () = struct (cell, tryGet (), Stopwatch.TicksToSeconds(timestamp - lastVerified))
+    member x.ReadThrough(maxAge: TimeSpan, isStale, load) = task {
+        let cacheEntryValidityCheckTimeStamp = System.Diagnostics.Stopwatch.GetTimestamp()
+        let isWithinMaxAge cachedValueTimestamp = Stopwatch.TicksToSeconds(cacheEntryValidityCheckTimeStamp - cachedValueTimestamp) <= maxAge.TotalSeconds
+        let fetchStateConsistently () = struct (cell, tryGet (), isWithinMaxAge lastVerified)
         match lock x fetchStateConsistently with
-        | _, ValueSome cachedValue, ageS when ageS <= maxAge.TotalSeconds ->
+        | _, ValueSome cachedValue, true ->
             return cachedValue
         | ourInitialCellState, maybeBaseState, _ -> // If it's not good enough for us, trigger a request (though someone may have beaten us to that)
-            // TODO add tests and complete the impl
-            // TODO guarantee one in-flight request (atm only cases where the check overlaps will share attempts as we do not yet TryAwaitValid etc)
-            // TODO it may be necessary for the cell result to include its timestamp?
-            let newInstance = AsyncLazy(load maybeBaseState)
-            let _ = System.Threading.Interlocked.CompareExchange(&cell, newInstance, ourInitialCellState)
-            let! struct (token, state) as res = cell.Await()
-            if obj.ReferenceEquals(cell, ourInitialCellState) then // Only the one that shot the bear
-                x.MergeUpdates(isStale, token, state, timestamp) // gets to dictate the lastVerified timestamp
-            return res }
+
+        // Inspect/await any concurrent attempt to see if it is sufficient for our needs
+        match! ourInitialCellState.TryAwaitValid() with
+        | ValueSome (fetchCommencedTimestamp, res) when isWithinMaxAge fetchCommencedTimestamp -> return res
+        | _ ->
+
+        // .. it wasn't; join the race to dispatch a request (others following us will share our fate via the TryAwaitValid)
+        let newInstance = AsyncLazy(load maybeBaseState)
+        let _ = System.Threading.Interlocked.CompareExchange(&cell, newInstance, ourInitialCellState)
+        let! timestamp, (token, state as res) = cell.Await()
+        x.MergeUpdates(isStale, timestamp, token, state) // merge observed result into the cache
+        return res }
 
 type Cache private (inner: System.Runtime.Caching.MemoryCache) =
     let tryLoad key =
@@ -84,12 +88,11 @@ type Cache private (inner: System.Runtime.Caching.MemoryCache) =
         match addOrGet key options (CacheEntry<'state>.CreateEmpty()) with
         | Ok fresh -> fresh
         | Error existingEntry -> existingEntry
-    let addOrMergeCacheEntry isStale key options struct (token, state) =
-        let timestamp = System.Diagnostics.Stopwatch.GetTimestamp()
+    let addOrMergeCacheEntry isStale key options timestamp struct (token, state) =
         let entry = CacheEntry(token, state, timestamp)
         match addOrGet key options entry with
         | Ok _ -> () // Our fresh one got added
-        | Error existingEntry -> existingEntry.MergeUpdates(isStale, token, state, timestamp)
+        | Error existingEntry -> existingEntry.MergeUpdates(isStale, timestamp, token, state)
     new (name, sizeMb: int) =
         let config = System.Collections.Specialized.NameValueCollection(1)
         config.Add("cacheMemoryLimitMegabytes", string sizeMb);
@@ -97,23 +100,23 @@ type Cache private (inner: System.Runtime.Caching.MemoryCache) =
     interface ICache with
         // if there's a non-zero maxAge, concurrent read attempts share the roundtrip (and its fate, if it throws)
         member _.Load(key, maxAge, isStale, options, loadOrReload) = task {
-            let loadOrReload maybeBaseState () =
+            let loadOrReload maybeBaseState () = task {
                 let act = System.Diagnostics.Activity.Current
                 if act <> null then act.AddCacheHit(ValueOption.isSome maybeBaseState) |> ignore
-                loadOrReload maybeBaseState
+                let ts = System.Diagnostics.Stopwatch.GetTimestamp()
+                let! res = loadOrReload maybeBaseState
+                return struct (ts, res) }
             if maxAge = TimeSpan.Zero then // Boring algorithm that has each caller independently load/reload the data and then cache it
                 let maybeBaseState = tryLoad key
-                let! res = loadOrReload maybeBaseState ()
-                addOrMergeCacheEntry isStale key options res
+                let! timestamp, res = loadOrReload maybeBaseState ()
+                addOrMergeCacheEntry isStale key options timestamp res
                 return res
-            else // ensure we have an entry in the cache for this key; coordinate retrieval via a SingleReaderGate within that
+            else // ensure we have an entry in the cache for this key; coordinate retrieval through that
                 let cacheSlot = getElseAddEmptyEntry key options
-                let! struct (token, state) as res = cacheSlot.ReadThrough(maxAge, isStale, loadOrReload)
-                cacheSlot.MergeUpdates(isStale, token, state, System.Diagnostics.Stopwatch.GetTimestamp())
-                return res }
+                return! cacheSlot.ReadThrough(maxAge, isStale, loadOrReload) }
         // Newer values get saved; equal values update the last retrieval timestamp
-        member _.Save(key, isStale, options, token, state) =
-            addOrMergeCacheEntry isStale key options (token, state)
+        member _.Save(key, isStale, options, timestamp, token, state) =
+            addOrMergeCacheEntry isStale key options timestamp (token, state)
 
 type [<NoComparison; NoEquality; RequireQualifiedAccess>] CachingStrategy =
     /// Retain a single 'state per streamName.
