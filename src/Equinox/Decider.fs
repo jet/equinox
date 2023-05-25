@@ -235,7 +235,7 @@ and [<NoComparison; NoEquality>] LoadOption<'state> =
     /// If the Cache holds any state, use that without checking the backing store for updates, implying:
     /// - maximizing how much we lean on Optimistic Concurrency Control when doing a `Transact` (you're still guaranteed a consistent outcome)
     /// - enabling stale reads (without ever hitting the store, unless a writer sharing the same Cache does so) when doing a `Query`
-    | AllowStale
+    | AnyCachedValue
     /// If the Cache holds a state, and it's within the specified limit, use that without checking the backing store for updates, implying:
     /// - increasing how much we lean on Optimistic Concurrency Control when doing a `Transact` (you're still guaranteed a consistent outcome)
     /// - limiting the frequency of reads to 1 request per stream per Cache per `age` when using `Query`
@@ -250,7 +250,7 @@ and internal LoadPolicy() =
         match x with
         | None | Some RequireLoad ->                 fun stream ct ->   stream.Load(maxAge = TimeSpan.Zero,     requireLeader = false, ct = ct)
         | Some RequireLeader ->                      fun stream ct ->   stream.Load(maxAge = TimeSpan.Zero,     requireLeader = true,  ct = ct)
-        | Some AllowStale ->                         fun stream ct ->   stream.Load(maxAge = TimeSpan.MaxValue, requireLeader = false, ct = ct)
+        | Some AnyCachedValue ->                     fun stream ct ->   stream.Load(maxAge = TimeSpan.MaxValue, requireLeader = false, ct = ct)
         | Some (MaxStaleness maxAge) ->              fun stream ct ->   stream.Load(maxAge = maxAge,            requireLeader = false, ct = ct)
         | Some AssumeEmpty ->                        fun stream _ct ->  Task.FromResult(stream.LoadEmpty())
         | Some (FromMemento (streamToken, state)) -> fun _stream _ct -> Task.FromResult(streamToken, state)

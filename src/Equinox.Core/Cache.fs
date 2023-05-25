@@ -122,11 +122,11 @@ type [<NoComparison; NoEquality; RequireQualifiedAccess>] CachingStrategy =
     /// Retain a single 'state per streamName.
     /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
     /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
-    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
+    /// Unless a <c>LoadOption</c> is used, cache hits still incur a roundtrip to load any subsequently-added events.
     | SlidingWindow of ICache * window: TimeSpan
     /// Retain a single 'state per streamName.
     /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
-    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
+    /// Unless a <c>LoadOption</c> is used, cache hits still incur a roundtrip to load any subsequently-added events.
     | FixedTimeSpan of ICache * period: TimeSpan
     /// Prefix is used to segregate multiple folded states per stream when they are stored in the cache.
     /// Semantics are otherwise identical to <c>SlidingWindow</c>.

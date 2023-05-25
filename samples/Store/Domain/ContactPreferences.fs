@@ -57,7 +57,7 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
 
     member _.ReadStale(email) =
         let decider = resolve email
-        decider.Query(id, Equinox.AllowStale)
+        decider.Query(id, Equinox.AnyCachedValue)
 
 let create resolve =
     Service(streamId >> resolve Category)
