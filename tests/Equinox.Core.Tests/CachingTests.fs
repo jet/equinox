@@ -125,18 +125,18 @@ type Tests() =
 
     let loadReadThrough toleranceMs = load sn (TimeSpan.FromMilliseconds toleranceMs) sut
 
-    let [<Fact>] ``readThrough unifies compatible concurrent loads``  () = task {
+    let [<Fact>] ``readThrough unifies compatible concurrent loads`` () = task {
         cat.Delay <- TimeSpan.FromMilliseconds 50
         let t1 = loadReadThrough 1
         do! Task.Delay 10
         test <@ (1, 0) = (cat.Loads, cat.Reloads) @>
-        let! struct (_token, state) = loadReadThrough 15
-        test <@ 1 = state && (1, 0) = (cat.Loads, cat.Reloads) @>
+        let! struct (_token, state) = loadReadThrough 200
+        test <@ (1, 1, 0) = (state, cat.Loads, cat.Reloads) @>
         let! struct (_token, state) = t1
-        test <@ 1 = state && (1, 0) = (cat.Loads, cat.Reloads) @>
+        test <@ (1, 1, 0) = (state, cat.Loads, cat.Reloads) @>
     }
 
-    let [<Fact>] ``readThrough handles concurrent incompatible loads correctly``  () = task {
+    let [<Fact>] ``readThrough handles concurrent incompatible loads correctly`` () = task {
         cat.Delay <- TimeSpan.FromMilliseconds 50
         let t1 = loadReadThrough 1
         do! Task.Delay 10
@@ -147,7 +147,7 @@ type Tests() =
         test <@ 1 = state && (2, 0) = (cat.Loads, cat.Reloads) @>
     }
 
-    let [<Fact>] ``readThrough handles overlapped incompatible loads correctly``  () = task {
+    let [<Fact>] ``readThrough handles overlapped incompatible loads correctly`` () = task {
         cat.Delay <- TimeSpan.FromMilliseconds 50
         let t1 = loadReadThrough 1
         do! Task.Delay 10
