@@ -107,6 +107,8 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.MessageDb", "src\Eq
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.MessageDb.Integration", "tests\Equinox.MessageDb.Integration\Equinox.MessageDb.Integration.fsproj", "{60348FC6-1403-491D-9547-35F594D92320}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.Core.Tests", "tests\Equinox.Core.Tests\Equinox.Core.Tests.fsproj", "{FB376808-7B32-4724-98BE-D9458EB0F68B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -241,6 +243,10 @@ Global
 		{60348FC6-1403-491D-9547-35F594D92320}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{60348FC6-1403-491D-9547-35F594D92320}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{60348FC6-1403-491D-9547-35F594D92320}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FB376808-7B32-4724-98BE-D9458EB0F68B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FB376808-7B32-4724-98BE-D9458EB0F68B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FB376808-7B32-4724-98BE-D9458EB0F68B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FB376808-7B32-4724-98BE-D9458EB0F68B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

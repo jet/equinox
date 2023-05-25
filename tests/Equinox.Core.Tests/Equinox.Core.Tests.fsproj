@@ -1,17 +1,18 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\samples\Store\Integration\TestOutput.fs" Link="TestOutput.fs" />
-    <Compile Include="MemoryStoreIntegration.fs" />
+    <Compile Include="..\..\src\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
+    <Compile Include="CachingTests.fs" />
+    <Compile Include="AsyncCacheCellTests.fs" />
+    <Compile Include="AsyncBatchingGateTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" />
-    <ProjectReference Include="..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.Core\Equinox.Core.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,7 +24,6 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Serilog.Sinks.Seq" Version="5.2.0" />
   </ItemGroup>
 
 </Project>

@@ -1,4 +1,4 @@
-module Equinox.MemoryStore.Integration.AsyncBatchingGateTests
+module Equinox.Core.Tests.AsyncBatchingGateTests
 
 open Equinox.Core
 open FsCheck.Xunit
