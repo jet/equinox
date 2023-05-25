@@ -52,8 +52,8 @@ let private optionsFixedTimeSpan (period: TimeSpan) () =
     CacheItemOptions.AbsoluteExpiration expirationPoint
 
 let private mapStrategy = function
-    | Equinox.CachingStrategy.FixedTimeSpan (cache, period) -> struct (cache, mkKey null, optionsFixedTimeSpan period)
-    | Equinox.CachingStrategy.SlidingWindow (cache, window) -> cache, mkKey null, optionsSlidingExpiration window
+    | Equinox.CachingStrategy.FixedTimeSpan (cache, period) -> struct (        cache, mkKey null,   optionsFixedTimeSpan period)
+    | Equinox.CachingStrategy.SlidingWindow (cache, window) ->                 cache, mkKey null,   optionsSlidingExpiration window
     | Equinox.CachingStrategy.SlidingWindowPrefixed (cache, window, prefix) -> cache, mkKey prefix, optionsSlidingExpiration window
 
 let apply isStale x (cat: 'cat when 'cat :> ICategory<'event, 'state, 'context> and 'cat :> IReloadable<'state>): ICategory<_, _, _> =
