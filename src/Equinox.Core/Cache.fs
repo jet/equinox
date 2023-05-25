@@ -32,12 +32,12 @@ open Equinox.Core
 open Equinox.Core.Tracing
 open System
 
-type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state, initialVerified: int64) =
+type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state, initialTimestamp: int64) =
     let mutable currentToken = initialToken
     let mutable currentState = initialState
-    let mutable lastVerified = initialVerified
+    let mutable verifiedTimestamp = initialTimestamp
     let tryGet () =
-        if lastVerified = 0 then ValueNone
+        if verifiedTimestamp = 0 then ValueNone
         else ValueSome (struct (currentToken, currentState))
     let mutable cell = AsyncLazy<struct(int64 * (struct (StreamToken * 'state)))>.Empty
     static member CreateEmpty() =
@@ -49,13 +49,13 @@ type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state
             if not (isStale.Invoke(currentToken, token)) then
                 currentToken <- token
                 currentState <- state
-                if lastVerified < timestamp then // Don't count attempts to overwrite with stale state as verification
-                    lastVerified <- timestamp
+                if verifiedTimestamp < timestamp then // Don't count attempts to overwrite with stale state as verification
+                    verifiedTimestamp <- timestamp
     // Follows high level flow of AsyncCacheCell.Await - read the comments there, and the AsyncCacheCell tests first!
     member x.ReadThrough(maxAge: TimeSpan, isStale, load) = task {
-        let cacheEntryValidityCheckTimeStamp = System.Diagnostics.Stopwatch.GetTimestamp()
-        let isWithinMaxAge cachedValueTimestamp = Stopwatch.TicksToSeconds(cacheEntryValidityCheckTimeStamp - cachedValueTimestamp) <= maxAge.TotalSeconds
-        let fetchStateConsistently () = struct (cell, tryGet (), isWithinMaxAge lastVerified)
+        let cacheEntryValidityCheckTimestamp = System.Diagnostics.Stopwatch.GetTimestamp()
+        let isWithinMaxAge cachedValueTimestamp = Stopwatch.TicksToSeconds(cacheEntryValidityCheckTimestamp - cachedValueTimestamp) <= maxAge.TotalSeconds
+        let fetchStateConsistently () = struct (cell, tryGet (), isWithinMaxAge verifiedTimestamp)
         match lock x fetchStateConsistently with
         | _, ValueSome cachedValue, true ->
             return cachedValue
