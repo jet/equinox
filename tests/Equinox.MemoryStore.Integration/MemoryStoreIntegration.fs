@@ -2,14 +2,16 @@
 
 open Domain
 open Equinox.MemoryStore
-open FsCheck
+open FsCheck.FSharp
 open Swensen.Unquote
 
+let genDefault<'t> = ArbMap.defaults |> ArbMap.generate<'t>
+
 type FsCheckGenerators =
-    static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen
+    static member SkuId = genDefault |> Gen.map SkuId |> Arb.fromGen
 
 type AutoDataAttribute() =
-    inherit FsCheck.Xunit.PropertyAttribute(Arbitrary = [|typeof<FsCheckGenerators>|], MaxTest = 1, QuietOnSuccess = true)
+    inherit FsCheck.Xunit.PropertyAttribute(Arbitrary = [| typeof<FsCheckGenerators> |], MaxTest = 1, QuietOnSuccess = true)
 
 let createMemoryStore () = VolatileStore<_>()
 
@@ -26,7 +28,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData>]
     let ``Basic tracer bullet, sending a command and verifying the folded result directly and via a reload``
-            cartId1 cartId2 (ctx,skuId,NonZero quantity,waive) = Async.RunSynchronously <| async {
+            cartId1 cartId2 (ctx,skuId,NonZero quantity,waive) = async {
         let store = createMemoryStore ()
         let service = createServiceMemory log store
         let command = Cart.SyncItem (ctx,skuId,quantity,waive)
@@ -62,7 +64,7 @@ type ChangeFeed(testOutputHelper) =
     let log = TestOutput(testOutputHelper).CreateLogger()
 
     [<AutoData>]
-    let ``Commits get reported`` (clientId, sku) = Async.RunSynchronously <| async {
+    let ``Commits get reported`` (clientId, sku) = async {
         let store = createMemoryStore ()
         let events = ResizeArray()
         let takeCaptured () =
@@ -94,7 +96,7 @@ type Versions(testOutputHelper) =
     let log = TestOutput(testOutputHelper).CreateLogger()
 
     [<AutoData>]
-    let ``Post-Version is computed correctly`` (clientId, sku) = Async.RunSynchronously <| async {
+    let ``Post-Version is computed correctly`` (clientId, sku) = async {
         let store = createMemoryStore ()
         let service = createFavoritesServiceMemory store log
 
