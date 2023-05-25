@@ -135,9 +135,9 @@ type Tests() =
     let [<Fact>] ``readThrough handles concurrent incompatible loads correctly`` () = task {
         cat.Delay <- TimeSpan.FromMilliseconds 50
         let t1 = loadReadThrough 1
-        do! Task.Delay 10
+        do! Task.Delay 5
         test <@ (1, 0) = (cat.Loads, cat.Reloads) @>
-        let! struct (_token, state) = loadReadThrough 9
+        let! struct (_token, state) = loadReadThrough 4
         test <@ (2, 2, 0) = (state, cat.Loads, cat.Reloads) @>
         let! struct (_token, state) = t1
         test <@ (1, 2, 0) = (state, cat.Loads, cat.Reloads) @> }
