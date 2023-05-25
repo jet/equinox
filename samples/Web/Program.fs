@@ -40,5 +40,5 @@ let main argv =
             0
         finally Log.CloseAndFlush()
     with :? ArguParseException as e -> eprintfn "%s" e.Message; 1
-        | Samples.Infrastructure.Storage.MissingArg msg -> eprintfn "ERROR: %s" msg; 1
+        | Samples.Infrastructure.Store.MissingArg msg -> eprintfn "ERROR: %s" msg; 1
         | e -> eprintfn "EXCEPTION: %O" e; 1

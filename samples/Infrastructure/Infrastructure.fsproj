@@ -5,7 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Storage.fs" />
+    <Compile Include="Store.fs" />
     <Compile Include="Services.fs" />
   </ItemGroup>
 
@@ -26,7 +26,6 @@
     <PackageReference Include="FSharp.Core" Version="6.0.7" />
     
     <PackageReference Include="Argu" Version="6.1.1" />
-    <PackageReference Include="Destructurama.FSharp" Version="1.2.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="6.0.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="4.1.0" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="5.2.0" />

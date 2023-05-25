@@ -13,21 +13,21 @@ type Store(store) =
             initial: 'state,
             snapshot: ('event -> bool) * ('state -> 'event)): Category<'event, 'state, unit> =
         match store with
-        | Storage.StorageConfig.Memory store ->
+        | Store.Context.Memory store ->
             Equinox.MemoryStore.MemoryStoreCategory(store, codec, fold, initial)
-        | Storage.StorageConfig.Cosmos (store, caching, unfolds) ->
+        | Store.Context.Cosmos (store, caching, unfolds) ->
             let accessStrategy = if unfolds then Equinox.CosmosStore.AccessStrategy.Snapshot snapshot else Equinox.CosmosStore.AccessStrategy.Unoptimized
             Equinox.CosmosStore.CosmosStoreCategory<'event,'state,_>(store, codec.ToJsonElementCodec(), fold, initial, caching, accessStrategy)
-        | Storage.StorageConfig.Dynamo (store, caching, unfolds) ->
+        | Store.Context.Dynamo (store, caching, unfolds) ->
             let accessStrategy = if unfolds then Equinox.DynamoStore.AccessStrategy.Snapshot snapshot else Equinox.DynamoStore.AccessStrategy.Unoptimized
             Equinox.DynamoStore.DynamoStoreCategory<'event,'state,_>(store, FsCodec.Deflate.EncodeTryDeflate codec, fold, initial, caching, accessStrategy)
-        | Storage.StorageConfig.Es (context, caching, unfolds) ->
+        | Store.Context.Es (context, caching, unfolds) ->
             let accessStrategy = if unfolds then Equinox.EventStoreDb.AccessStrategy.RollingSnapshots snapshot |> Some else None
             Equinox.EventStoreDb.EventStoreCategory<'event,'state,_>(context, codec, fold, initial, ?caching = caching, ?access = accessStrategy)
-        | Storage.StorageConfig.Sql (context, caching, unfolds) ->
+        | Store.Context.Sql (context, caching, unfolds) ->
             let accessStrategy = if unfolds then Equinox.SqlStreamStore.AccessStrategy.RollingSnapshots snapshot |> Some else None
             Equinox.SqlStreamStore.SqlStreamStoreCategory<'event,'state,_>(context, codec, fold, initial, ?caching = caching, ?access = accessStrategy)
-        | Storage.StorageConfig.Mdb (context, caching) ->
+        | Store.Context.Mdb (context, caching) ->
             Equinox.MessageDb.MessageDbCategory<'event,'state,_>(context, codec, fold, initial, ?caching = caching)
 
 type ServiceBuilder(storageConfig, handlerLog) =
