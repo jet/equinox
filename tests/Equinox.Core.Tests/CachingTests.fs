@@ -1,5 +1,6 @@
 module Equinox.Core.Tests.CachingTests
 
+open Equinox.Core
 open Swensen.Unquote
 open System
 open System.Threading
@@ -55,6 +56,12 @@ let write sn (sut: Equinox.Core.ICategory<_, _, _>) = task {
     test <@ expectedWriteState = wState' @>
 }
 
+// Pinning the fact that the algorithm is not sensitive to the reuse of the initial value of a cache entry
+let [<Fact>] ``AsyncLazy.Empty is a true singleton, does not allocate`` () =
+    let i1 = AsyncLazy<int>.Empty
+    let i2 = AsyncLazy<int>.Empty
+    test <@ obj.ReferenceEquals(i1, i2) @>
+
 let [<Fact>] ``No strategy, no wrapping`` () =
     let cat = SpyCategory()
     let sut = Equinox.Core.Caching.apply isStale None cat
@@ -104,9 +111,55 @@ type Tests() =
         test <@ 6 = state && (1, 5) = (cat.Loads, cat.Reloads) @>
     }
 
+    let [<Fact>] ``requireLoad does not unify loads``  () = task {
+        cat.Delay <- TimeSpan.FromMilliseconds 50
+        let t1 = requireLoad ()
+        do! Task.Delay 10
+        test <@ (1, 0) = (cat.Loads, cat.Reloads) @>
+        do! Task.Delay 50 // wait for the loaded value to get cached
+        let! struct (_token, state) = requireLoad ()
+        test <@ 2 = state && (1, 1) = (cat.Loads, cat.Reloads) @>
+        let! struct (_token, state) = t1
+        test <@ 1 = state && (1, 1) = (cat.Loads, cat.Reloads) @>
+    }
+
     let loadReadThrough toleranceMs = load sn (TimeSpan.FromMilliseconds toleranceMs) sut
 
-    let [<Fact>] readThrough () = task {
+    let [<Fact>] ``readThrough unifies compatible concurrent loads``  () = task {
+        cat.Delay <- TimeSpan.FromMilliseconds 50
+        let t1 = loadReadThrough 1
+        do! Task.Delay 10
+        test <@ (1, 0) = (cat.Loads, cat.Reloads) @>
+        let! struct (_token, state) = loadReadThrough 15
+        test <@ 1 = state && (1, 0) = (cat.Loads, cat.Reloads) @>
+        let! struct (_token, state) = t1
+        test <@ 1 = state && (1, 0) = (cat.Loads, cat.Reloads) @>
+    }
+
+    let [<Fact>] ``readThrough handles concurrent incompatible loads correctly``  () = task {
+        cat.Delay <- TimeSpan.FromMilliseconds 50
+        let t1 = loadReadThrough 1
+        do! Task.Delay 10
+        test <@ (1, 0) = (cat.Loads, cat.Reloads) @>
+        let! struct (_token, state) = loadReadThrough 9
+        test <@ 2 = state && (2, 0) = (cat.Loads, cat.Reloads) @>
+        let! struct (_token, state) = t1
+        test <@ 1 = state && (2, 0) = (cat.Loads, cat.Reloads) @>
+    }
+
+    let [<Fact>] ``readThrough handles overlapped incompatible loads correctly``  () = task {
+        cat.Delay <- TimeSpan.FromMilliseconds 50
+        let t1 = loadReadThrough 1
+        do! Task.Delay 10
+        test <@ (1, 0) = (cat.Loads, cat.Reloads) @>
+        do! Task.Delay 50
+        let! struct (_token, state) = loadReadThrough 59
+        test <@ 2 = state && (1, 1) = (cat.Loads, cat.Reloads) @>
+        let! struct (_token, state) = t1
+        test <@ 1 = state && (1, 1) = (cat.Loads, cat.Reloads) @>
+    }
+
+    let [<Fact>] ``readThrough scenarios`` () = task {
         let! struct (_token, state) = requireLoad ()
         test <@ 1 = state && (1, 0) = (cat.Loads, cat.Reloads) @>
 
@@ -163,5 +216,5 @@ type Tests() =
         let! struct (_token, state) = loadReadThrough 10
         test <@ 6 = state && (1, 5) = (cat.Loads, cat.Reloads) @>
         let! struct (_token, state) = allowStale ()
-        test <@ 7 = state && (1, 5) = (cat.Loads, cat.Reloads) @>
+        test <@ 6 = state && (1, 5) = (cat.Loads, cat.Reloads) @>
     }
