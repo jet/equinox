@@ -52,6 +52,7 @@ type Async with
             |> ignore)
 
 module Async =
+
     let inline startImmediateAsTask ct computation = Async.StartImmediateAsTask(computation, ct)
 
 module ValueTuple =

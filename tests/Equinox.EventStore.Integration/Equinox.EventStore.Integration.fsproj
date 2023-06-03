@@ -7,10 +7,10 @@
 
   <ItemGroup>
     <Compile Include="..\..\samples\Store\Integration\TestOutput.fs" Link="TestOutput.fs" />
-    <Compile Include="Infrastructure.fs" />
+    <Compile Include="..\Equinox.EventStoreDb.Integration\Infrastructure.fs" Link="Infrastructure.fs" />
     <Compile Include="..\..\samples\Store\Integration\AutoDataAttribute.fs" Link="AutoDataAttribute.fs" />
-    <Compile Include="StoreIntegration.fs" />
-    <Compile Include="EventStoreTokenTests.fs" />
+    <Compile Include="..\Equinox.EventStoreDb.Integration\StoreIntegration.fs" Link="StoreIntegration.fs" />
+    <Compile Include="..\Equinox.EventStoreDb.Integration\EventStoreTokenTests.fs" Link="EventStoreTokenTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

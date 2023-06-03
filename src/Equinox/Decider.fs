@@ -234,7 +234,7 @@ and [<NoComparison; NoEquality>] LoadOption<'state> =
     | RequireLeader
     /// If the Cache holds any state, use that without checking the backing store for updates, implying:
     /// - maximizing how much we lean on Optimistic Concurrency Control when doing a `Transact` (you're still guaranteed a consistent outcome)
-    /// - enabling stale reads [in the face of multiple writers (either in this process or in other processes)] when doing a `Query`
+    /// - enabling stale reads (without ever hitting the store, unless a writer sharing the same Cache does so) when doing a `Query`
     | AllowStale
     /// Inhibit load from database based on the fact that the stream is likely not to have been initialized yet, and we will be generating events
     | AssumeEmpty
@@ -244,9 +244,9 @@ and internal LoadPolicy() =
     static member Fetch<'state, 'event>(x: LoadOption<'state> option)
         : IStream<'event, 'state> -> CancellationToken -> Task<struct (StreamToken * 'state)> =
         match x with
-        | None | Some RequireLoad ->                 fun stream ct ->   stream.Load(allowStale = false, requireLeader = false, ct = ct)
-        | Some RequireLeader ->                      fun stream ct ->   stream.Load(allowStale = false, requireLeader = true,  ct = ct)
-        | Some AllowStale ->                         fun stream ct ->   stream.Load(allowStale = true,  requireLeader = false, ct = ct)
+        | None | Some RequireLoad ->                 fun stream ct ->   stream.Load(maxAge = TimeSpan.Zero,     requireLeader = false, ct = ct)
+        | Some RequireLeader ->                      fun stream ct ->   stream.Load(maxAge = TimeSpan.Zero,     requireLeader = true,  ct = ct)
+        | Some AllowStale ->                         fun stream ct ->   stream.Load(maxAge = TimeSpan.MaxValue, requireLeader = false, ct = ct)
         | Some AssumeEmpty ->                        fun stream _ct ->  Task.FromResult(stream.LoadEmpty())
         | Some (FromMemento (streamToken, state)) -> fun _stream _ct -> Task.FromResult(streamToken, state)
 

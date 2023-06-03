@@ -963,10 +963,10 @@ module Token =
     //            Alternately, can mirror DynamoStore scheme where the size is maintained in the Tip, and updated as batches are calved
     let create pos: StreamToken = { value = box { pos = pos }; version = pos.index; streamBytes = -1 }
     let (|Unpack|) (token: StreamToken): Position = let t = unbox<Token> token.value in t.pos
-    let supersedes struct (Unpack currentPos, Unpack xPos) =
-        let currentVersion, newVersion = currentPos.index, xPos.index
-        let currentETag, newETag = currentPos.etag, xPos.etag
-        newVersion > currentVersion || currentETag <> newETag
+
+    // TOCONSIDER for RollingState, comparing etags is not meaningful - but the (server assigned) timestamp of the tip document can be used to filter out stale updates
+    //            see also same function in DynamoStore - ideally the scheme would align - perhaps roundtripping a `revision` instead might make sense here too?
+    let isStale current candidate = current.version > candidate.version
 
 [<AutoOpen>]
 module Internal =
@@ -1077,13 +1077,11 @@ type internal Category<'event, 'state, 'context>
         match! store.Reload(log, (streamName, pos), (codec.TryDecode, isOrigin), ct, ?preview = preloaded) with
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
-    interface Caching.IReloadableCategory<'event, 'state, 'context> with
-        member _.Load(log, _categoryName, _streamId, stream, _allowStale, _requireLeader, ct): Task<struct (StreamToken * 'state)> = task {
+    interface ICategory<'event, 'state, 'context> with
+        member _.Load(log, _categoryName, _streamId, stream, _maxAge, _requireLeader, ct): Task<struct (StreamToken * 'state)> = task {
             let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds, ct)
             return struct (token, fold initial events) }
-        member cat.Reload(log, stream, _requireLeader, streamToken, state, ct): Task<struct (StreamToken * 'state)> =
-            reload (log, stream, streamToken, state) None ct
-        member cat.TrySync(log, _categoryName, _streamId, streamName, ctx, maybeInit, (Token.Unpack pos as streamToken), state, events, ct): Task<SyncResult<'state>> = task {
+        member _.TrySync(log, _categoryName, _streamId, streamName, ctx, maybeInit, (Token.Unpack pos as streamToken), state, events, ct) = task {
             let state' = fold state events
             let exp, events, eventsEncoded, projectionsEncoded =
                 let encode e = codec.Encode(ctx, e)
@@ -1102,6 +1100,7 @@ type internal Category<'event, 'state, 'context>
             | InternalSyncResult.ConflictUnknown _token' -> return SyncResult.Conflict (reload (log, streamName, streamToken, state) None)
             | InternalSyncResult.Conflict (pos', tipEvents) ->
                 return SyncResult.Conflict (reload (log, streamName, streamToken, state) (Some (pos', pos.index, tipEvents))) }
+    interface Caching.IReloadable<'state> with member _.Reload(log, sn, _leader, token, state, ct) = reload (log, sn, token, state) None ct
 
 module ConnectionString =
 
@@ -1116,7 +1115,6 @@ open Equinox.Core
 open Equinox.CosmosStore.Core
 open Microsoft.Azure.Cosmos
 open System
-open System.Threading.Tasks
 
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =
@@ -1315,8 +1313,9 @@ type CosmosStoreContext(storeClient: CosmosStoreClient, tipOptions, queryOptions
         let store = StoreClient(cg.Container, cg.Fallback, x.QueryOptions, x.TipOptions)
         struct (store, streamName, cg.InitializationGate)
 
-/// For CosmosDB, caching is critical in order to reduce RU consumption.
-/// As such, it can often be omitted, particularly if streams are short or there are snapshots being maintained
+/// For CosmosDB, caching is typically a central aspect of managing RU consumption to maintain performance and capacity.
+/// The cache holds the Tip document's etag, which enables use of etag-contingent Reads (which cost only 1RU in the case where the document is unchanged)
+/// Omitting can make sense in specific cases; if cache hit rates are low, or there's always a usable snapshot in a relatively small Tip document
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
     /// Do not apply any caching strategy for this Stream.
@@ -1394,7 +1393,7 @@ type CosmosStoreCategory<'event, 'state, 'context> internal (resolveInner, empty
         let resolveCategory (categoryName, container) =
             let createCategory _name: ICategory<_, _, 'context> =
                 Category<'event, 'state, 'context>(container, codec, fold, initial, isOrigin, checkUnfolds, compressUnfolds, mapUnfolds)
-                |> Caching.apply Token.supersedes caching
+                |> Caching.apply Token.isStale caching
             categories.GetOrAdd(categoryName, createCategory)
         let resolveInner categoryName streamId =
             let struct (container, streamName, maybeContainerInitializationGate) = context.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId)
@@ -1470,7 +1469,7 @@ type EventsContext internal
             return token, events }
 
     /// Establishes the current position of the stream in as efficient a manner as possible
-    /// (The ideal situation is that the preceding token is supplied as input in order to avail of 1RU low latency state checks)
+    /// (The ideal situation is that the preceding token is supplied as input in order to avail of 1RU low latency validation in the case of an unchanged Tip)
     member _.Sync(stream, [<O; D null>] ?position: Position): Async<Position> = async {
         let! ct = Async.CancellationToken
         let! Token.Unpack pos' = store.GetPosition(log, stream, ct, ?pos = position) |> Async.AwaitTaskCorrect

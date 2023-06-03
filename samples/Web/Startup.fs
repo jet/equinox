@@ -14,14 +14,14 @@ type Arguments =
     | [<AltCommandLine "-S">]                                   LocalSeq
     | [<AltCommandLine "-C">]                                   Cached
     | [<AltCommandLine "-U">]                                   Unfolds
-    | [<CliPrefix(CliPrefix.None); Last>]                       Cosmos   of ParseResults<Storage.Cosmos.Parameters>
-    | [<CliPrefix(CliPrefix.None); Last>]                       Dynamo   of ParseResults<Storage.Dynamo.Parameters>
-    | [<CliPrefix(CliPrefix.None); Last>]                       Es       of ParseResults<Storage.EventStore.Parameters>
-    | [<CliPrefix(CliPrefix.None); Last>]                       Mdb      of ParseResults<Storage.MessageDb.Parameters>
-    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">]  MsSql    of ParseResults<Storage.Sql.Ms.Parameters>
-    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">]  MySql    of ParseResults<Storage.Sql.My.Parameters>
-    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">]  Postgres of ParseResults<Storage.Sql.Pg.Parameters>
-    | [<CliPrefix(CliPrefix.None); Last>]                       Memory   of ParseResults<Storage.MemoryStore.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last>]                       Cosmos   of ParseResults<Store.Cosmos.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last>]                       Dynamo   of ParseResults<Store.Dynamo.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last>]                       Es       of ParseResults<Store.EventStore.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last>]                       Mdb      of ParseResults<Store.MessageDb.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">]  MsSql    of ParseResults<Store.Sql.Ms.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">]  MySql    of ParseResults<Store.Sql.My.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">]  Postgres of ParseResults<Store.Sql.Pg.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last>]                       Memory   of ParseResults<Store.MemoryStore.Parameters>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Verbose ->                    "Include low level Domain and Store logging in screen output."
@@ -65,41 +65,41 @@ type Startup() =
             let c = match maybeSeq with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
             c.CreateLogger() :> ILogger
 
-        let storeConfig, storeLog : Storage.StorageConfig * ILogger =
+        let storeConfig, storeLog : Store.Context * ILogger =
             let options = p.GetResults Cached @ p.GetResults Unfolds
             let unfolds = options |> List.exists (function Unfolds -> true | _ -> false)
             let log = Log.ForContext<App>()
 
-            let cache = if options |> List.exists (function Cached -> true | _ -> false) then Equinox.Cache(Storage.appName, sizeMb = 50) |> Some else None
+            let cache = if options |> List.exists (function Cached -> true | _ -> false) then Equinox.Cache(Store.appName, sizeMb = 50) |> Some else None
             match p.GetSubCommand() with
             | Cosmos sp ->
-                let storeLog = createStoreLog <| sp.Contains Storage.Cosmos.Parameters.StoreVerbose
+                let storeLog = createStoreLog <| sp.Contains Store.Cosmos.Parameters.StoreVerbose
                 log.Information("CosmosDB Storage options: {options:l}", options)
-                Storage.Cosmos.config log (cache, unfolds) (Storage.Cosmos.Arguments sp), storeLog
+                Store.Cosmos.config log (cache, unfolds) (Store.Cosmos.Arguments sp), storeLog
             | Dynamo sp ->
-                let storeLog = createStoreLog <| sp.Contains Storage.Dynamo.Parameters.StoreVerbose
+                let storeLog = createStoreLog <| sp.Contains Store.Dynamo.Parameters.StoreVerbose
                 log.Information("DynamoDB Storage options: {options:l}", options)
-                Storage.Dynamo.config log (cache, unfolds) (Storage.Dynamo.Arguments sp), storeLog
+                Store.Dynamo.config log (cache, unfolds) (Store.Dynamo.Arguments sp), storeLog
             | Es sp ->
-                let storeLog = createStoreLog <| sp.Contains Storage.EventStore.Parameters.StoreVerbose
+                let storeLog = createStoreLog <| sp.Contains Store.EventStore.Parameters.StoreVerbose
                 log.Information("EventStoreDB Storage options: {options:l}", options)
-                Storage.EventStore.config log (cache, unfolds) sp, storeLog
+                Store.EventStore.config log (cache, unfolds) sp, storeLog
             | Mdb sp ->
                 log.Information("MessageDB Storage options: {options:l}", options)
-                Storage.MessageDb.config log cache sp, log
+                Store.MessageDb.config log cache sp, log
             | MsSql sp ->
                 log.Information("SqlStreamStore MsSql Storage options: {options:l}", options)
-                Storage.Sql.Ms.config log (cache, unfolds) sp, log
+                Store.Sql.Ms.config log (cache, unfolds) sp, log
             | MySql sp ->
                 log.Information("SqlStreamStore MySql Storage options: {options:l}", options)
-                Storage.Sql.My.config log (cache, unfolds) sp, log
+                Store.Sql.My.config log (cache, unfolds) sp, log
             | Postgres sp ->
                 log.Information("SqlStreamStore Postgres Storage options: {options:l}", options)
-                Storage.Sql.Pg.config log (cache, unfolds) sp, log
+                Store.Sql.Pg.config log (cache, unfolds) sp, log
             | Memory _ ->
                 log.Fatal("Web App is using Volatile Store; Storage options: {options:l}", options)
-                Storage.MemoryStore.config (), log
-            | x -> Storage.missingArg (sprintf "unexpected subcommand %A" x)
+                Store.MemoryStore.config (), log
+            | x -> Store.missingArg (sprintf "unexpected subcommand %A" x)
         Services.register(services, storeConfig, storeLog)
 
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

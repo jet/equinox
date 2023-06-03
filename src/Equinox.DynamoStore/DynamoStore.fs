@@ -1003,15 +1003,15 @@ module Token =
     let create: Position -> StreamToken = Some >> create_
     let empty = create_ None
     let (|Unpack|) (token: StreamToken): Position option = let t = unbox<Token> token.value in t.pos
-    let supersedes struct (Unpack currentPos, Unpack xPos) =
-        match currentPos, xPos with
-        | Some currentPos, Some xPos ->
-            let currentVersion, newVersion = currentPos.index, xPos.index
-            let currentETag, newETag = currentPos.etag, xPos.etag
-            newVersion > currentVersion || currentETag <> newETag
-        | None, Some _ -> true
-        | Some _, None
-        | None, None  -> false
+
+    // TOCONSIDER for RollingState, comparing etags is not meaningful, and they are under our control;
+    //            => should be replaced with a `revision` that increments if `index` is not changing as part of a write
+    //            see also same function in CosmosStore - ideally the scheme would align
+    let isStale (Unpack currentPos) (Unpack candidatePos) =
+        match currentPos, candidatePos with
+        | Some _, None -> true
+        | None, _ -> false
+        | Some current, Some candidate -> current.index > candidate.index
 
 [<AutoOpen>]
 module Internal =
@@ -1131,11 +1131,9 @@ type internal Category<'event, 'state, 'context>
         match! store.Reload(log, (streamNam, pos), requireLeader, (codec.TryDecode, isOrigin), ct) with
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
-    interface Caching.IReloadableCategory<'event, 'state, 'context> with
-        member _.Load(log, _categoryName, _streamId, streamName, _allowStale, requireLeader, ct) =
+    interface ICategory<'event, 'state, 'context> with
+        member _.Load(log, _categoryName, _streamId, streamName, _maxAge, requireLeader, ct) =
             fetch initial (store.Load(log, (streamName, None), requireLeader, (codec.TryDecode, isOrigin), checkUnfolds, ct))
-        member _.Reload(log, streamName, requireLeader, streamToken, state, ct) =
-            reload (log, streamName, requireLeader, streamToken, state) ct
         member _.TrySync(log, _categoryName, _streamId, streamName, ctx, _maybeInit, (Token.Unpack pos as streamToken), state, events, ct) = task {
             let state' = fold state events
             let exp, events, eventsEncoded, unfoldsEncoded =
@@ -1150,13 +1148,13 @@ type internal Category<'event, 'state, 'context>
             match! store.Sync(log, streamName, pos, exp, baseVer, eventsEncoded, unfoldsEncoded, ct) with
             | InternalSyncResult.Written token' -> return SyncResult.Written (token', state')
             | InternalSyncResult.ConflictUnknown -> return SyncResult.Conflict (reload (log, streamName, true, streamToken, state)) }
+    interface Caching.IReloadable<'state> with member _.Reload(log, sn, leader, token, state, ct) = reload (log, sn, leader, token, state) ct
 
 namespace Equinox.DynamoStore
 
 open Equinox.Core
 open Equinox.DynamoStore.Core
 open System
-open System.Threading.Tasks
 
 type [<RequireQualifiedAccess>] ConnectionMode = AwsEnvironment of systemName: string | AwsKeyCredentials of serviceUrl: string
 
@@ -1272,8 +1270,8 @@ type DynamoStoreContext(storeClient: DynamoStoreClient, tipOptions, queryOptions
         let container, fallback, streamName = storeClient.ResolveContainerFallbackAndStreamName(categoryName, streamId)
         struct (StoreClient(container, fallback, x.QueryOptions, x.TipOptions), streamName)
 
-/// For DynamoDB, caching is critical in order to reduce RU consumption.
-/// As such, it can often be omitted, particularly if streams are short or there are snapshots being maintained
+/// For DynamoDB, caching is typically a central aspect of managing RU consumption to maintain performance and capacity.
+/// Omitting can make sense in specific cases; if streams are short, or there's always a usable snapshot in the Tip
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
     /// Do not apply any caching strategy for this Stream.
@@ -1286,14 +1284,14 @@ type CachingStrategy =
     /// Retain a single 'state per streamName, together with the associated etag.
     /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
     /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
-    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
+    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still involves a read roundtrip (RU charges incurred, transport latency) though deserialization is skipped due to etag match
     // NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
     // track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the unfolds in Tip
     | SlidingWindow of ICache * window: TimeSpan
     /// Retain a single 'state per streamName, together with the associated etag.
     /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
     /// Typically combined with `Equinox.LoadOption.AllowStale` to minimize loads.
-    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
+    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still involves a read roundtrip (RU charges incurred, transport latency) though deserialization is skipped due to etag match
     | FixedTimeSpan of ICache * period: TimeSpan
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
@@ -1347,7 +1345,7 @@ type DynamoStoreCategory<'event, 'state, 'context>(resolveInner, empty) =
         let resolveCategory (categoryName, container) =
             let createCategory _name: ICategory<_, _, 'context> =
                 Category<'event, 'state, 'context>(container, codec, fold, initial, isOrigin, checkUnfolds, mapUnfolds)
-                |> Caching.apply Token.supersedes caching
+                |> Caching.apply Token.isStale caching
             categories.GetOrAdd(categoryName, createCategory)
         let resolveInner categoryName streamId =
             let struct (container, streamName) = context.ResolveContainerClientAndStreamName(categoryName, streamId)
@@ -1413,7 +1411,7 @@ type EventsContext internal
             return token, events }
 
     /// Establishes the current position of the stream in as efficient a manner as possible
-    /// (The ideal situation is that the preceding token is supplied as input in order to avail of 1RU low latency state checks)
+    /// (The ideal situation is that the preceding token is supplied as input in order to avail of efficient validation of an unchanged state)
     member _.Sync(streamName, ct, [<O; D null>] ?position: Position): Task<Position> = task {
         let! Token.Unpack pos' = store.GetPosition(log, StreamName.toString streamName, ct, ?pos = position)
         return Position.flatten pos' }

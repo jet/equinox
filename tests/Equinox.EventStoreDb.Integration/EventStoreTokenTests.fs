@@ -1,4 +1,4 @@
-﻿module Equinox.EventStore.Tests.EventStoreTokenTests
+﻿module Equinox.EventStoreDb.Tests.EventStoreTokenTests
 
 open Equinox.Core
 #if !STORE_EVENTSTORE_LEGACY

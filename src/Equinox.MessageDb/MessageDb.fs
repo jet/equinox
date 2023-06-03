@@ -280,8 +280,7 @@ module private Token =
         let estimatedSnapshotPos = previousVersion - (previousVersion % batchSize)
         nextVersion - estimatedSnapshotPos >= batchSize
 
-    let supersedes struct (current, x) =
-        x.version > current.version
+    let isStale current candidate = current.version > candidate.version
 
 module private Snapshot =
 
@@ -391,11 +390,9 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
             | ValueNone -> return! context.LoadBatched(log, streamName, requireLeader, codec.TryDecode, ct) }
     let fetch state f = task { let! token', events = f in return struct (token', fold state (Seq.ofArray events)) }
     let reload (log, sn, leader, token, state) ct = fetch state (context.Reload(log, sn, leader, token, codec.TryDecode, ct))
-    interface Caching.IReloadableCategory<'event, 'state, 'context> with
-        member _.Load(log, categoryName, streamId, streamName, _allowStale, requireLeader, ct) =
+    interface ICategory<'event, 'state, 'context> with
+        member _.Load(log, categoryName, streamId, streamName, _maxAge, requireLeader, ct) =
             fetch initial (loadAlgorithm log categoryName streamId streamName requireLeader ct)
-        member _.Reload(log, streamName, requireLeader, streamToken, state, ct) =
-            reload (log, streamName, requireLeader, streamToken, state) ct
         member x.TrySync(log, categoryName, streamId, streamName, ctx, _maybeInit, token, state, events, ct) = task {
             let encode e = codec.Encode(ctx, e)
             let encodedEvents: IEventData<EventBody>[] = events |> Array.map encode
@@ -410,6 +407,7 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
                 return SyncResult.Written (token', state')
             | GatewaySyncResult.ConflictUnknown ->
                 return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, token, state)) }
+    interface Caching.IReloadable<'state> with member _.Reload(log, sn, leader, token, state, ct) = reload (log, sn, leader, token, state) ct
 
     member _.StoreSnapshot(log, category, streamId, ctx, token, snapshotEvent, ct) =
         let encodedWithMeta =
@@ -424,7 +422,7 @@ type MessageDbCategory<'event, 'state, 'context> internal (resolveInner, empty) 
         // As such, it can often be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
         [<O; D(null)>]?caching,
         [<O; D(null)>]?access) =
-        let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.supersedes caching
+        let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
         let resolveInner categoryName streamId = struct (cat, StreamName.render categoryName streamId, ValueNone)
         let empty = struct (context.TokenEmpty, initial)
         MessageDbCategory(resolveInner, empty)

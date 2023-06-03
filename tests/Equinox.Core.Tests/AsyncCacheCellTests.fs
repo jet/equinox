@@ -1,4 +1,4 @@
-﻿module Equinox.CosmosStore.Integration.CacheCellTests
+﻿module Equinox.Core.Tests.AsyncCacheCellTests
 
 open Equinox.Core
 open Swensen.Unquote
@@ -12,9 +12,9 @@ let ``AsyncLazy correctness`` () = async {
     // ensure that the encapsulated computation fires only once
     let mutable count = 0
     let cell = AsyncLazy(fun () -> task { return Interlocked.Increment &count })
-    false =! cell.IsValid(ValueNone)
+    test <@ cell.TryCompleted() |> ValueOption.isNone @>
     let! accessResult = [|1 .. 100|] |> Array.map (fun _ -> cell.Await() |> Async.AwaitTaskCorrect) |> Async.Parallel
-    true =! cell.IsValid(ValueNone)
+    test <@ cell.TryCompleted() |> ValueOption.isSome @>
     test <@ accessResult |> Array.forall ((=) 1) @>
 }
 
