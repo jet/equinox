@@ -1,38 +1,10 @@
-﻿namespace Equinox.Core
-
-open System
-open System.Runtime.Caching
-open System.Threading.Tasks
-
-type [<NoEquality; NoComparison; Struct>] CacheItemOptions =
-    | AbsoluteExpiration of ae: DateTimeOffset
-    | RelativeExpiration of re: TimeSpan
-module internal CacheItemOptions =
-    let toPolicy = function
-        | AbsoluteExpiration absolute -> CacheItemPolicy(AbsoluteExpiration = absolute)
-        | RelativeExpiration relative -> CacheItemPolicy(SlidingExpiration = relative)
-
-type ICache =
-    abstract member Load: key: string
-                          * maxAge: TimeSpan
-                          * isStale: Func<StreamToken, StreamToken, bool>
-                          * options: CacheItemOptions
-                          * loadOrReload: (struct (StreamToken * 'state) voption -> Task<struct (StreamToken * 'state)>)
-                          -> Task<struct (StreamToken * 'state)>
-    abstract member Save: key: string
-                          * isStale: Func<StreamToken, StreamToken, bool>
-                          * options: CacheItemOptions
-                          * timestamp: int64
-                          * token: StreamToken * state: 'state
-                          -> unit
-
 namespace Equinox
 
 open Equinox.Core
 open Equinox.Core.Tracing
 open System
 
-type internal CacheEntry<'state>(initialToken: StreamToken, initialState: 'state, initialTimestamp: int64) =
+type private CacheEntry<'state>(initialToken: StreamToken, initialState: 'state, initialTimestamp: int64) =
     let mutable currentToken = initialToken
     let mutable currentState = initialState
     let mutable verifiedTimestamp = initialTimestamp
@@ -79,13 +51,13 @@ type Cache private (inner: System.Runtime.Caching.MemoryCache) =
         | null -> ValueNone
         | :? CacheEntry<'state> as existingEntry -> existingEntry.TryGetValue()
         | x -> failwith $"tryLoad Incompatible cache entry %A{x}"
-    let addOrGet key options entry =
-        match inner.AddOrGetExisting(key, entry, CacheItemOptions.toPolicy options) with
+    let addOrGet key policy entry =
+        match inner.AddOrGetExisting(key, entry, policy = policy) with
         | null -> Ok entry
         | :? CacheEntry<'state> as existingEntry -> Error existingEntry
         | x -> failwith $"addOrGet Incompatible cache entry %A{x}"
-    let getElseAddEmptyEntry key options =
-        match addOrGet key options (CacheEntry<'state>.CreateEmpty()) with
+    let getElseAddEmptyEntry key policy =
+        match addOrGet key policy (CacheEntry<'state>.CreateEmpty()) with
         | Ok fresh -> fresh
         | Error existingEntry -> existingEntry
     let addOrMergeCacheEntry isStale key options timestamp struct (token, state) =
@@ -97,37 +69,36 @@ type Cache private (inner: System.Runtime.Caching.MemoryCache) =
         let config = System.Collections.Specialized.NameValueCollection(1)
         config.Add("cacheMemoryLimitMegabytes", string sizeMb);
         Cache(new System.Runtime.Caching.MemoryCache(name, config))
-    interface ICache with
-        // if there's a non-zero maxAge, concurrent read attempts share the roundtrip (and its fate, if it throws)
-        member _.Load(key, maxAge, isStale, options, loadOrReload) = task {
-            let loadOrReload maybeBaseState () = task {
-                let act = System.Diagnostics.Activity.Current
-                if act <> null then act.AddCacheHit(ValueOption.isSome maybeBaseState) |> ignore
-                let ts = System.Diagnostics.Stopwatch.GetTimestamp()
-                let! res = loadOrReload maybeBaseState
-                return struct (ts, res) }
-            if maxAge = TimeSpan.Zero then // Boring algorithm that has each caller independently load/reload the data and then cache it
-                let maybeBaseState = tryLoad key
-                let! timestamp, res = loadOrReload maybeBaseState ()
-                addOrMergeCacheEntry isStale key options timestamp res
-                return res
-            else // ensure we have an entry in the cache for this key; coordinate retrieval through that
-                let cacheSlot = getElseAddEmptyEntry key options
-                return! cacheSlot.ReadThrough(maxAge, isStale, loadOrReload) }
-        // Newer values get saved; equal values update the last retrieval timestamp
-        member _.Save(key, isStale, options, timestamp, token, state) =
-            addOrMergeCacheEntry isStale key options timestamp (token, state)
+    // if there's a non-zero maxAge, concurrent read attempts share the roundtrip (and its fate, if it throws)
+    member _.Load(key, maxAge, isStale, policy, loadOrReload) = task {
+        let loadOrReload maybeBaseState () = task {
+            let act = System.Diagnostics.Activity.Current
+            if act <> null then act.AddCacheHit(ValueOption.isSome maybeBaseState) |> ignore
+            let ts = System.Diagnostics.Stopwatch.GetTimestamp()
+            let! res = loadOrReload maybeBaseState
+            return struct (ts, res) }
+        if maxAge = TimeSpan.Zero then // Boring algorithm that has each caller independently load/reload the data and then cache it
+            let maybeBaseState = tryLoad key
+            let! timestamp, res = loadOrReload maybeBaseState ()
+            addOrMergeCacheEntry isStale key policy timestamp res
+            return res
+        else // ensure we have an entry in the cache for this key; coordinate retrieval through that
+            let cacheSlot = getElseAddEmptyEntry key policy
+            return! cacheSlot.ReadThrough(maxAge, isStale, loadOrReload) }
+    // Newer values get saved; equal values update the last retrieval timestamp
+    member _.Save(key, isStale, policy, timestamp, token, state) =
+        addOrMergeCacheEntry isStale key policy timestamp (token, state)
 
 type [<NoComparison; NoEquality; RequireQualifiedAccess>] CachingStrategy =
     /// Retain a single 'state per streamName.
     /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
     /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
     /// Unless a <c>LoadOption</c> is used, cache hits still incur a roundtrip to load any subsequently-added events.
-    | SlidingWindow of ICache * window: TimeSpan
+    | SlidingWindow of Cache * window: TimeSpan
     /// Retain a single 'state per streamName.
     /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
     /// Unless a <c>LoadOption</c> is used, cache hits still incur a roundtrip to load any subsequently-added events.
-    | FixedTimeSpan of ICache * period: TimeSpan
+    | FixedTimeSpan of Cache * period: TimeSpan
     /// Prefix is used to segregate multiple folded states per stream when they are stored in the cache.
     /// Semantics are otherwise identical to <c>SlidingWindow</c>.
-    | SlidingWindowPrefixed of ICache * window: TimeSpan * prefix: string
+    | SlidingWindowPrefixed of Cache * window: TimeSpan * prefix: string

@@ -15,7 +15,7 @@ let private tee f (inner: CancellationToken -> Task<struct (StreamToken * 'state
     return tokenAndState }
 
 type private Decorator<'event, 'state, 'context, 'cat when 'cat :> ICategory<'event, 'state, 'context> and 'cat :> IReloadable<'state> >
-    (category: 'cat, cache: ICache, isStale, createKey, createOptions) =
+    (category: 'cat, cache: Equinox.Cache, isStale, createKey, createOptions) =
     interface ICategory<'event, 'state, 'context> with
         member _.Load(log, categoryName, streamId, streamName, maxAge, requireLeader, ct) = task {
             let loadOrReload = function
@@ -35,16 +35,15 @@ type private Decorator<'event, 'state, 'context, 'cat when 'cat :> ICategory<'ev
 let private mkKey prefix streamName =
     prefix + streamName
 
-let private optionsSlidingExpiration (slidingExpiration: TimeSpan) () =
-    CacheItemOptions.RelativeExpiration slidingExpiration
-let private optionsFixedTimeSpan (period: TimeSpan) () =
+let private policySlidingExpiration (slidingExpiration: TimeSpan) () =
+    System.Runtime.Caching.CacheItemPolicy(SlidingExpiration = slidingExpiration)
+let private policyFixedTimeSpan (period: TimeSpan) () =
     let expirationPoint = let creationDate = DateTimeOffset.UtcNow in creationDate.Add period
-    CacheItemOptions.AbsoluteExpiration expirationPoint
-
+    System.Runtime.Caching.CacheItemPolicy(AbsoluteExpiration = expirationPoint)
 let private mapStrategy = function
-    | Equinox.CachingStrategy.FixedTimeSpan (cache, period) -> struct (        cache, mkKey null,   optionsFixedTimeSpan period)
-    | Equinox.CachingStrategy.SlidingWindow (cache, window) ->                 cache, mkKey null,   optionsSlidingExpiration window
-    | Equinox.CachingStrategy.SlidingWindowPrefixed (cache, window, prefix) -> cache, mkKey prefix, optionsSlidingExpiration window
+    | Equinox.CachingStrategy.FixedTimeSpan (cache, period) -> struct (        cache, mkKey null,   policyFixedTimeSpan period)
+    | Equinox.CachingStrategy.SlidingWindow (cache, window) ->                 cache, mkKey null,   policySlidingExpiration window
+    | Equinox.CachingStrategy.SlidingWindowPrefixed (cache, window, prefix) -> cache, mkKey prefix, policySlidingExpiration window
 
 let apply isStale x (cat: 'cat when 'cat :> ICategory<'event, 'state, 'context> and 'cat :> IReloadable<'state>): ICategory<_, _, _> =
     match x with
