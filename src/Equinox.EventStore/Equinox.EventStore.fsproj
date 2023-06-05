@@ -21,7 +21,7 @@
 
     <PackageReference Include="EventStore.Client" Version="22.0.0-preview" />
     <PackageReference Include="FsCodec" Version="3.0.0-rc.10" />
-    <PackageReference Include="FSharp.Control.TaskSeq" Version="0.3.0" />
+    <PackageReference Include="FSharp.Control.TaskSeq" Version="0.4.0-alpha.1" />
   </ItemGroup>
 
 </Project>
