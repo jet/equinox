@@ -18,10 +18,10 @@ type private Decorator<'event, 'state, 'context, 'cat when 'cat :> ICategory<'ev
     (category: 'cat, cache: Equinox.Cache, isStale, createKey, createOptions) =
     interface ICategory<'event, 'state, 'context> with
         member _.Load(log, categoryName, streamId, streamName, maxAge, requireLeader, ct) = task {
-            let loadOrReload = function
+            let loadOrReload ct = function
                 | ValueNone -> category.Load(log, categoryName, streamId, streamName, maxAge, requireLeader, ct)
                 | ValueSome (struct (token, state)) -> category.Reload(log, streamName, requireLeader, token, state, ct)
-            return! cache.Load(createKey streamName, maxAge, isStale, createOptions (), loadOrReload) }
+            return! cache.Load(createKey streamName, maxAge, isStale, createOptions (), loadOrReload, ct) }
         member _.TrySync(log, categoryName, streamId, streamName, context, maybeInit, streamToken, state, events, ct) = task {
             let timestamp = System.Diagnostics.Stopwatch.GetTimestamp() // NB take the timestamp before any potential write takes place
             let save struct (token, state) = cache.Save(createKey streamName, isStale, createOptions (), timestamp, token, state)
