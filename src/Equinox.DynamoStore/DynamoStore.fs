@@ -1284,14 +1284,14 @@ type CachingStrategy =
     /// Retain a single 'state per streamName, together with the associated etag.
     /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
     /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
-    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still involves a read roundtrip (RU charges incurred, transport latency) though deserialization is skipped due to etag match
+    /// Unless a <c>LoadOption</c> is used, each cache hit still involves a read roundtrip (RU charges incurred, transport latency) though deserialization is skipped due to etag match
     // NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
     // track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the unfolds in Tip
     | SlidingWindow of ICache * window: TimeSpan
     /// Retain a single 'state per streamName, together with the associated etag.
     /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
-    /// Typically combined with `Equinox.LoadOption.AllowStale` to minimize loads.
-    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still involves a read roundtrip (RU charges incurred, transport latency) though deserialization is skipped due to etag match
+    /// Typically combined with an `Equinox.LoadOption` to minimize loads.
+    /// Unless a <c>LoadOption</c> is used, each cache hit still involves a read roundtrip (RU charges incurred, transport latency) though deserialization is skipped due to etag match
     | FixedTimeSpan of ICache * period: TimeSpan
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]

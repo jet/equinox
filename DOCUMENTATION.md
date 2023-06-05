@@ -850,7 +850,7 @@ let create resolve = Service(streamId >> resolve Category)
 ```
 
 `Read` above will do a roundtrip to the Store in order to fetch the most recent
-state (in `AllowStale` mode, the store roundtrip can be optimized out by
+state (in `AnyCachedValue` or `AllowStale` modes, the store roundtrip can be optimized out by
 reading through the cache). This Synchronous Read can be used to
 [Read-your-writes](https://en.wikipedia.org/wiki/Consistency_model#Read-your-writes_Consistency)
 to establish a state incorporating the effects of any Command invocation you
@@ -1313,7 +1313,7 @@ type Service internal (resolve : CartId -> Equinox.Decider<Events.Event, Fold.St
 
     member _.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
         let decider = resolve cartId
-        let opt = if optimistic then Equinox.AllowStale else Equinox.RequireLoad
+        let opt = if optimistic then Equinox.AnyCachedValue else Equinox.RequireLoad
         decider.Transact(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
             return interpretMany Fold.fold (Seq.map interpret commands) state }, opt)
@@ -1375,7 +1375,7 @@ type Accumulator<'event, 'state>(fold : 'state -> 'event seq -> 'state, originSt
 type Service ... =
     member _.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
         let decider = resolve cartId
-        let opt = if optimistic then Some Equinox.AllowStale else Equinox.RequireLoad
+        let opt = if optimistic then Equinox.AnyCachedValue else Equinox.RequireLoad
         decider.Transact(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
             let acc = Accumulator(Fold.fold, state)

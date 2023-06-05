@@ -30,6 +30,7 @@ type AsyncLazy<'T>(workflow: unit -> Task<'T>) =
     /// Await the outcome of the computation.
     member _.Await() = workflow.Value
 
+    /// Singleton Empty value
     static member val Empty = AsyncLazy(fun () -> Task.FromException<'T>(System.InvalidOperationException "Uninitialized AsyncLazy"))
 
 /// Generic async lazy caching implementation that admits expiration/recomputation/retry on exception semantics.

@@ -3,6 +3,7 @@ module Equinox.Core.Tests.CachingTests
 open Swensen.Unquote
 open System
 open System.Threading
+open System.Threading.Tasks
 open Xunit
 
 type State = int
@@ -21,10 +22,12 @@ type SpyCategory() =
     member _.Loads = loads
     member _.Reloads = reloads
     member _.State = state
+    member val Delay : TimeSpan = TimeSpan.Zero with get, set
 
     interface Equinox.Core.ICategory<Event, State, unit> with
-        member x.Load(_log, _cat, _sid, _sn, _maxAge, _requireLeader, _ct) = task {
+        member x.Load(_log, _cat, _sid, _sn, _maxAge, _requireLeader, ct) = task {
             Interlocked.Increment &loads |> ignore
+            do! Task.Delay(x.Delay, ct)
             Interlocked.Increment &state |> ignore
             return struct (mkToken(), state)
         }
@@ -33,8 +36,9 @@ type SpyCategory() =
         }
 
     interface Equinox.Core.Caching.IReloadable<State> with
-        member x.Reload(_log, _sn, _requireLeader, _streamToken, _baseState, _ct) = task {
+        member x.Reload(_log, _sn, _requireLeader, _streamToken, _baseState, ct) = task {
             Interlocked.Increment &reloads |> ignore
+            do! Task.Delay(x.Delay, ct)
             Interlocked.Increment &state |> ignore
             return struct (mkToken(), state)
         }
@@ -50,6 +54,12 @@ let write sn (sut: Equinox.Core.ICategory<_, _, _>) = task {
     let wState' = trap <@ match wr with Equinox.Core.SyncResult.Written (_token, state') -> state' | _ -> failwith "unexpected" @>
     test <@ expectedWriteState = wState' @>
 }
+
+// Pinning the fact that the algorithm is not sensitive to the reuse of the initial value of a cache entry
+let [<Fact>] ``AsyncLazy.Empty is a true singleton, does not allocate`` () =
+    let i1 = Equinox.Core.AsyncLazy<int>.Empty
+    let i2 = Equinox.Core.AsyncLazy<int>.Empty
+    test <@ obj.ReferenceEquals(i1, i2) @>
 
 let [<Fact>] ``No strategy, no wrapping`` () =
     let cat = SpyCategory()
@@ -70,32 +80,134 @@ type Tests() =
 
     let [<Fact>] ``requireLoad vs allowStale`` () = task {
         let! struct (_token, state) = requireLoad ()
-        test <@ 1 = state && (1, 0) = (cat.Loads, cat.Reloads) @>
+        test <@ (1, 1, 0) = (state, cat.Loads, cat.Reloads) @>
         let! struct (_token, state) = requireLoad () // This time, the cache entry should be used as the base state for the load
-        test <@ 2 = state && (1, 1) = (cat.Loads, cat.Reloads) @>
+        test <@ (2, 1, 1) = (state, cat.Loads, cat.Reloads) @>
         let! struct (_token, state) = requireLoad () // no matter how close to the preceding load, a fresh roundtrip occurs
-        test <@ 3 = state && (1, 2) = (cat.Loads, cat.Reloads) @>
+        test <@ (3, 1, 2) = (state, cat.Loads, cat.Reloads) @>
 
         let t4 = requireLoad ()
 
         // Trigger a concurrent write (it should lose the cache update race)
         do! write ()
         let! struct (_token, state) = t4
-        test <@ 4 = state && (1, 3) = (cat.Loads, cat.Reloads) @>
+        test <@ (4, 1, 3) = (state, cat.Loads, cat.Reloads) @>
         // a raw read updates the cache, even though it's very fresh
         let! struct (_token, state) = requireLoad ()
-        test <@ 5 = state && (1, 4) = (cat.Loads, cat.Reloads) @>
+        test <@ (5, 1, 4) = (state, cat.Loads, cat.Reloads) @>
 
         // a write overwrites it (with an older value because our predicate is broken)
         do! write ()
 
         // a stale read sees the written value
         let! struct (_token, state) = allowStale ()
-        test <@ expectedWriteState = state && (1, 4) = (cat.Loads, cat.Reloads) @>
+        test <@ (expectedWriteState, 1, 4) = (state, cat.Loads, cat.Reloads) @>
         // a raw read updates the cache
         let! struct (_token, state) = requireLoad ()
-        test <@ 6 = state && (1, 5) = (cat.Loads, cat.Reloads) @>
+        test <@ (6, 1, 5) = (state, cat.Loads, cat.Reloads) @>
         // and the stale read sees same directly
         let! struct (_token, state) = allowStale ()
-        test <@ 6 = state && (1, 5) = (cat.Loads, cat.Reloads) @>
-    }
+        test <@ (6, 1, 5) = (state, cat.Loads, cat.Reloads) @> }
+
+    let [<Fact>] ``requireLoad does not unify loads``  () = task {
+        cat.Delay <- TimeSpan.FromMilliseconds 50
+        let t1 = requireLoad ()
+        do! Task.Delay 10
+        test <@ (1, 0) = (cat.Loads, cat.Reloads) @>
+        do! Task.Delay 60 // wait for the loaded value to get cached (50 should do, but MacOS CI...)
+        let! struct (_token, state) = requireLoad ()
+        test <@ 2 = state && (1, 1) = (cat.Loads, cat.Reloads) @>
+        let! struct (_token, state) = t1
+        test <@ 1 = state && (1, 1) = (cat.Loads, cat.Reloads) @> }
+
+    let loadReadThrough toleranceMs = load sn (TimeSpan.FromMilliseconds toleranceMs) sut
+
+    let [<Fact>] ``readThrough unifies compatible concurrent loads`` () = task {
+        cat.Delay <- TimeSpan.FromMilliseconds 50
+        let t1 = loadReadThrough 1
+        do! Task.Delay 10
+        test <@ (1, 0) = (cat.Loads, cat.Reloads) @>
+        let! struct (_token, state) = loadReadThrough 200
+        test <@ (1, 1, 0) = (state, cat.Loads, cat.Reloads) @>
+        let! struct (_token, state) = t1
+        test <@ (1, 1, 0) = (state, cat.Loads, cat.Reloads) @> }
+
+    let [<Fact>] ``readThrough handles concurrent incompatible loads correctly`` () = task {
+        cat.Delay <- TimeSpan.FromMilliseconds 50
+        let t1 = loadReadThrough 1
+        do! Task.Delay 5
+        test <@ (1, 0) = (cat.Loads, cat.Reloads) @>
+        let! struct (_token, state) = loadReadThrough 4
+        test <@ (2, 2, 0) = (state, cat.Loads, cat.Reloads) @>
+        let! struct (_token, state) = t1
+        test <@ (1, 2, 0) = (state, cat.Loads, cat.Reloads) @> }
+
+    let [<Fact>] ``readThrough handles overlapped incompatible loads correctly`` () = task {
+        cat.Delay <- TimeSpan.FromMilliseconds 50
+        let t1 = loadReadThrough 1
+        do! Task.Delay 10
+        test <@ (1, 0) = (cat.Loads, cat.Reloads) @>
+        do! Task.Delay 50
+        let! struct (_token, state) = loadReadThrough 59
+        test <@ (2, 1, 1) = (state, cat.Loads, cat.Reloads) @>
+        let! struct (_token, state) = t1
+        test <@ (1, 1, 1) = (state, cat.Loads, cat.Reloads) @> }
+
+    let [<Fact>] ``readThrough scenarios`` () = task {
+        let! struct (_token, state) = requireLoad ()
+        test <@ (1, 1, 0) = (state, cat.Loads, cat.Reloads) @>
+
+        let! struct (_token, state) = loadReadThrough 1000 // Existing cached entry is used, as fresh enough
+        test <@ (1, 1, 0) = (state, cat.Loads, cat.Reloads) @>
+        do! Task.Delay 100
+        let! struct (_token, state) = loadReadThrough 1000 // Does not load, or extend lifetime
+        test <@ (1, 1, 0) = (state, cat.Loads, cat.Reloads) @>
+        let! struct (_token, state) = loadReadThrough 50 // Triggers reload as delay of 100 above has rendered entry stale
+        test <@ (2, 1, 1) = (state, cat.Loads, cat.Reloads) @>
+        cat.Delay <- TimeSpan.FromMilliseconds 50
+        let t3 = requireLoad ()
+        do! Task.Delay 2 // Make the main read enter a delay state (of 500); ensure readThrough values are expired
+        cat.Delay <- TimeSpan.FromMilliseconds 75 // Next read picks up the longer delay
+        // These reads start after the first read so replace the older value in the cache
+        let t1 = loadReadThrough 1
+        let t2 = loadReadThrough 1 // NB this read overlaps with t1 task, ReadThrough should coalesce
+        let! struct (_t2, r2) = t2 // started last, awaited first - should be same result as r1 (and should be the winning cache entry)
+        let! struct (_t1, r1) = t1 // started first, but should be same as r2
+        let! struct (_t3, r3) = t3 // We awaited it last, but it returned a result first
+        test <@ 3 = r3 && 4 = r1 && (1, 3) = (cat.Loads, cat.Reloads) && r1 = r2 @>
+        let! struct (_token, state) = loadReadThrough 150 // Delay of 75 overlapped with delay of 50 should not have expired the entry
+        test <@ (4, 1, 3) = (state, cat.Loads, cat.Reloads) @> // The newer cache entry won
+        cat.Delay <- TimeSpan.FromMilliseconds 10 // Reduce the delay, but we do want to overlap a write
+        let t4 = loadReadThrough 1000 // Delay of 1000 in t1/t2 should have aged the read result, so should trigger a read
+        do! Task.Delay 2
+        cat.Delay <- TimeSpan.Zero // no further delays required for the rest of the tests
+
+        // Trigger a concurrent write (it should lose the cache update race)
+        do! write ()
+        let! struct (_token, state) = t4
+        test <@ (4, 1, 3) = (state, cat.Loads, cat.Reloads) @>
+        // a raw read updates the cache, even though it's very fresh
+        let! struct (_token, state) = requireLoad ()
+        test <@ (5, 1, 4) = (state, cat.Loads, cat.Reloads) @>
+        // a readThrough re-uses that
+        let! struct (_token, state) = loadReadThrough 10
+        test <@ (5, 1, 4) = (state, cat.Loads, cat.Reloads) @>
+
+        // allowStale is just a special case of read through in this implementation
+        // ... so it works the same
+        let! struct (_token, state) = allowStale ()
+        test <@ (5, 1, 4) = (state, cat.Loads, cat.Reloads) @>
+
+        // a write overwrites it (with an older value because our predicate is broken)
+        do! write ()
+        // a readThrough sees the written value
+        let! struct (_token, state) = loadReadThrough 10
+        test <@ (expectedWriteState, 1, 4) = (state, cat.Loads, cat.Reloads) @>
+        // a raw read updates the cache
+        let! struct (_token, state) = requireLoad ()
+        test <@ (6, 1, 5) = (state, cat.Loads, cat.Reloads) @>
+        // and the readThrough / allowStale sees same
+        let! struct (_token, state) = loadReadThrough 10
+        test <@ (6, 1, 5) = (state, cat.Loads, cat.Reloads) @>
+        let! struct (_token, state) = allowStale ()
+        test <@ (6, 1, 5) = (state, cat.Loads, cat.Reloads) @> }
