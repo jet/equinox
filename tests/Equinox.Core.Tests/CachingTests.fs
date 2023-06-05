@@ -112,9 +112,9 @@ type Tests() =
     let [<Fact>] ``requireLoad does not unify loads``  () = task {
         cat.Delay <- TimeSpan.FromMilliseconds 50
         let t1 = requireLoad ()
-        do! Task.Delay 10
+        do! Task.Delay 20
         test <@ (1, 0) = (cat.Loads, cat.Reloads) @>
-        do! Task.Delay 60 // wait for the loaded value to get cached (50 should do, but MacOS CI...)
+        do! Task.Delay 50 // wait for the loaded value to get cached
         let! struct (_token, state) = requireLoad ()
         test <@ 2 = state && (1, 1) = (cat.Loads, cat.Reloads) @>
         let! struct (_token, state) = t1
@@ -166,7 +166,7 @@ type Tests() =
         test <@ (2, 1, 1) = (state, cat.Loads, cat.Reloads) @>
         cat.Delay <- TimeSpan.FromMilliseconds 50
         let t3 = requireLoad ()
-        do! Task.Delay 2 // Make the main read enter a delay state (of 500); ensure readThrough values are expired
+        do! Task.Delay 10 // Make the main read enter a delay state (of 50); ensure readThrough values are expired
         cat.Delay <- TimeSpan.FromMilliseconds 75 // Next read picks up the longer delay
         // These reads start after the first read so replace the older value in the cache
         let t1 = loadReadThrough 1
@@ -178,7 +178,7 @@ type Tests() =
         let! struct (_token, state) = loadReadThrough 150 // Delay of 75 overlapped with delay of 50 should not have expired the entry
         test <@ (4, 1, 3) = (state, cat.Loads, cat.Reloads) @> // The newer cache entry won
         cat.Delay <- TimeSpan.FromMilliseconds 10 // Reduce the delay, but we do want to overlap a write
-        let t4 = loadReadThrough 1000 // Delay of 1000 in t1/t2 should have aged the read result, so should trigger a read
+        let t4 = loadReadThrough 100 // Delay of 75 in t1/t2 should have aged the read result, so should trigger a read
         do! Task.Delay 2
         cat.Delay <- TimeSpan.Zero // no further delays required for the rest of the tests
 

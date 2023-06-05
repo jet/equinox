@@ -1,5 +1,6 @@
 module Equinox.Core.Tests.AsyncBatchingGateTests
 
+open System
 open Equinox.Core
 open FsCheck.Xunit
 open Swensen.Unquote
@@ -20,10 +21,10 @@ let ``AsyncBatchingGate correctness`` () = async {
         0 =! concurrency
         return reqs
     }
-    let cell = AsyncBatchingGate dispatch
+    let cell = AsyncBatchingGate(dispatch, linger = TimeSpan.FromMilliseconds 5)
     let! results = [1 .. 100] |> Seq.map cell.Execute |> Async.Parallel
     test <@ set (Seq.collect id results) = set [1 .. 100] @>
-    // Default linger of 5ms makes this tend strongly to only be 1 batch
+    // Linger of 5ms makes this tend strongly to only be 1 batch
     test <@ batches < 2 @>
 }
 
