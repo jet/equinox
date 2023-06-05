@@ -114,7 +114,7 @@ type Tests() =
         let t1 = requireLoad ()
         do! Task.Delay 10
         test <@ (1, 0) = (cat.Loads, cat.Reloads) @>
-        do! Task.Delay 50 // wait for the loaded value to get cached
+        do! Task.Delay 60 // wait for the loaded value to get cached (50 should do, but MacOS CI...)
         let! struct (_token, state) = requireLoad ()
         test <@ 2 = state && (1, 1) = (cat.Loads, cat.Reloads) @>
         let! struct (_token, state) = t1
