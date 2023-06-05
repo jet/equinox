@@ -41,7 +41,8 @@ type internal AsyncBatch<'Req, 'Res>() =
 type AsyncBatchingGate<'Req, 'Res>(dispatch: Func<'Req[], CancellationToken, Task<'Res[]>>, [<O; D null>]?linger: TimeSpan) =
     let lingerMs = match linger with None -> 1 | Some x -> int x.TotalMilliseconds
     let mutable cell = AsyncBatch<'Req, 'Res>()
-    new (dispatch: 'Req[] -> Async<'Res[]>, ?linger) = AsyncBatchingGate((fun reqs ct -> Async.startImmediateAsTask ct (dispatch reqs)), ?linger = linger)
+
+    new (dispatch: 'Req[] -> Async<'Res[]>, ?linger) = AsyncBatchingGate((fun reqs ct -> dispatch reqs |> Async.startImmediateAsTask ct), ?linger = linger)
 
     /// Include an item in the batch; await the collective dispatch (subject to the configured linger time)
     member x.ExecuteAsync(req, ct) = task {
