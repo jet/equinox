@@ -850,7 +850,7 @@ let create resolve = Service(streamId >> resolve Category)
 ```
 
 `Read` above will do a roundtrip to the Store in order to fetch the most recent
-state (in `AnyCachedValue` or `MaxStaleness` modes, the store roundtrip can be optimized out by
+state (in `AnyCachedValue` or `AllowStale` modes, the store roundtrip can be optimized out by
 reading through the cache). This Synchronous Read can be used to
 [Read-your-writes](https://en.wikipedia.org/wiki/Consistency_model#Read-your-writes_Consistency)
 to establish a state incorporating the effects of any Command invocation you
