@@ -71,7 +71,7 @@ type Cache private (inner: System.Runtime.Caching.MemoryCache) =
         config.Add("cacheMemoryLimitMegabytes", string sizeMb);
         Cache(new System.Runtime.Caching.MemoryCache(name, config))
     // if there's a non-zero maxAge, concurrent read attempts share the roundtrip (and its fate, if it throws)
-    member _.Load(key, maxAge, isStale, policy, loadOrReload, ct) = task {
+    member internal _.Load(key, maxAge, isStale, policy, loadOrReload, ct) = task {
         let loadOrReload maybeBaseState = task {
             let act = System.Diagnostics.Activity.Current
             if act <> null then act.AddCacheHit(ValueOption.isSome maybeBaseState) |> ignore
@@ -87,8 +87,11 @@ type Cache private (inner: System.Runtime.Caching.MemoryCache) =
             let cacheSlot = getElseAddEmptyEntry key policy
             return! cacheSlot.ReadThrough(maxAge, isStale, loadOrReload) }
     // Newer values get saved; equal values update the last retrieval timestamp
-    member _.Save(key, isStale, policy, timestamp, token, state) =
+    member internal _.Save(key, isStale, policy, timestamp, token, state) =
         addOrMergeCacheEntry isStale key policy timestamp (token, state)
+
+    /// Exposes the internal MemoryCache
+    member val Inner = inner
 
 type [<NoComparison; NoEquality; RequireQualifiedAccess>] CachingStrategy =
     /// Retain a single 'state per streamName.

@@ -35,9 +35,9 @@ type private Decorator<'event, 'state, 'context, 'cat when 'cat :> ICategory<'ev
 let private mkKey prefix streamName =
     prefix + streamName
 
-let private policySlidingExpiration (slidingExpiration: TimeSpan) () =
+let internal policySlidingExpiration (slidingExpiration: TimeSpan) () =
     System.Runtime.Caching.CacheItemPolicy(SlidingExpiration = slidingExpiration)
-let private policyFixedTimeSpan (period: TimeSpan) () =
+let internal policyFixedTimeSpan (period: TimeSpan) () =
     let expirationPoint = let creationDate = DateTimeOffset.UtcNow in creationDate.Add period
     System.Runtime.Caching.CacheItemPolicy(AbsoluteExpiration = expirationPoint)
 let private mapStrategy = function
