@@ -13,7 +13,7 @@
     <Compile Include="Cache.fs" />
     <Compile Include="Caching.fs" />
     <Compile Include="Retry.fs" />
-    <Compile Include="AsyncBatchingGate.fs" />
+    <Compile Include="Batching.fs" />
   </ItemGroup>
 
   <ItemGroup>

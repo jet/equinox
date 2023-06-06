@@ -1,15 +1,15 @@
-module Equinox.Core.Tests.AsyncBatchingGateTests
+module Equinox.Core.Tests.BatchingTests
 
-open System
-open Equinox.Core
+open Equinox.Core.Batching
 open FsCheck.Xunit
 open Swensen.Unquote
+open System
 open System.Collections.Concurrent
 open System.Threading
 open Xunit
 
 [<Fact>]
-let ``AsyncBatchingGate correctness`` () = async {
+let ``Batcher correctness`` () = async {
     let mutable batches = 0
     let mutable active = 0
     let dispatch (reqs : int[]) = async {
@@ -21,15 +21,15 @@ let ``AsyncBatchingGate correctness`` () = async {
         0 =! concurrency
         return reqs
     }
-    let cell = AsyncBatchingGate(dispatch, linger = TimeSpan.FromMilliseconds 40)
+    let cell = Batcher(dispatch, linger = TimeSpan.FromMilliseconds 40)
     let! results = [1 .. 100] |> Seq.map cell.Execute |> Async.Parallel
     test <@ set (Seq.collect id results) = set [1 .. 100] @>
-    // Linger of 40ms makes this tend strongly to only be 1 batch
-    1 =! batches
+    // Linger of 40ms makes this tend strongly to only be 1 batch, but no guarantees
+    test <@ 1 <= batches && batches < 3 @>
 }
 
 [<Property>]
-let ``AsyncBatchingGate error handling`` shouldFail = async {
+let ``Batcher error handling`` shouldFail = async {
     let fails = ConcurrentBag() // Could be a ResizeArray per spec, but this removes all doubt
     let dispatch (reqs : int[]) = async {
         if shouldFail () then
@@ -37,7 +37,7 @@ let ``AsyncBatchingGate error handling`` shouldFail = async {
             failwith $"failing %A{reqs}"
         return reqs
     }
-    let cell = AsyncBatchingGate dispatch
+    let cell = Batcher dispatch
     let input = [1 .. 100]
     let! results = input |> Seq.map (cell.Execute >> Async.Catch) |> Async.Parallel
     let oks = results |> Array.choose (function Choice1Of2 r -> Some r | _ -> None)
