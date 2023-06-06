@@ -133,7 +133,8 @@ type Tests() =
     let [<Fact>] ``allowStale handles concurrent incompatible loads correctly`` () = task {
         cat.Delay <- TimeSpan.FromMilliseconds 50
         let t1 = allowStale 1
-        let t2 = allowStale 5 // any cached value should be at least 50 old (and the overlapping call should not have started 45 late)
+        do! Task.Delay 20 // Give the load a chance to start
+        let t2 = allowStale 1 // any cached value should be at least 50 old (and the overlapping call should not have started 45 late)
         let! struct (_token, state) = t2
         test <@ (2, 2) = (state, cat.Loads + cat.Reloads) @>
         let! struct (_token, state) = t1
