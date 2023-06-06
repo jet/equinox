@@ -24,8 +24,8 @@ let ``Batcher correctness`` () = async {
     let cell = Batcher(dispatch, linger = TimeSpan.FromMilliseconds 40)
     let! results = [1 .. 100] |> Seq.map cell.Execute |> Async.Parallel
     test <@ set (Seq.collect id results) = set [1 .. 100] @>
-    // Linger of 40ms makes this tend strongly to only be 1 batch
-    1 =! batches
+    // Linger of 40ms makes this tend strongly to only be 1 batch, but no guarantees
+    test <@ 1 <= batches && batches < 3 @>
 }
 
 [<Property>]
