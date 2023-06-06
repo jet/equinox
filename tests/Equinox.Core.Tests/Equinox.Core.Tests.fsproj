@@ -7,7 +7,7 @@
   <ItemGroup>
     <Compile Include="..\..\src\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
     <Compile Include="AsyncCacheCellTests.fs" />
-    <Compile Include="AsyncBatchingGateTests.fs" />
+    <Compile Include="BatchingTests.fs" />
     <Compile Include="CachingTests.fs" />
   </ItemGroup>
 
