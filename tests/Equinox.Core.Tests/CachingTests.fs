@@ -151,7 +151,7 @@ type Tests() =
         let! struct (_token, state) = t1
         test <@ (1, 1, 1) = (state, cat.Loads, cat.Reloads) @> }
 
-    let [<Fact(Skip="not ready yet")>] ``readThrough scenarios`` () = task {
+    let [<Fact>] ``readThrough scenarios`` () = task {
         let! struct (_token, state) = requireLoad ()
         test <@ (1, 1, 0) = (state, cat.Loads, cat.Reloads) @>
 
