@@ -56,6 +56,4 @@ type AsyncBatchingGate<'Req, 'Res>(dispatch: Func<'Req[], CancellationToken, Tas
             return! x.ExecuteAsync(req, ct) } // but everyone attempts to merge their requests into the batch during the linger period
 
     /// Include an item in the batch; await the collective dispatch (subject to the configured linger time)
-    member x.Execute(req) = async {
-        let! ct = Async.CancellationToken
-        return! x.ExecuteAsync(req, ct) |> Async.AwaitTaskCorrect }
+    member x.Execute(req) = Async.call (fun ct -> x.ExecuteAsync(req, ct))
