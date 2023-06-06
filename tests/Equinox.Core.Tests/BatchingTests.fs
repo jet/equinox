@@ -1,9 +1,9 @@
 module Equinox.Core.Tests.BatchingTests
 
-open System
 open Equinox.Core.Batching
 open FsCheck.Xunit
 open Swensen.Unquote
+open System
 open System.Collections.Concurrent
 open System.Threading
 open Xunit
