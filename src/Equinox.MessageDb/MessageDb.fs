@@ -132,7 +132,8 @@ module private Write =
     let inline len (bytes: EventBody) = bytes.Length
     let private eventDataLen (x: IEventData<EventBody>) = len x.Data + len x.Meta
     let private eventDataBytes events = events |> Array.sumBy eventDataLen
-    let private writeEventsLogged writer streamName version events (act: Activity) (log: ILogger) ct: Task<MdbSyncResult> = task {
+    let private writeEventsLogged writer streamName version events (log: ILogger) ct: Task<MdbSyncResult> = task {
+        let act = Activity.Current
         let log = if not (log.IsEnabled Events.LogEventLevel.Debug) then log else log |> Log.propEventData "Json" events
         let bytes, count = eventDataBytes events, events.Length
         let log = log |> Log.prop "bytes" bytes
@@ -155,9 +156,7 @@ module private Write =
                                                  "Write", count, match evt with Log.WriteConflict _ -> true | _ -> false)
         return result }
     let writeEvents log retryPolicy writer (category, streamId, streamName) version events ct: Task<MdbSyncResult> = task {
-        use act = source.StartActivity("WriteEvents", ActivityKind.Client)
-        if act <> null then act.AddStream(category, streamId, streamName) |> ignore
-        let call = writeEventsLogged writer streamName version events act
+        let call = writeEventsLogged writer streamName version events
         return! Log.withLoggedRetries retryPolicy "writeAttempt" call log ct }
 
 module Read =
@@ -182,15 +181,12 @@ module Read =
     let private resolvedEventLen (x: ITimelineEvent<EventBody>) = len x.Data + len x.Meta
     let private resolvedEventBytes events = events |> Array.sumBy resolvedEventLen
     let private loggedReadSlice reader streamName batchSize requiresLeader startPos batchIndex (log: ILogger) ct: Task<_> = task {
-        let parentAct = Activity.Current
-        use act = source.StartActivity("ReadSlice", ActivityKind.Client)
-        if act <> null then act.AddStreamFromParent(parentAct).AddBatch(batchSize, batchIndex).AddStartPosition(startPos).AddLeader(requiresLeader) |> ignore
+        let act = Activity.Current
         let! t, slice = readSliceAsync reader streamName batchSize startPos requiresLeader |> Stopwatch.time ct
         let bytes, count = slice.Messages |> resolvedEventBytes, slice.Messages.Length
         let reqMetric: Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Slice reqMetric
         if act <> null then act.IncMetric(count, bytes).AddLastVersion(slice.LastVersion) |> ignore
-        if parentAct <> null then parentAct.IncMetric(count, bytes) |> ignore
         let log = if not (log.IsEnabled Events.LogEventLevel.Debug) then log else log |> Log.propResolvedEvents "Json" slice.Messages
         (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes |> Log.event evt).Information("Mdb{action:l} count={count} version={version}",
             "Read", count, slice.LastVersion)
@@ -217,41 +213,40 @@ module Read =
                 return! loop () }
         task {
             do! loop ()
+            let act = Activity.Current
+            if act <> null then act.AddBatches(batchCount).AddLastVersion(version) |> ignore
             return version, Array.ofSeq result }
 
-    let private logBatchRead (act: Activity) streamName t events (batchSize: int64) version (log: ILogger) =
+    let private logBatchRead streamName t events (batchSize: int64) version (log: ILogger) =
         let bytes, count = resolvedEventBytes events, events.Length
         let reqMetric: Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let batches = (events.Length - 1)/ (int batchSize) + 1
         let action = "Load"
         let evt = Log.Metric.Batch (batches, reqMetric)
-        if act <> null then act.AddBatches(batches).AddLastVersion(version) |> ignore
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "Mdb{action:l} stream={stream} count={count}/{batches} version={version}",
             action, streamName, count, batches, version)
 
-    let private logLastEventRead (parent: Activity) (act: Activity) streamName t events (version: int64) (log: ILogger) =
+    let private logLastEventRead streamName t events (version: int64) (log: ILogger) =
         let bytes = resolvedEventBytes events
         let count = events.Length
         let reqMetric: Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Metric.ReadLast reqMetric
+        let act = Activity.Current
         if act <> null then act.IncMetric(count, bytes).AddLastVersion(version) |> ignore
-        if parent <> null then parent.IncMetric(count, bytes) |> ignore
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "Mdb{action:l} stream={stream} count={count} version={version}",
             "ReadL", streamName, count, version)
 
     let internal loadLastEvent (log: ILogger) retryPolicy (reader: MessageDbReader) requiresLeader streamName eventType ct
         : Task<int64 * ITimelineEvent<EventBody>[]> = task {
-        let parentAct = Activity.Current
-        if parentAct <> null then parentAct.AddLoadMethod("Last") |> ignore
-        use act = source.StartActivity("ReadLast", ActivityKind.Client)
-        if act <> null then act.AddStreamFromParent(parentAct).AddLeader(requiresLeader) |> ignore
+        let act = Activity.Current
+        if act <> null then act.AddLoadMethod("Last") |> ignore
         let read _ = readLastEventAsync reader streamName requiresLeader eventType
 
         let! t, page = Log.withLoggedRetries retryPolicy "readAttempt" read log |> Stopwatch.time ct
 
-        log |> logLastEventRead parentAct act streamName t page.Messages page.LastVersion
+        log |> logLastEventRead streamName t page.Messages page.LastVersion
         return page.LastVersion, page.Messages }
 
     let internal loadForwardsFrom (log: ILogger) retryPolicy reader batchSize maxPermittedBatchReads streamName startPosition requiresLeader ct
@@ -262,7 +257,7 @@ module Read =
         let retryingLoggingReadSlice pos batchIndex = Log.withLoggedRetries retryPolicy "readAttempt" (call pos batchIndex)
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
         let! t, (version, events) = readBatches log batchSize retryingLoggingReadSlice maxPermittedBatchReads startPosition |> Stopwatch.time ct
-        log |> logBatchRead act streamName t events batchSize version
+        log |> logBatchRead streamName t events batchSize version
         return version, events }
 
 module private Token =
@@ -358,6 +353,8 @@ type MessageDbContext(client: MessageDbClient, batchOptions: BatchOptions) =
     member _.StoreSnapshot(log, category, streamId, event, ct) = task {
         let snapshotStream = Snapshot.streamName category streamId
         let category = Snapshot.snapshotCategory category
+        let act = Activity.Current
+        if act <> null then act.SetTag("eqx.snapshot_written", true) |> ignore
         do! Write.writeEvents log None client.Writer (category, streamId, snapshotStream) Any [| event |] ct :> Task }
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
