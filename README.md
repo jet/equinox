@@ -78,8 +78,9 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
   - `Box.Codec`: lightweight [non-serializing substitute equivalent to `NewtonsoftJson.Codec` for use in unit and integration tests](https://github.com/jet/FsCodec#boxcodec)
   - `Codec`: an explicitly coded pair of `encode` and `tryDecode` functions for when you need to customize
 - Caching using the .NET `MemoryCache` to:
-  - Minimize round trips (pluggable via [`ICache`](https://github.com/jet/equinox/blob/master/src/Equinox.Core/Cache.fs#L22) :pray: [@DSilence](https://github.com/jet/equinox/pull/161)
-  - Minimize latency and bandwidth / Request Charges by maintaining the folded state, without making the Domain Model folded state serializable
+  - Minimize round trips; consistent implementation across stores :pray: [@DSilence](https://github.com/jet/equinox/pull/161)
+  - Minimize latency and bandwidth / Request Charges by maintaining the folded state, without needing the Domain Model folded state to be serializable
+  - Enable read through caching, coalescing concurrent reads via opt-in `LoadOption.AllowStale`
 - Mature and comprehensive logging (using [Serilog](https://github.com/serilog/serilog) internally), with optimal performance and pluggable integration with your apps hosting context (we ourselves typically feed log info to Splunk and the metrics embedded in the `Serilog.Events.LogEvent` Properties to Prometheus; see relevant tests for examples)
 - OpenTelemetry Integration (presently only implemented in `Equinox.Core` and `Equinox.MessageDb` ... `#help-wanted`)
 - **`Equinox.EventStore`, `Equinox.SqlStreamStore`: In-stream Rolling Snapshots**:

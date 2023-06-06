@@ -38,7 +38,7 @@ frame "Consistent Event Stores" as stores <<Expanded>> {
     interface IStream <<Component>>
     rectangle "Equinox.Core" as core <<External>> {
         rectangle "System.MemoryCache" <<External Container>>
-        interface ICache <<Component>>
+        interface Cache <<Component>>
     }
     frame "SqlStreamStore" as ssss <<Internal>> {
         rectangle "Equinox.SqlStreamStore.MsSql" <<Component>> as ssm
@@ -78,13 +78,13 @@ publishers <--  cr         : can feed from
 publishers <--  er         : can feed from
 
 ms           .> IStream    : implements
-es           -> ICache
+es           -> Cache
 es           .> IStream    : implements
 es           -> esc
-cs          --> ICache
+cs          --> Cache
 cs           .> IStream    : implements
 cs          <-> cc
-sss          -> ICache
+sss          -> Cache
 sss          .> IStream    : implements
 
 ssm          -> sss        : is a

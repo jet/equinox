@@ -15,101 +15,89 @@ type Decider<'event, 'state>(inner: DeciderCore<'event, 'state>) =
     /// 1.  Invoke the supplied <c>interpret</c> function with the present state to determine whether any write is to occur.
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
     ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
-    member _.Transact(interpret: 'state -> 'event list, ?load, ?attempts): Async<unit> = async {
-        let! ct = Async.CancellationToken
-        return! inner.Transact(interpret >> Seq.ofList, ?load = load, ?attempts = attempts, ct = ct) |> Async.AwaitTaskCorrect }
+    member _.Transact(interpret: 'state -> 'event list, ?load, ?attempts): Async<unit> = Async.call <| fun ct ->
+        inner.Transact(interpret >> Seq.ofList, ?load = load, ?attempts = attempts, ct = ct)
 
     /// 1. Invoke the supplied <c>interpret</c> function with the present state
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
     ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
     /// 3. Uses <c>render</c> to generate a 'view from the persisted final state
-    member _.Transact(interpret: 'state -> 'event list, render: 'state -> 'view, ?load, ?attempts): Async<'view> = async {
-        let! ct = Async.CancellationToken
-        return! inner.Transact(interpret >> Seq.ofList, render, ?load = load, ?attempts = attempts, ct = ct) |> Async.AwaitTaskCorrect }
+    member _.Transact(interpret: 'state -> 'event list, render: 'state -> 'view, ?load, ?attempts): Async<'view> = Async.call <| fun ct ->
+        inner.Transact(interpret >> Seq.ofList, render, ?load = load, ?attempts = attempts, ct = ct)
 
     /// 1. Invoke the supplied <c>decide</c> function with the present state, holding the <c>'result</c>
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
     ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
     /// 3. Yield result
-    member _.Transact(decide: 'state -> 'result * 'event list, ?load, ?attempts): Async<'result> = async {
-        let! ct = Async.CancellationToken
+    member _.Transact(decide: 'state -> 'result * 'event list, ?load, ?attempts): Async<'result> = Async.call <| fun ct ->
         let inline decide' s = let r, es = decide s in struct (r, Seq.ofList es)
-        return! inner.Transact(decide', ?load = load, ?attempts = attempts, ct = ct) |> Async.AwaitTaskCorrect }
+        inner.Transact(decide', ?load = load, ?attempts = attempts, ct = ct)
 
     /// 1. Invoke the supplied <c>decide</c> function with the present state, holding the <c>'result</c>
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
     ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
     /// 3. Yields a final 'view produced by <c>mapResult</c> from the <c>'result</c> and/or the final persisted <c>'state</c>
-    member _.Transact(decide: 'state -> 'result * 'event list, mapResult: 'result -> 'state -> 'view, ?load, ?attempts): Async<'view> = async {
-        let! ct = Async.CancellationToken
+    member _.Transact(decide: 'state -> 'result * 'event list, mapResult: 'result -> 'state -> 'view, ?load, ?attempts): Async<'view> = Async.call <| fun ct ->
         let inline decide' s = let r, es = decide s in struct (r, Seq.ofList es)
-        return! inner.Transact(decide', mapResult, ?load = load, ?attempts = attempts, ct = ct) |> Async.AwaitTaskCorrect }
+        inner.Transact(decide', mapResult, ?load = load, ?attempts = attempts, ct = ct)
 
     /// 1. Invoke the supplied <c>decide</c> function with the current complete context, holding the <c>'result</c>
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
     ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
     /// 3. Yields <c>result</c>
-    member _.TransactEx(decide: ISyncContext<'state> -> 'result * 'event list, ?load, ?attempts): Async<'result> = async {
-        let! ct = Async.CancellationToken
+    member _.TransactEx(decide: ISyncContext<'state> -> 'result * 'event list, ?load, ?attempts): Async<'result> = Async.call <| fun ct ->
         let inline decide' c = let r, es = decide c in struct (r, Seq.ofList es)
-        return! inner.TransactEx(decide = decide', ?load = load, ?attempts = attempts, ct = ct) |> Async.AwaitTaskCorrect }
+        inner.TransactEx(decide = decide', ?load = load, ?attempts = attempts, ct = ct)
 
     /// 1. Invoke the supplied <c>decide</c> function with the current complete context, holding the <c>'result</c>
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
     ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
     /// 3. Yields a final 'view produced by <c>mapResult</c> from the <c>'result</c> and/or the final persisted <c>ISyncContext</c>
     member _.TransactEx(decide: ISyncContext<'state> -> 'result * 'event list, mapResult: 'result -> ISyncContext<'state> -> 'view,
-                        ?load, ?attempts): Async<'view> = async {
-        let! ct = Async.CancellationToken
+                        ?load, ?attempts): Async<'view> = Async.call <| fun ct ->
         let inline decide' c = let r, es = decide c in struct (r, Seq.ofList es)
-        return! inner.TransactEx(decide = decide', mapResult = mapResult, ?load = load, ?attempts = attempts, ct = ct) |> Async.AwaitTaskCorrect }
+        inner.TransactEx(decide = decide', mapResult = mapResult, ?load = load, ?attempts = attempts, ct = ct)
 
     /// Project from the folded <c>'state</c>, but without executing a decision flow as <c>Transact</c> does
-    member _.Query(render: 'state -> 'view, ?load): Async<'view> = async {
-        let! ct = Async.CancellationToken
-        return! inner.Query(render, ?load = load, ct = ct) |> Async.AwaitTaskCorrect }
+    member _.Query(render: 'state -> 'view, ?load): Async<'view> = Async.call <| fun ct ->
+        inner.Query(render, ?load = load, ct = ct)
 
     /// Project from the stream's complete context, but without executing a decision flow as <c>TransactEx<c> does
-    member _.QueryEx(render: ISyncContext<'state> -> 'view, ?load): Async<'view> = async {
-        let! ct = Async.CancellationToken
-        return! inner.QueryEx(render, ?load = load, ct = ct) |> Async.AwaitTaskCorrect }
+    member _.QueryEx(render: ISyncContext<'state> -> 'view, ?load): Async<'view> = Async.call <| fun ct ->
+        inner.QueryEx(render, ?load = load, ct = ct)
 
     /// 1. Invoke the supplied <c>Async</c> <c>interpret</c> function with the present state
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
     ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
     /// 3. Uses <c>render</c> to generate a 'view from the persisted final state
-    member _.TransactAsync(interpret: 'state -> Async<'event list>, render: 'state -> 'view, ?load, ?attempts): Async<'view> = async {
-        let! ct = Async.CancellationToken
+    member _.TransactAsync(interpret: 'state -> Async<'event list>, render: 'state -> 'view, ?load, ?attempts): Async<'view> = Async.call <| fun ct ->
         let inline interpret' s ct = task { let! es = Async.StartImmediateAsTask(interpret s, ct) in return Seq.ofList es }
-        return! inner.TransactAsync(interpret', render, ?load = load, ?attempts = attempts, ct = ct) |> Async.AwaitTaskCorrect }
+        inner.TransactAsync(interpret', render, ?load = load, ?attempts = attempts, ct = ct)
 
     /// 1. Invoke the supplied <c>Async</c> <c>decide</c> function with the present state, holding the <c>'result</c>
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
     ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
     /// 3. Yield result
-    member _.TransactAsync(decide: 'state -> Async<'result * 'event list>, ?load, ?attempts): Async<'result> = async {
-        let! ct = Async.CancellationToken
+    member _.TransactAsync(decide: 'state -> Async<'result * 'event list>, ?load, ?attempts): Async<'result> = Async.call <| fun ct ->
         let inline decide' s ct = task { let! r, es = Async.StartImmediateAsTask(decide s, ct) in return struct (r, Seq.ofList es) }
-        return! inner.TransactAsync(decide = decide', ?load = load, ?attempts = attempts, ct = ct) |> Async.AwaitTaskCorrect }
+        inner.TransactAsync(decide = decide', ?load = load, ?attempts = attempts, ct = ct)
 
     /// 1. Invoke the supplied <c>Async</c> <c>decide</c> function with the current complete context, holding the <c>'result</c>
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
     ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
     /// 3. Yield result
-    member _.TransactExAsync(decide: ISyncContext<'state> -> Async<'result * 'event list>, ?load, ?attempts): Async<'result> = async {
-        let! ct = Async.CancellationToken
+    member _.TransactExAsync(decide: ISyncContext<'state> -> Async<'result * 'event list>, ?load, ?attempts): Async<'result> = Async.call <| fun ct ->
         let decide' c ct = task { let! r, es = Async.StartImmediateAsTask(decide c, ct) in return struct (r, Seq.ofList es) }
-        return! inner.TransactExAsync(decide = decide', ?load = load, ?attempts = attempts, ct = ct) |> Async.AwaitTaskCorrect }
+        inner.TransactExAsync(decide = decide', ?load = load, ?attempts = attempts, ct = ct)
 
     /// 1. Invoke the supplied <c>Async</c> <c>decide</c> function with the current complete context, holding the <c>'result</c>
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
     ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
     /// 3. Yields a final 'view produced by <c>mapResult</c> from the <c>'result</c> and/or the final persisted <c>ISyncContext</c>
     member _.TransactExAsync(decide: ISyncContext<'state> -> Async<'result * 'event list>, mapResult: 'result -> ISyncContext<'state> -> 'view,
-                             ?load, ?attempts): Async<'view> = async {
-        let! ct = Async.CancellationToken
+                             ?load, ?attempts): Async<'view> = Async.call <| fun ct ->
         let inline decide' c ct = task { let! r, es = Async.StartImmediateAsTask(decide c, ct) in return struct (r, Seq.ofList es) }
-        return! inner.TransactExAsync(decide = decide', mapResult = mapResult, ?load = load, ?attempts = attempts, ct = ct) |> Async.AwaitTaskCorrect }
+        inner.TransactExAsync(decide = decide', mapResult = mapResult, ?load = load, ?attempts = attempts, ct = ct)
 
 /// Central Application-facing API. Wraps the handling of decision or query flows in a manner that is store agnostic
 /// For F#, the async and FSharpFunc signatures in Decider tend to work better, but the API set is equivalent

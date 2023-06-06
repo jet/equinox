@@ -15,6 +15,12 @@ type IEventStoreConnection = IStreamStore
 type ResolvedEvent = StreamMessage
 type StreamEventsSlice = ReadStreamPage
 
+[<AutoOpen>]
+module private Shims =
+
+    type StreamMessage with
+        member x.JsonData = x.GetJsonData() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
+
 [<RequireQualifiedAccess>]
 type Direction = Forward | Backward with
     override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
@@ -50,8 +56,7 @@ module Log =
     let propResolvedEvents name (events: ResolvedEvent[]) (log: ILogger) =
         log |> propEvents name (seq {
             for x in events do
-                let data = x.GetJsonData() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
-                yield System.Collections.Generic.KeyValuePair<_, _>(x.Type, data) })
+                yield System.Collections.Generic.KeyValuePair<_, _>(x.Type, x.JsonData) })
 
     let withLoggedRetries<'t> retryPolicy (contextLabel: string) (f: ILogger -> CancellationToken -> Task<'t>) log ct: Task<'t> =
         match retryPolicy with
@@ -172,9 +177,7 @@ module private Read =
         match direction with
         | Direction.Forward ->  conn.ReadStreamForwards(streamName, int startPos, batchSize, ct)
         | Direction.Backward -> conn.ReadStreamBackwards(streamName, int startPos, batchSize, ct)
-    let (|ResolvedEventLen|) (x: StreamMessage) =
-        let data = x.GetJsonData() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
-        match data, x.JsonMetadata with Log.StrLen bytes, Log.StrLen metaBytes -> bytes + metaBytes
+    let (|ResolvedEventLen|) (x: StreamMessage) = match x.JsonData, x.JsonMetadata with Log.StrLen bytes, Log.StrLen metaBytes -> bytes + metaBytes
     let private loggedReadSlice conn streamName direction batchSize startPos (log: ILogger) ct: Task<ReadStreamPage> = task {
         let! t, slice = readSliceAsync conn streamName direction batchSize startPos |> Stopwatch.time ct
         let bytes, count = slice.Messages |> Array.sumBy (|ResolvedEventLen|), slice.Messages.Length
@@ -274,8 +277,7 @@ module UnionEncoderAdapters =
 
     let (|Bytes|) = function null -> null | (s: string) -> System.Text.Encoding.UTF8.GetBytes s
     let encodedEventOfResolvedEvent (e: StreamMessage): FsCodec.ITimelineEvent<EventBody> =
-        let (Bytes data) = e.GetJsonData() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
-        let (Bytes meta) = e.JsonMetadata
+        let Bytes data, Bytes meta = e.JsonData, e.JsonMetadata
         let ts = e.CreatedUtc |> DateTimeOffset
         let inline len (xs: byte[]) = if xs = null then 0 else xs.Length
         let size = len data + len meta + e.Type.Length
@@ -345,9 +347,7 @@ type GatewaySyncResult = Written of StreamToken | ConflictUnknown
 
 type SqlStreamStoreContext(connection: SqlStreamStoreConnection, batchOptions: BatchOptions) =
 
-    let isResolvedEventEventType (tryDecode, predicate) (e: StreamMessage) =
-        let data = e.GetJsonData() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
-        predicate (tryDecode data)
+    let isResolvedEventEventType (tryDecode, predicate) (e: StreamMessage) = predicate (tryDecode e.JsonData)
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
     let conn requireLeader = if requireLeader then connection.WriteConnection else connection.ReadConnection
 
