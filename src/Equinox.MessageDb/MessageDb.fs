@@ -208,7 +208,7 @@ module Read =
             | _ -> ()
 
             let batchLog = log |> Log.prop "batchIndex" batchCount
-            let! slice = readSlice pos batchCount batchLog ct |> Async.AwaitTaskCorrect
+            let! slice = readSlice pos batchCount batchLog ct
             version <- max version slice.LastVersion
             result.AddRange(slice.Messages)
             if not slice.IsEnd then

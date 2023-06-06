@@ -1,5 +1,6 @@
 namespace Equinox.Core
 
+open System
 open System.Threading
 open System.Threading.Tasks
 
@@ -31,7 +32,7 @@ type AsyncLazy<'T>(workflow: unit -> Task<'T>) =
     member _.Await() = workflow.Value
 
     /// Singleton Empty value
-    static member val Empty = AsyncLazy(fun () -> Task.FromException<'T>(System.InvalidOperationException "Uninitialized AsyncLazy"))
+    static member val Empty = AsyncLazy(fun () -> Task.FromException<'T>(InvalidOperationException "Uninitialized AsyncLazy"))
 
 /// Generic async lazy caching implementation that admits expiration/recomputation/retry on exception semantics.
 /// If `workflow` fails, all readers entering while the load/refresh is in progress will share the failure

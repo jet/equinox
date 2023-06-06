@@ -1,6 +1,6 @@
 ﻿module Equinox.CosmosStore.Integration.CosmosCoreIntegration
 
-open Equinox.Core // TaskSeq extensions
+open Equinox.Core // Async extensions
 open Equinox.CosmosStore.Core
 open FsCodec
 open FSharp.Control
@@ -146,18 +146,18 @@ type Tests(testOutputHelper) =
         let stream  = ctx.StreamId streamName
 
         let extrasCount = match extras with x when x > 50 -> 5000 | x when x < 1 -> 1 | x -> x*100
-        let! _pos = ctx.NonIdempotentAppend(stream, TestEvents.Create (int pos,extrasCount))
+        let! _pos = Async.call (fun ct -> ctx.NonIdempotentAppend(stream, TestEvents.Create (int pos,extrasCount), ct))
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
         if eventsInTip then verifyRequestChargesMax 451 // 450.03
         else verifyRequestChargesMax 448 // 447.5 // 463.01 observed
         capture.Clear()
 
-        let! pos = ctx.Sync(stream, ?position = None)
+        let! pos = Async.call (fun ct -> ctx.Sync(stream, ct, ?position = None))
         test <@ [EqxAct.Tip] = capture.ExternalCalls @>
         verifyRequestChargesMax 5 // 41 observed // for a 200, you'll pay a lot (we omitted to include the position that NonIdempotentAppend yielded)
         capture.Clear()
 
-        let! _pos = ctx.Sync(stream, pos)
+        let! _pos = Async.call (fun ct -> ctx.Sync(stream, ct, pos))
         test <@ [EqxAct.TipNotModified] = capture.ExternalCalls @>
         verifyRequestChargesMax 1 // for a 304 by definition - when an etag IfNotMatch is honored, you only pay one RU
     }

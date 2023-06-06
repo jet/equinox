@@ -1454,8 +1454,8 @@ module Events =
         match! f with
         | AppendResult.Ok (PositionIndex index)-> return AppendResult.Ok index
         | AppendResult.ConflictUnknown -> return AppendResult.ConflictUnknown }
-    let private stripPosition (f: Task<Position>): Async<int64> = async {
-        let! (PositionIndex index) = f |> Async.AwaitTaskCorrect
+    let private stripPosition (f: Async<Position>): Async<int64> = async {
+        let! (PositionIndex index) = f
         return index }
 
     /// Returns an async sequence of events in the stream starting at the specified sequence number,
@@ -1469,9 +1469,8 @@ module Events =
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let get (ctx: EventsContext) (streamName: string) (index: int64) (maxCount: int): Async<ITimelineEvent<EncodedBody>[]> = async {
-        let! ct = Async.CancellationToken
-        return! ctx.Read(ctx.StreamName streamName, ct, ?minIndex = (if index = 0 then None else Some index), maxCount = maxCount) |> Async.AwaitTaskCorrect }
+    let get (ctx: EventsContext) (streamName: string) (index: int64) (maxCount: int): Async<ITimelineEvent<EncodedBody>[]> = Async.call <| fun ct ->
+        ctx.Read(ctx.StreamName streamName, ct, ?minIndex = (if index = 0 then None else Some index), maxCount = maxCount)
 
 #if APPEND_SUPPORT
     /// Appends a batch of events to a stream at the specified expected sequence number.
@@ -1485,9 +1484,8 @@ module Events =
     /// Due to the need to preserve ordering of data in the stream, only complete Batches will be removed.
     /// If the <c>index</c> is within the Tip, events are removed via an etag-checked update. Does not alter the unfolds held in the Tip, or remove the Tip itself.
     /// Returns count of events deleted this time, events that could not be deleted due to partial batches, and the stream's lowest remaining sequence number.
-    let pruneUntil (ctx: EventsContext) (streamName: string) (index: int64): Async<int * int * int64> = async {
-        let! ct = Async.CancellationToken
-        return! ctx.Prune(ctx.StreamName streamName, index, ct) |> Async.AwaitTaskCorrect }
+    let pruneUntil (ctx: EventsContext) (streamName: string) (index: int64): Async<int * int * int64> = Async.call <| fun ct ->
+        ctx.Prune(ctx.StreamName streamName, index, ct)
 
     /// Returns an async sequence of events in the stream backwards starting from the specified sequence number,
     /// reading in batches of the specified size.
@@ -1500,11 +1498,10 @@ module Events =
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getBackwards (ctx: EventsContext) (streamName: string) (index: int64) (maxCount: int): Async<ITimelineEvent<EncodedBody>[]> = async {
-        let! ct = Async.CancellationToken
-        return! ctx.Read(ctx.StreamName streamName, ct, ?maxIndex = (match index with int64.MaxValue -> None | i -> Some (i + 1L)), maxCount = maxCount, direction = Direction.Backward) |> Async.AwaitTaskCorrect }
+    let getBackwards (ctx: EventsContext) (streamName: string) (index: int64) (maxCount: int): Async<ITimelineEvent<EncodedBody>[]> = Async.call <| fun ct ->
+        ctx.Read(ctx.StreamName streamName, ct, ?maxIndex = (match index with int64.MaxValue -> None | i -> Some (i + 1L)), maxCount = maxCount, direction = Direction.Backward)
 
   /// Obtains the `index` from the current write Position
-    let getNextIndex (ctx: EventsContext) (streamName: string): Async<int64> = async {
-        let! ct = Async.CancellationToken
-        return! ctx.Sync(ctx.StreamName streamName, ct) |> stripPosition }
+    let getNextIndex (ctx: EventsContext) (streamName: string): Async<int64> =
+        Async.call (fun ct -> ctx.Sync(ctx.StreamName streamName, ct))
+        |> stripPosition

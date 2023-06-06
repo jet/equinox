@@ -3,6 +3,7 @@ namespace Equinox
 open Equinox.Core
 open Equinox.Core.Tracing
 open System
+open System.Threading
 
 type private CacheEntry<'state>(initialToken: StreamToken, initialState: 'state, initialTimestamp: int64) =
     let mutable currentToken = initialToken

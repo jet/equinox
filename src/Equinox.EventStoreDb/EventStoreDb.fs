@@ -1,10 +1,10 @@
 ﻿namespace Equinox.EventStoreDb
 
-open System.Threading
 open Equinox.Core
 open EventStore.Client
 open Serilog
 open System
+open System.Threading
 open System.Threading.Tasks
 
 type EventBody = ReadOnlyMemory<byte>
@@ -227,7 +227,7 @@ module ClientCodec =
 
     let timelineEvent (x: EventRecord): FsCodec.ITimelineEvent<EventBody> =
         // TOCONSIDER wire e.Metadata["$correlationId"] and ["$causationId"] into correlationId and causationId
-        // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
+        // https://developers.eventstore.com/server/v21.10/streams.html#reserved-names
         let n, eu, ts = x.EventNumber, x.EventId, DateTimeOffset x.Created
         let et, data, meta = x.EventType, x.Data, x.Metadata
         let size = et.Length + data.Length + meta.Length
@@ -237,7 +237,7 @@ module ClientCodec =
 
     let eventData (x: FsCodec.IEventData<EventBody>) =
         // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta.["$correlationId"] and .["$causationId"]
-        // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
+        // https://developers.eventstore.com/server/v21.10/streams.html#reserved-names
         EventData(Uuid.FromGuid x.EventId, x.EventType, contentType = "application/json", data = x.Data, metadata = x.Meta)
 
 type Position = { streamVersion: int64; compactionEventNumber: int64 option; batchCapacityLimit: int option }

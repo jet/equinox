@@ -523,29 +523,26 @@ module Initialization =
     let private (|ThroughputProperties|) = function
         | Throughput.Manual rus -> ThroughputProperties.CreateManualThroughput(rus)
         | Throughput.Autoscale maxRus -> ThroughputProperties.CreateAutoscaleThroughput(maxRus)
-    let private createOrProvisionDatabase (client: CosmosClient) dName mode = async {
-        let! ct = Async.CancellationToken
-        let createDatabaseIfNotExists maybeTp = async {
-            let! r = client.CreateDatabaseIfNotExistsAsync(dName, throughputProperties = Option.toObj maybeTp, cancellationToken = ct) |> Async.AwaitTaskCorrect
-            return r.Database }
-        match mode with
-        | Provisioning.Container _ | Provisioning.Serverless -> return! createDatabaseIfNotExists None
-        | Provisioning.Database (ThroughputProperties tp) ->
-            let! d = createDatabaseIfNotExists (Some tp)
-            let! _ = d.ReplaceThroughputAsync(tp, cancellationToken = ct) |> Async.AwaitTaskCorrect
+    let private createDatabaseIfNotExists (client: CosmosClient) maybeTp dName = async {
+        let! r = Async.call (fun ct -> client.CreateDatabaseIfNotExistsAsync(dName, throughputProperties = Option.toObj maybeTp, cancellationToken = ct))
+        return r.Database }
+    let private createOrProvisionDatabase (client: CosmosClient) dName = function
+        | Provisioning.Container _ | Provisioning.Serverless -> createDatabaseIfNotExists client None dName
+        | Provisioning.Database (ThroughputProperties tp) -> async {
+            let! d = createDatabaseIfNotExists client (Some tp) dName
+            let! _ = Async.call (fun ct -> d.ReplaceThroughputAsync(tp, cancellationToken = ct))
             return d }
-    let private createOrProvisionContainer (d: Database) (cName, pkPath, customizeContainer) mode = async {
+    let private createContainerIfNotExists (d: Database) cp maybeTp = async {
+        let! r = Async.call (fun ct -> d.CreateContainerIfNotExistsAsync(cp, throughputProperties = Option.toObj maybeTp, cancellationToken = ct))
+        return r.Container }
+    let private createOrProvisionContainer (d: Database) (cName, pkPath, customizeContainer) mode =
         let cp = ContainerProperties(id = cName, partitionKeyPath = pkPath)
         customizeContainer cp
-        let! ct = Async.CancellationToken
-        let createContainerIfNotExists maybeTp = async {
-            let! r = d.CreateContainerIfNotExistsAsync(cp, throughputProperties = Option.toObj maybeTp, cancellationToken = ct) |> Async.AwaitTaskCorrect
-            return r.Container }
         match mode with
-        | Provisioning.Database _ | Provisioning.Serverless -> return! createContainerIfNotExists None
-        | Provisioning.Container (ThroughputProperties throughput) ->
-            let! c = createContainerIfNotExists (Some throughput)
-            let! _ = c.ReplaceThroughputAsync(throughput, cancellationToken = ct) |> Async.AwaitTaskCorrect
+        | Provisioning.Database _ | Provisioning.Serverless -> createContainerIfNotExists d cp None
+        | Provisioning.Container (ThroughputProperties throughput) -> async {
+            let! c = createContainerIfNotExists d cp (Some throughput)
+            let! _ = Async.call (fun ct -> c.ReplaceThroughputAsync(throughput, cancellationToken = ct))
             return c }
 
     let private createStoredProcIfNotExists (c: Container) (name, body) ct: Task<float> = task {
@@ -723,7 +720,7 @@ module internal Query =
             let! events =
                 batchesBackward
                 |> TaskSeq.collectSeq (fun (events, maybePos, r) ->
-                    if maybeTipPos = None then maybeTipPos <- maybePos
+                    if Option.isNone maybeTipPos then maybeTipPos <- maybePos
                     lastResponse <- Some events; ru <- ru + r
                     responseCount <- responseCount + 1
                     seq { for x in events -> struct (x, tryDecode x) })
@@ -1176,11 +1173,10 @@ type CosmosClientFactory
         | Discovery.ConnectionString cs -> new CosmosClient(cs, x.Options)
 
     /// Creates and validates a Client [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
-    member x.CreateAndInitialize(discovery: Discovery, containers) = async {
-        let! ct = Async.CancellationToken
+    member x.CreateAndInitialize(discovery: Discovery, containers) =
         match discovery with
-        | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> return! CosmosClient.CreateAndInitializeAsync(string uri, key, containers, x.Options, ct) |> Async.AwaitTaskCorrect
-        | Discovery.ConnectionString cs -> return! CosmosClient.CreateAndInitializeAsync(cs, containers, x.Options, ct) |> Async.AwaitTaskCorrect }
+        | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> Async.call (fun ct -> CosmosClient.CreateAndInitializeAsync(string uri, key, containers, x.Options, ct))
+        | Discovery.ConnectionString cs -> Async.call (fun ct -> CosmosClient.CreateAndInitializeAsync(cs, containers, x.Options, ct))
 
 /// Manages establishing a CosmosClient, which is used by CosmosStoreClient to read from the underlying Cosmos DB Container.
 type CosmosStoreConnector
@@ -1404,6 +1400,7 @@ type CosmosStoreCategory<'event, 'state, 'context> internal (resolveInner, empty
 namespace Equinox.CosmosStore.Core
 
 open System.Collections.Generic
+open System.Threading
 open System.Threading.Tasks
 open Equinox.Core
 open FsCodec
@@ -1470,9 +1467,8 @@ type EventsContext internal
 
     /// Establishes the current position of the stream in as efficient a manner as possible
     /// (The ideal situation is that the preceding token is supplied as input in order to avail of 1RU low latency validation in the case of an unchanged Tip)
-    member _.Sync(stream, [<O; D null>] ?position: Position): Async<Position> = async {
-        let! ct = Async.CancellationToken
-        let! Token.Unpack pos' = store.GetPosition(log, stream, ct, ?pos = position) |> Async.AwaitTaskCorrect
+    member _.Sync(stream, ct, [<O; D null>] ?position: Position): Task<Position> = task {
+        let! Token.Unpack pos' = store.GetPosition(log, stream, ct, ?pos = position)
         return pos' }
 
     /// Query (with MaxItems set to `queryMaxItems`) from the specified `Position`, allowing the reader to efficiently walk away from a running query
@@ -1501,9 +1497,8 @@ type EventsContext internal
 
     /// Low level, non-idempotent call appending events to a stream without a concurrency control mechanism in play
     /// NB Should be used sparingly; Equinox.Decider enables building equivalent equivalent idempotent handling with minimal code.
-    member x.NonIdempotentAppend(stream, events: IEventData<_>[]): Async<Position> = async {
-        let! ct = Async.CancellationToken
-        match! x.Sync(stream, Position.fromAppendAtEnd, events, ct) |> Async.AwaitTaskCorrect with
+    member x.NonIdempotentAppend(stream, events: IEventData<_>[], ct): Task<Position> = task {
+        match! x.Sync(stream, Position.fromAppendAtEnd, events, ct) with
         | AppendResult.Ok token -> return token
         | x -> return x |> sprintf "Conflict despite it being disabled %A" |> invalidOp }
 
@@ -1520,16 +1515,16 @@ type EventData() =
 module Events =
 
     let private (|PositionIndex|) (x: Position) = x.index
-    let private stripSyncResult (f: Task<AppendResult<Position>>): Async<AppendResult<int64>> = async {
-        match! f |> Async.AwaitTaskCorrect with
-        | AppendResult.Ok (PositionIndex index)-> return AppendResult.Ok index
+    let private stripSyncResult (f: Task<AppendResult<Position>>): Task<AppendResult<int64>> = task {
+        match! f with
+        | AppendResult.Ok (PositionIndex index) -> return AppendResult.Ok index
         | AppendResult.Conflict (PositionIndex index, events) -> return AppendResult.Conflict (index, events)
         | AppendResult.ConflictUnknown (PositionIndex index) -> return AppendResult.ConflictUnknown index }
-    let private stripPosition (f: Async<Position>): Async<int64> = async {
+    let private stripPosition (f: Task<Position>): Task<int64> = task {
         let! (PositionIndex index) = f
         return index }
-    let private dropPosition (f: Task<Position * ITimelineEvent<EventBody>[]>): Async<ITimelineEvent<EventBody>[]> = async {
-        let! _, xs = f |> Async.AwaitTaskCorrect
+    let private dropPosition (f: Task<Position * ITimelineEvent<EventBody>[]>): Task<ITimelineEvent<EventBody>[]> = task {
+        let! _, xs = f
         return xs }
     let (|MinPosition|) = function
         | 0L -> None
@@ -1550,31 +1545,28 @@ module Events =
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let get (ctx: EventsContext) (streamName: string) (MinPosition index: int64) (maxCount: int): Async<ITimelineEvent<EventBody>[]> = async {
-        let! ct = Async.CancellationToken
-        return! ctx.Read(ctx.StreamId streamName, ct, ?position = index, maxCount = maxCount) |> dropPosition }
+    let get (ctx: EventsContext) (streamName: string) (MinPosition index: int64) (maxCount: int): Async<ITimelineEvent<EventBody>[]> =
+        Async.call (fun ct -> ctx.Read(ctx.StreamId streamName, ct, ?position = index, maxCount = maxCount) |> dropPosition)
 
     /// Appends a batch of events to a stream at the specified expected sequence number.
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
-    let append (ctx: EventsContext) (streamName: string) (index: int64) (events: IEventData<_>[]): Async<AppendResult<int64>> = async {
-        let! ct = Async.CancellationToken
-        return! ctx.Sync(ctx.StreamId streamName, Position.fromI index, events, ct) |> stripSyncResult }
+    let append (ctx: EventsContext) (streamName: string) (index: int64) (events: IEventData<_>[]): Async<AppendResult<int64>> =
+        Async.call (fun ct -> ctx.Sync(ctx.StreamId streamName, Position.fromI index, events, ct) |> stripSyncResult)
 
     /// Appends a batch of events to a stream at the the present Position without any conflict checks.
     /// NB typically, it is recommended to ensure idempotency of operations by using the `append` and related API as
     /// this facilitates ensuring consistency is maintained, and yields reduced latency and Request Charges impacts
     /// (See equivalent APIs on `Context` that yield `Position` values)
     let appendAtEnd (ctx: EventsContext) (streamName: string) (events: IEventData<_>[]): Async<int64> =
-        ctx.NonIdempotentAppend(ctx.StreamId streamName, events) |> stripPosition
+        Async.call (fun ct -> ctx.NonIdempotentAppend(ctx.StreamId streamName, events, ct) |> stripPosition)
 
     /// Requests deletion of events up and including the specified <c>index</c>.
     /// Due to the need to preserve ordering of data in the stream, only complete Batches will be removed.
     /// If the <c>index</c> is within the Tip, events are removed via an etag-checked update. Does not alter the unfolds held in the Tip, or remove the Tip itself.
     /// Returns count of events deleted this time, events that could not be deleted due to partial batches, and the stream's lowest remaining sequence number.
-    let pruneUntil (ctx: EventsContext) (streamName: string) (index: int64): Async<int * int * int64> = async {
-        let! ct = Async.CancellationToken
-        return! ctx.Prune(ctx.StreamId streamName, index, ct) |> Async.AwaitTaskCorrect }
+    let pruneUntil (ctx: EventsContext) (streamName: string) (index: int64): Async<int * int * int64> =
+        Async.call (fun ct -> ctx.Prune(ctx.StreamId streamName, index, ct))
 
     /// Returns an async sequence of events in the stream backwards starting from the specified sequence number,
     /// reading in batches of the specified size.
@@ -1588,10 +1580,9 @@ module Events =
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getBackwards (ctx: EventsContext) (streamName: string) (MaxPosition index: int64) (maxCount: int): Async<ITimelineEvent<EventBody>[]> = async {
-        let! ct = Async.CancellationToken
-        return! ctx.Read(ctx.StreamId streamName, ct, ?position = index, maxCount = maxCount, direction = Direction.Backward) |> dropPosition }
+    let getBackwards (ctx: EventsContext) (streamName: string) (MaxPosition index: int64) (maxCount: int): Async<ITimelineEvent<EventBody>[]> =
+        Async.call (fun ct -> ctx.Read(ctx.StreamId streamName, ct, ?position = index, maxCount = maxCount, direction = Direction.Backward) |> dropPosition)
 
     /// Obtains the `index` from the current write Position
     let getNextIndex (ctx: EventsContext) (streamName: string): Async<int64> =
-        ctx.Sync(ctx.StreamId streamName) |> stripPosition
+        Async.call (fun ct -> ctx.Sync(ctx.StreamId streamName, ct = ct) |> stripPosition)
