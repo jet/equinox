@@ -50,10 +50,10 @@ type AsyncBatchingGate<'Req, 'Res>(dispatch: Func<'Req[], CancellationToken, Tas
         // If current has not yet been dispatched, hop on and join
         if current.TryAdd(req, dispatch, lingerMs, ct) then return! current.Await()
         else // Any thread that discovers a batch in flight, needs to wait for it to conclude first
-            do! current.Await().ContinueWith<unit>(fun (_: Task) -> ()) // don't observe the exception or result from the in-flight batch
+            do! current.Await().ContinueWith<unit>(fun (_: Task) -> ()) // wait for, but don't observe the exception or result from the in-flight batch
             // where competing threads discover a closed flight, we only want a single one to regenerate it
             let _ = Interlocked.CompareExchange(&cell, AsyncBatch(), current)
-            return! x.ExecuteAsync(req, ct) }
+            return! x.ExecuteAsync(req, ct) } // but everyone attempts to merge their requests into the batch during the linger period
 
     /// Include an item in the batch; await the collective dispatch (subject to the configured linger time)
     member x.Execute(req) = async {
