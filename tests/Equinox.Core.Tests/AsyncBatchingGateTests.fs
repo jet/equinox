@@ -21,11 +21,11 @@ let ``AsyncBatchingGate correctness`` () = async {
         0 =! concurrency
         return reqs
     }
-    let cell = AsyncBatchingGate(dispatch, linger = TimeSpan.FromMilliseconds 5)
+    let cell = AsyncBatchingGate(dispatch, linger = TimeSpan.FromMilliseconds 40)
     let! results = [1 .. 100] |> Seq.map cell.Execute |> Async.Parallel
     test <@ set (Seq.collect id results) = set [1 .. 100] @>
-    // Linger of 5ms makes this tend strongly to only be 1 batch
-    test <@ batches < 2 @>
+    // Linger of 40ms makes this tend strongly to only be 1 batch
+    1 =! batches
 }
 
 [<Property>]
