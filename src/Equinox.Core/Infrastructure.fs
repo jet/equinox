@@ -53,10 +53,9 @@ type Async with
 
 module Async =
 
-    let inline startImmediateAsTask ct computation = Async.StartImmediateAsTask(computation, ct)
-    let inline call (f : System.Threading.CancellationToken -> Task<'T>) = async {
+    let inline call (start: System.Threading.CancellationToken -> Task<'T>) = async {
         let! ct = Async.CancellationToken
-        return! f ct |> Async.AwaitTaskCorrect }
+        return! start ct |> Async.AwaitTaskCorrect }
 
 module ValueTuple =
 

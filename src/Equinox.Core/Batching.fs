@@ -45,7 +45,7 @@ type Batcher<'Req, 'Res>(dispatch: Func<'Req[], CancellationToken, Task<'Res[]>>
     let lingerMs = match linger with None -> 1 | Some x -> int x.TotalMilliseconds
     let mutable cell = AsyncBatch<'Req, 'Res>()
 
-    new (dispatch: 'Req[] -> Async<'Res[]>, ?linger) = Batcher((fun reqs ct -> dispatch reqs |> Async.startImmediateAsTask ct), ?linger = linger)
+    new (dispatch: 'Req[] -> Async<'Res[]>, ?linger) = Batcher((fun items ct -> Async.StartImmediateAsTask(dispatch items, ct)), ?linger = linger)
 
     /// Include an item in the batch; await the collective dispatch (subject to the configured linger time)
     member x.ExecuteAsync(req, ct) = task {
@@ -75,35 +75,42 @@ type BatcherDictionary<'Id, 'Entry>(create: Func<'Id, 'Entry>) =
 
 /// <summary>Thread Safe helper that maintains a set of <c>Batchers</c> (or instances of an equivalent type) within a MemoryCache
 /// NOTE if the number of items is bounded, <c>BatcherDictionary</c> is significantly more efficient</summary>
-type BatcherCache<'Id, 'Entry> private (cache: System.Runtime.Caching.MemoryCache, toKey: Func<'Id, string>, create: Func<'Id, 'Entry>, ?cacheWindow) =
-    let tryGet key =
-        match cache.Get key with
-        | null -> ValueNone
-        | existingEntry -> ValueSome (existingEntry :?> 'Entry)
+type BatcherCache<'Id, 'Entry>(cache: Cache<'Entry>, toKey: Func<'Id, string>, create: Func<'Id, 'Entry>, ?cacheWindow) =
     let cacheWindow = defaultArg cacheWindow (TimeSpan.FromMinutes 1)
     let cachePolicy = Caching.policySlidingExpiration cacheWindow ()
-    let addOrGet key entry =
-        match cache.AddOrGetExisting(key, entry, policy = cachePolicy) with
-        | null -> Ok entry
-        | existingEntry -> Error (existingEntry :?> 'Entry)
 
-    /// Stores entries in the supplied cache, with entries identified by keys of the form "$Batcher-{id}"
-    new(cache: System.Runtime.Caching.MemoryCache, createEntry: Func<'Id, 'Entry>, ?cacheWindow) =
-        let mapKey = Func<'Id, string>(fun id -> "$Batcher-" + string id)
-        BatcherCache(cache, mapKey, createEntry, ?cacheWindow = cacheWindow)
     /// Maintains the entries in an internal cache limited to the specified size, with entries identified by "{id}"
     new(name, create: Func<'Id, 'Entry>, sizeMb: int, ?cacheWindow) =
-        let config = System.Collections.Specialized.NameValueCollection(1)
-        config.Add("cacheMemoryLimitMegabytes", string sizeMb)
-        BatcherCache(new System.Runtime.Caching.MemoryCache(name, config), Func<'Id, string>(string), create, ?cacheWindow = cacheWindow)
+        BatcherCache(Cache<'Entry>.Create(name, sizeMb), Func<'Id, string>(string), create, ?cacheWindow = cacheWindow)
+
+    /// Stores entries in the supplied cache, with entries identified by keys of the form "$Batcher-{id}"
+    static member Prefixed(cache: System.Runtime.Caching.MemoryCache, createEntry: Func<'Id, 'Entry>, ?cacheWindow) =
+        let mapKey = Func<'Id, string>(fun id -> "$Batcher-" + string id)
+        BatcherCache(Cache cache, mapKey, createEntry, ?cacheWindow = cacheWindow)
 
     member _.GetOrAdd(id : 'Id) : 'Entry =
         // Optimise for low allocations on happy path
         let key = toKey.Invoke(id)
-        match tryGet key with
+        match cache.TryGet key with
         | ValueSome entry -> entry
         | ValueNone ->
 
-        match addOrGet key (create.Invoke id) with
+        match cache.AddOrGet(key, create.Invoke id, cachePolicy) with
         | Ok entry -> entry
         | Error entry -> entry
+
+and Cache<'Entry>(target: System.Runtime.Caching.MemoryCache) =
+
+    static member Create<'Entry>(name, sizeMb) =
+        let config = System.Collections.Specialized.NameValueCollection(1)
+        config.Add("cacheMemoryLimitMegabytes", string sizeMb)
+        Cache(new System.Runtime.Caching.MemoryCache(name, config))
+
+    member internal _.TryGet key: 'Entry voption =
+        match target.Get key with
+        | null -> ValueNone
+        | existingEntry -> ValueSome (existingEntry :?> 'Entry)
+    member internal _.AddOrGet(key, entry, policy) =
+        match target.AddOrGetExisting(key, entry, policy = policy) with
+        | null -> Ok entry
+        | existingEntry -> Error (existingEntry :?> 'Entry)

@@ -421,12 +421,8 @@ type private Metrics() =
 
 module private Async =
 
-    let startImmediateAsTask ct computation = Async.StartImmediateAsTask(computation, cancellationToken = ct)
-
-module private Stopwatch =
-
-    let timeAsync (ct: CancellationToken) (f: Async<'T>): Task<struct (StopwatchInterval * 'T)> =
-        (fun ct -> Async.startImmediateAsTask ct f) |> Stopwatch.time ct
+    let inline startImmediateAsTask (computation: Async<'T>) ct: Task<'T> = Async.StartImmediateAsTask(computation, ct)
+    let inline executeAsTask ct (computation: Async<'T>) : Task<'T> = startImmediateAsTask computation ct
 
 type internal BatchIndices = { isTip: bool; index: int64; n: int64 }
 type Container(tableName, createContext: (RequestMetrics -> unit) -> TableContext<Batch.Schema>) =
@@ -443,13 +439,13 @@ type Container(tableName, createContext: (RequestMetrics -> unit) -> TableContex
         let rm = Metrics()
         let context = createContext rm.Add
         let pk = Batch.tableKeyForStreamTip stream
-        let! item = context.TryGetItemAsync(pk, consistentRead) |> Async.startImmediateAsTask ct
+        let! item = context.TryGetItemAsync(pk, consistentRead) |> Async.executeAsTask ct
         return item |> Option.map Batch.ofSchema, rm.Consumed }
     member x.TryUpdateTip(stream: string, updateExpr: Quotations.Expr<Batch.Schema -> Batch.Schema>, ct, ?precondition): Task<Batch * RequestConsumption> = task {
         let rm = Metrics()
         let context = createContext rm.Add
         let pk = Batch.tableKeyForStreamTip stream
-        let! item = context.UpdateItemAsync(pk, updateExpr, ?precondition = precondition) |> Async.startImmediateAsTask ct
+        let! item = context.UpdateItemAsync(pk, updateExpr, ?precondition = precondition) |> Async.executeAsTask ct
         return item |> Batch.ofSchema, rm.Consumed }
     member _.QueryBatches(stream, consistentRead, minN, maxI, backwards, batchSize, ct): taskSeq<int * StopwatchInterval * Batch[] * RequestConsumption> =
         let compile = (createContext ignore).Template.PrecomputeConditionalExpr
@@ -465,7 +461,7 @@ type Container(tableName, createContext: (RequestMetrics -> unit) -> TableContex
             let context = createContext rm.Add
             let! t, res = context.QueryPaginatedAsync(kc, ?filterCondition = fc, limit = batchSize, ?exclusiveStartKey = le,
                                                       scanIndexForward = not backwards, consistentRead = consistentRead)
-                          |> Stopwatch.timeAsync ct
+                          |> Async.startImmediateAsTask |> Stopwatch.time ct
             yield i, t, Array.map Batch.ofSchema res.Records, rm.Consumed
             match res.LastEvaluatedKey with
             | None -> ()
@@ -478,7 +474,7 @@ type Container(tableName, createContext: (RequestMetrics -> unit) -> TableContex
             let keyCond = <@ fun (b: Batch.Schema) -> b.p = stream @>
             let proj = <@ fun (b: Batch.Schema) -> b.i, b.c, b.n @> // TOCONSIDER want len of c, but b.e.Length explodes in empty array case, so no choice but to return the full thing
             let! t, res = context.QueryProjectedPaginatedAsync(keyCond, proj, ?exclusiveStartKey = lastEvaluated, scanIndexForward = true, limit = maxItems)
-                          |> Stopwatch.timeAsync ct
+                          |> Async.startImmediateAsTask |> Stopwatch.time ct
             yield index, t, [| for i, c, n in res -> { isTip = Batch.isTip i; index = n - int64 c.Length; n = n } |], rm.Consumed
             match res.LastEvaluatedKey with
             | None -> ()
@@ -488,7 +484,7 @@ type Container(tableName, createContext: (RequestMetrics -> unit) -> TableContex
         let rm = Metrics()
         let context = createContext rm.Add
         let pk = TableKey.Combined(stream, i)
-        let! _item = context.DeleteItemAsync(pk) |> Async.startImmediateAsTask ct
+        let! _item = context.DeleteItemAsync(pk) |> Async.executeAsTask ct
         return rm.Consumed }
 
 /// Represents the State of the Stream for the purposes of deciding how to map a Sync request to DynamoDB operations
@@ -579,7 +575,7 @@ module internal Sync =
                 | [ TransactWrite.Put (item, Some cond) ] -> context.PutItemAsync(item, cond) |> Async.Ignore
                 | [ TransactWrite.Update (key, Some cond, updateExpr) ] -> context.UpdateItemAsync(key, updateExpr, cond) |> Async.Ignore
                 | actions -> context.TransactWriteItems actions |> Async.Ignore
-                |> Async.startImmediateAsTask ct
+                |> Async.executeAsTask ct
             return struct (rm.Consumed, Res.Written etag')
         with DynamoDbConflict ->
             return rm.Consumed, Res.ConflictUnknown }

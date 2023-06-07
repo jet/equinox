@@ -227,7 +227,7 @@ and [<NoComparison; NoEquality>] LoadOption<'state> =
     /// If the Cache holds a state, and it's within the specified limit, use that without checking the backing store for updates, implying:
     /// - increasing how much we lean on Optimistic Concurrency Control when doing a `Transact` (though you're still guaranteed a consistent outcome)
     /// - limiting the frequency of reads to 1 request per stream per Cache per `age` when using `Query`
-    | AllowStale of age: TimeSpan
+    | AllowStale of maxAge: TimeSpan
     /// Inhibit load from database based on the fact that the stream is likely not to have been initialized yet, and we will be generating events
     | AssumeEmpty
     /// <summary>Instead of loading from database, seed the loading process with the supplied memento, obtained via <c>ISyncContext.CreateMemento()</c></summary>
