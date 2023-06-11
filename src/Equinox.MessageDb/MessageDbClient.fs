@@ -17,18 +17,18 @@ type ExpectedVersion = Any | StreamVersion of int64
 [<AutoOpen>]
 module private Sql =
     type private NpgsqlParameterCollection with
-      member this.AddNullableString(value: string option) =
-          match value with
-          | Some value -> this.AddWithValue(NpgsqlDbType.Text, value)
-          | None       -> this.AddWithValue(NpgsqlDbType.Text, DBNull.Value)
-      member this.AddExpectedVersion(value: ExpectedVersion) =
-        match value with
-        | StreamVersion value -> this.AddWithValue(NpgsqlDbType.Bigint, value)
-        | Any                 -> this.AddWithValue(NpgsqlDbType.Bigint, DBNull.Value)
+        member this.AddNullableString(value: string option) =
+            match value with
+            | Some value -> this.AddWithValue(NpgsqlDbType.Text, value)
+            | None       -> this.AddWithValue(NpgsqlDbType.Text, DBNull.Value)
+        member this.AddExpectedVersion(value: ExpectedVersion) =
+            match value with
+            | StreamVersion value -> this.AddWithValue(NpgsqlDbType.Bigint, value)
+            | Any                 -> this.AddWithValue(NpgsqlDbType.Bigint, DBNull.Value)
 
-      member this.AddJson(value: Format) =
-        if value.Length = 0 then this.AddWithValue(NpgsqlDbType.Jsonb, DBNull.Value)
-        else this.AddWithValue(NpgsqlDbType.Jsonb, value.ToArray())
+        member this.AddJson(value: Format) =
+            if value.Length = 0 then this.AddWithValue(NpgsqlDbType.Jsonb, DBNull.Value)
+            else this.AddWithValue(NpgsqlDbType.Jsonb, value.ToArray())
 
 
 module private Queries =
