@@ -1,12 +1,11 @@
 [<AutoOpen>]
 module internal Equinox.MessageDb.Tracing
 
-open Equinox.Core.Tracing
-open System.Diagnostics
 open Equinox.MessageDb.Core
+open System.Diagnostics
 
-[<System.Runtime.CompilerServices.Extension>]
-type ActivityExtensions =
+[<AbstractClass; Sealed; System.Runtime.CompilerServices.Extension>]
+type ActivityExtensions private () =
 
     [<System.Runtime.CompilerServices.Extension>]
     static member AddExpectedVersion(act: Activity, version) =

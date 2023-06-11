@@ -4,8 +4,8 @@ open System.Diagnostics
 
 let source = new ActivitySource("Equinox")
 
-[<System.Runtime.CompilerServices.Extension>]
-type ActivityExtensions =
+[<AbstractClass; Sealed; System.Runtime.CompilerServices.Extension>]
+type ActivityExtensions private () =
 
     [<System.Runtime.CompilerServices.Extension>]
     static member AddLeader(act: Activity, requiresLeader) =
