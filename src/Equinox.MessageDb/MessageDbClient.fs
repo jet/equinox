@@ -23,15 +23,21 @@ module private Queries =
     let readStream = "select position, type, data, metadata, id::uuid, time from get_stream_messages($1, $2, $3);"
 
 
+[<AutoOpen>]
 module private Sql =
-    let addExpectedVersion (value: ExpectedVersion) (p: NpgsqlParameterCollection) =
+    type private NpgsqlParameterCollection with
+      member this.AddNullableString(value: string option) =
+          match value with
+          | Some value -> this.AddWithValue(NpgsqlDbType.Text, value)
+          | None       -> this.AddWithValue(NpgsqlDbType.Text, DBNull.Value)
+      member this.AddExpectedVersion(value: ExpectedVersion) =
         match value with
-        | StreamVersion value -> p.AddWithValue(NpgsqlDbType.Bigint, value) |> ignore
-        | Any                 -> p.AddWithValue(NpgsqlDbType.Bigint, DBNull.Value) |> ignore
-    let addNullableString (value: string option) (p: NpgsqlParameterCollection) =
-        match value with
-        | Some value -> p.AddWithValue(NpgsqlDbType.Text, value) |> ignore
-        | None       -> p.AddWithValue(NpgsqlDbType.Text, DBNull.Value) |> ignore
+        | StreamVersion value -> this.AddWithValue(NpgsqlDbType.Bigint, value)
+        | Any                 -> this.AddWithValue(NpgsqlDbType.Bigint, DBNull.Value)
+
+      member this.AddJson(value: Format) =
+        if value.Length = 0 then this.AddWithValue(NpgsqlDbType.Jsonb, DBNull.Value)
+        else this.AddWithValue(NpgsqlDbType.Jsonb, value.ToArray())
 
 module private Json =
 
@@ -41,10 +47,6 @@ module private Json =
         if reader.IsDBNull(idx) then jsonNull
         else reader.GetString(idx) |> Text.Encoding.UTF8.GetBytes |> ReadOnlyMemory
 
-    let addParameter (value: Format) (p: NpgsqlParameterCollection) =
-        if value.Length = 0 then p.AddWithValue(NpgsqlDbType.Jsonb, DBNull.Value) |> ignore
-        else p.AddWithValue(NpgsqlDbType.Jsonb, value.ToArray()) |> ignore
-
 module private Npgsql =
 
     let connect connectionString ct = task {
@@ -53,16 +55,15 @@ module private Npgsql =
         return conn }
 
 type internal MessageDbWriter(connectionString: string) =
-
     let prepareAppend (streamName: string) (expectedVersion: ExpectedVersion) (e: IEventData<Format>) =
         let cmd = NpgsqlBatchCommand(CommandText = Queries.writeMessage)
 
         cmd.Parameters.AddWithValue(NpgsqlDbType.Uuid, e.EventId) |> ignore
         cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName) |> ignore
         cmd.Parameters.AddWithValue(NpgsqlDbType.Text, e.EventType) |> ignore
-        cmd.Parameters |> Json.addParameter e.Data
-        cmd.Parameters |> Json.addParameter e.Meta
-        cmd.Parameters |> Sql.addExpectedVersion expectedVersion
+        cmd.Parameters.AddJson(e.Data) |> ignore
+        cmd.Parameters.AddJson(e.Meta) |> ignore
+        cmd.Parameters.AddExpectedVersion(expectedVersion) |> ignore
 
         cmd
 
@@ -98,7 +99,7 @@ type internal MessageDbReader (connectionString: string, leaderConnectionString:
         use! conn = connect requiresLeader ct
         use cmd = conn.CreateCommand(CommandText = Queries.readLast)
         cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName) |> ignore
-        cmd.Parameters |> Sql.addNullableString eventType
+        cmd.Parameters.AddNullableString(eventType) |> ignore
         use! reader = cmd.ExecuteReaderAsync(ct)
 
         if reader.Read() then return [| parseRow reader |]
