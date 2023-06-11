@@ -58,7 +58,7 @@ module private ReadStream =
     [<Literal>]
     let readStream = "select position, type, data, metadata, id::uuid, time from get_stream_messages($1, $2, $3);"
     let prepareCommand (streamName: string) (fromPosition: int64) (batchSize: int64) =
-        use cmd = new NpgsqlCommand(CommandText = readStream)
+        let cmd = new NpgsqlCommand(CommandText = readStream)
         cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName) |> ignore
         cmd.Parameters.AddWithValue(NpgsqlDbType.Bigint, fromPosition) |> ignore
         cmd.Parameters.AddWithValue(NpgsqlDbType.Bigint, batchSize) |> ignore
