@@ -14,15 +14,24 @@ type private Format = ReadOnlyMemory<byte>
 [<Struct>]
 type ExpectedVersion = Any | StreamVersion of int64
 
+module private Queries =
+    [<Literal>]
+    let writeMessage = "select * from write_message($1::text, $2, $3, $4, $5, $6)"
+    [<Literal>]
+    let readLast = "select position, type, data, metadata, id::uuid, time from get_last_stream_message($1, $2);"
+    [<Literal>]
+    let readStream = "select position, type, data, metadata, id::uuid, time from get_stream_messages($1, $2, $3);"
+
+
 module private Sql =
-    let addExpectedVersion name (value: ExpectedVersion) (p: NpgsqlParameterCollection) =
+    let addExpectedVersion (value: ExpectedVersion) (p: NpgsqlParameterCollection) =
         match value with
-        | StreamVersion value -> p.AddWithValue(name, NpgsqlDbType.Bigint, value) |> ignore
-        | Any                 -> p.AddWithValue(name, NpgsqlDbType.Bigint, DBNull.Value) |> ignore
-    let addNullableString name (value: string option) (p: NpgsqlParameterCollection) =
+        | StreamVersion value -> p.AddWithValue(NpgsqlDbType.Bigint, value) |> ignore
+        | Any                 -> p.AddWithValue(NpgsqlDbType.Bigint, DBNull.Value) |> ignore
+    let addNullableString (value: string option) (p: NpgsqlParameterCollection) =
         match value with
-        | Some value -> p.AddWithValue(name, NpgsqlDbType.Text, value) |> ignore
-        | None       -> p.AddWithValue(name, NpgsqlDbType.Text, DBNull.Value) |> ignore
+        | Some value -> p.AddWithValue(NpgsqlDbType.Text, value) |> ignore
+        | None       -> p.AddWithValue(NpgsqlDbType.Text, DBNull.Value) |> ignore
 
 module private Json =
 
@@ -32,9 +41,9 @@ module private Json =
         if reader.IsDBNull(idx) then jsonNull
         else reader.GetString(idx) |> Text.Encoding.UTF8.GetBytes |> ReadOnlyMemory
 
-    let addParameter (name: string) (value: Format) (p: NpgsqlParameterCollection) =
-        if value.Length = 0 then p.AddWithValue(name, NpgsqlDbType.Jsonb, DBNull.Value) |> ignore
-        else p.AddWithValue(name, NpgsqlDbType.Jsonb, value.ToArray()) |> ignore
+    let addParameter (value: Format) (p: NpgsqlParameterCollection) =
+        if value.Length = 0 then p.AddWithValue(NpgsqlDbType.Jsonb, DBNull.Value) |> ignore
+        else p.AddWithValue(NpgsqlDbType.Jsonb, value.ToArray()) |> ignore
 
 module private Npgsql =
 
@@ -46,14 +55,14 @@ module private Npgsql =
 type internal MessageDbWriter(connectionString: string) =
 
     let prepareAppend (streamName: string) (expectedVersion: ExpectedVersion) (e: IEventData<Format>) =
-        let cmd = NpgsqlBatchCommand(CommandText = "select * from write_message(@Id::text, @StreamName, @EventType, @Data, @Meta, @ExpectedVersion)")
+        let cmd = NpgsqlBatchCommand(CommandText = Queries.writeMessage)
 
-        cmd.Parameters.AddWithValue("Id", NpgsqlDbType.Uuid, e.EventId) |> ignore
-        cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName) |> ignore
-        cmd.Parameters.AddWithValue("EventType", NpgsqlDbType.Text, e.EventType) |> ignore
-        cmd.Parameters |> Json.addParameter "Data" e.Data
-        cmd.Parameters |> Json.addParameter "Meta" e.Meta
-        cmd.Parameters |> Sql.addExpectedVersion "ExpectedVersion" expectedVersion
+        cmd.Parameters.AddWithValue(NpgsqlDbType.Uuid, e.EventId) |> ignore
+        cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName) |> ignore
+        cmd.Parameters.AddWithValue(NpgsqlDbType.Text, e.EventType) |> ignore
+        cmd.Parameters |> Json.addParameter e.Data
+        cmd.Parameters |> Json.addParameter e.Meta
+        cmd.Parameters |> Sql.addExpectedVersion expectedVersion
 
         cmd
 
@@ -78,26 +87,18 @@ type internal MessageDbReader (connectionString: string, leaderConnectionString:
     let connect requiresLeader = Npgsql.connect (if requiresLeader then leaderConnectionString else connectionString)
 
     let parseRow (reader: DbDataReader): ITimelineEvent<Format> =
-        let inline readNullableString idx = if reader.IsDBNull(idx) then None else Some (reader.GetString idx)
         let et, data, meta = reader.GetString(1), reader |> Json.fromReader 2, reader |> Json.fromReader 3
         FsCodec.Core.TimelineEvent.Create(
             index = reader.GetInt64(0),
             eventType = et, data = data, meta = meta, eventId = reader.GetGuid(4),
-            ?correlationId = readNullableString 5, ?causationId = readNullableString 6,
-            timestamp = DateTimeOffset(DateTime.SpecifyKind(reader.GetDateTime(7), DateTimeKind.Utc)),
+            timestamp = DateTimeOffset(DateTime.SpecifyKind(reader.GetDateTime(5), DateTimeKind.Utc)),
             size = et.Length + data.Length + meta.Length)
 
     member _.ReadLastEvent(streamName: string, requiresLeader, ct, ?eventType) = task {
         use! conn = connect requiresLeader ct
-        use cmd = conn.CreateCommand(CommandText =
-            "select
-               position, type, data, metadata, id::uuid,
-               (metadata::jsonb->>'$correlationId')::text,
-               (metadata::jsonb->>'$causationId')::text,
-               time
-             from get_last_stream_message(@StreamName, @EventType);")
-        cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName) |> ignore
-        cmd.Parameters |> Sql.addNullableString "EventType" eventType
+        use cmd = conn.CreateCommand(CommandText = Queries.readLast)
+        cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName) |> ignore
+        cmd.Parameters |> Sql.addNullableString eventType
         use! reader = cmd.ExecuteReaderAsync(ct)
 
         if reader.Read() then return [| parseRow reader |]
@@ -105,16 +106,10 @@ type internal MessageDbReader (connectionString: string, leaderConnectionString:
 
     member _.ReadStream(streamName: string, fromPosition: int64, batchSize: int64, requiresLeader, ct) = task {
         use! conn = connect requiresLeader ct
-        use cmd = conn.CreateCommand(CommandText =
-            "select
-               position, type, data, metadata, id::uuid,
-               (metadata::jsonb->>'$correlationId')::text,
-               (metadata::jsonb->>'$causationId')::text,
-               time
-             from get_stream_messages(@StreamName, @FromPosition, @BatchSize)")
-        cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName) |> ignore
-        cmd.Parameters.AddWithValue("FromPosition", NpgsqlDbType.Bigint, fromPosition) |> ignore
-        cmd.Parameters.AddWithValue("BatchSize", NpgsqlDbType.Bigint, batchSize) |> ignore
+        use cmd = conn.CreateCommand(CommandText = Queries.readStream)
+        cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName) |> ignore
+        cmd.Parameters.AddWithValue(NpgsqlDbType.Bigint, fromPosition) |> ignore
+        cmd.Parameters.AddWithValue(NpgsqlDbType.Bigint, batchSize) |> ignore
         use! reader = cmd.ExecuteReaderAsync(ct)
 
         return [| while reader.Read() do yield parseRow reader |] }
