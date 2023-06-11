@@ -31,39 +31,38 @@ module private Sql =
             else this.AddWithValue(NpgsqlDbType.Jsonb, value.ToArray())
 
 
-module private Queries =
-    module WriteMessage =
-        [<Literal>]
-        let writeMessage = "select * from write_message($1::text, $2, $3, $4, $5, $6)"
-        let prepareCommand (streamName: string) (expectedVersion: ExpectedVersion) (e: IEventData<Format>) =
-            let cmd = NpgsqlBatchCommand(CommandText = writeMessage)
+module private WriteMessage =
+    [<Literal>]
+    let writeMessage = "select * from write_message($1::text, $2, $3, $4, $5, $6)"
+    let prepareCommand (streamName: string) (expectedVersion: ExpectedVersion) (e: IEventData<Format>) =
+        let cmd = NpgsqlBatchCommand(CommandText = writeMessage)
 
-            cmd.Parameters.AddWithValue(NpgsqlDbType.Uuid, e.EventId) |> ignore
-            cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName) |> ignore
-            cmd.Parameters.AddWithValue(NpgsqlDbType.Text, e.EventType) |> ignore
-            cmd.Parameters.AddJson(e.Data) |> ignore
-            cmd.Parameters.AddJson(e.Meta) |> ignore
-            cmd.Parameters.AddExpectedVersion(expectedVersion) |> ignore
+        cmd.Parameters.AddWithValue(NpgsqlDbType.Uuid, e.EventId) |> ignore
+        cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName) |> ignore
+        cmd.Parameters.AddWithValue(NpgsqlDbType.Text, e.EventType) |> ignore
+        cmd.Parameters.AddJson(e.Data) |> ignore
+        cmd.Parameters.AddJson(e.Meta) |> ignore
+        cmd.Parameters.AddExpectedVersion(expectedVersion) |> ignore
 
-            cmd
+        cmd
 
-    module ReadLast =
-        [<Literal>]
-        let readLast = "select position, type, data, metadata, id::uuid, time from get_last_stream_message($1, $2);"
-        let prepareCommand (streamName: string) (eventType: string option) =
-            let cmd = new NpgsqlCommand(CommandText = readLast)
-            cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName) |> ignore
-            cmd.Parameters.AddNullableString(eventType) |> ignore
-            cmd
-    module ReadStream =
-        [<Literal>]
-        let readStream = "select position, type, data, metadata, id::uuid, time from get_stream_messages($1, $2, $3);"
-        let prepareCommand (streamName: string) (fromPosition: int64) (batchSize: int64) =
-            use cmd = new NpgsqlCommand(CommandText = readStream)
-            cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName) |> ignore
-            cmd.Parameters.AddWithValue(NpgsqlDbType.Bigint, fromPosition) |> ignore
-            cmd.Parameters.AddWithValue(NpgsqlDbType.Bigint, batchSize) |> ignore
-            cmd
+module private ReadLast =
+    [<Literal>]
+    let readLast = "select position, type, data, metadata, id::uuid, time from get_last_stream_message($1, $2);"
+    let prepareCommand (streamName: string) (eventType: string option) =
+        let cmd = new NpgsqlCommand(CommandText = readLast)
+        cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName) |> ignore
+        cmd.Parameters.AddNullableString(eventType) |> ignore
+        cmd
+module private ReadStream =
+    [<Literal>]
+    let readStream = "select position, type, data, metadata, id::uuid, time from get_stream_messages($1, $2, $3);"
+    let prepareCommand (streamName: string) (fromPosition: int64) (batchSize: int64) =
+        use cmd = new NpgsqlCommand(CommandText = readStream)
+        cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName) |> ignore
+        cmd.Parameters.AddWithValue(NpgsqlDbType.Bigint, fromPosition) |> ignore
+        cmd.Parameters.AddWithValue(NpgsqlDbType.Bigint, batchSize) |> ignore
+        cmd
 
 module private Json =
 
@@ -88,7 +87,7 @@ type internal MessageDbWriter(connectionString: string) =
         use batch = new NpgsqlBatch(conn, transaction)
         let toAppendCall i e =
             let expectedVersion = match version with Any -> Any | StreamVersion version -> StreamVersion (version + int64 i)
-            Queries.WriteMessage.prepareCommand streamName expectedVersion e
+            WriteMessage.prepareCommand streamName expectedVersion e
         events |> Seq.mapi toAppendCall |> Seq.iter batch.BatchCommands.Add
         try do! batch.ExecuteNonQueryAsync(ct) :> Task
             do! transaction.CommitAsync(ct)
@@ -112,7 +111,7 @@ type internal MessageDbReader (connectionString: string, leaderConnectionString:
 
     member _.ReadLastEvent(streamName: string, requiresLeader, ct, ?eventType) = task {
         use! conn = connect requiresLeader ct
-        use cmd = Queries.ReadLast.prepareCommand streamName eventType
+        use cmd = ReadLast.prepareCommand streamName eventType
         cmd.Connection <- conn
         use! reader = cmd.ExecuteReaderAsync(ct)
 
@@ -121,7 +120,7 @@ type internal MessageDbReader (connectionString: string, leaderConnectionString:
 
     member _.ReadStream(streamName: string, fromPosition: int64, batchSize: int64, requiresLeader, ct) = task {
         use! conn = connect requiresLeader ct
-        use cmd = Queries.ReadStream.prepareCommand streamName fromPosition batchSize
+        use cmd = ReadStream.prepareCommand streamName fromPosition batchSize
         cmd.Connection <- conn
         use! reader = cmd.ExecuteReaderAsync(ct)
 
