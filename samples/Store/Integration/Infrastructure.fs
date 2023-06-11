@@ -1,8 +1,11 @@
 ﻿namespace global
 
 open Domain
-open FsCheck
+open FsCheck.FSharp
 open System
+
+module Arb =
+    let generate<'t> = ArbMap.defaults |> ArbMap.generate<'t>
 
 type FsCheckGenerators =
     static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen

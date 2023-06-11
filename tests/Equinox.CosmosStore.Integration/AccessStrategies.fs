@@ -80,8 +80,8 @@ module SequenceCheck =
             createCategoryUnoptimized Events.codec Fold.initial Fold.fold (context, cache) |> Equinox.Decider.resolve log |> create
 
 module Props =
-
     open FsCheck
+    open FsCheck.FSharp
     type EventsInTip = EventsInTip of int
     type EventCount = EventCount of int
     type GapGen =

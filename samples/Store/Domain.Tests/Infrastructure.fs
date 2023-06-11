@@ -2,11 +2,14 @@
 module Samples.Store.Domain.Tests.Infrastructure
 
 open Domain
-open FsCheck
+open FsCheck.FSharp
 open FSharp.UMX
 open Swensen.Unquote
 open System
 open global.Xunit
+
+module Arb =
+    let generate<'t> = ArbMap.defaults |> ArbMap.generate<'t>
 
 type FsCheckGenerators =
     static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen
