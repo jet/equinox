@@ -47,7 +47,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData>]
-    let ``Can roundtrip in Memory, correctly folding the events`` args = Async.RunSynchronously <| async {
+    let ``Can roundtrip in Memory, correctly folding the events`` args = async {
         let store = createMemoryStore ()
         let service = createServiceMemory log store
         do! act service args
@@ -59,13 +59,13 @@ type Tests(testOutputHelper) =
         return Cart.create (createCategory context |> Decider.resolve log) }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can roundtrip against EventStore, correctly folding the events without compaction semantics`` args = Async.RunSynchronously <| async {
+    let ``Can roundtrip against EventStore, correctly folding the events without compaction semantics`` args = async {
         let! service = arrangeEs connectToLocalEventStoreNode createContext categoryGesStreamWithoutCustomAccessStrategy
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can roundtrip against EventStore, correctly folding the events with RollingSnapshots`` args = Async.RunSynchronously <| async {
+    let ``Can roundtrip against EventStore, correctly folding the events with RollingSnapshots`` args = async {
         let! service = arrangeEs connectToLocalEventStoreNode createContext categoryGesStreamWithRollingSnapshots
         do! act service args
     }
@@ -75,13 +75,13 @@ type Tests(testOutputHelper) =
         Cart.create (createCategory context |> Decider.resolve log)
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly folding the events without custom access strategy`` args = Async.RunSynchronously <| async {
+    let ``Can roundtrip against Cosmos, correctly folding the events without custom access strategy`` args = async {
         let service = arrangeCosmos createPrimaryContext categoryCosmosStreamWithoutCustomAccessStrategy
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly folding the events with With Snapshotting`` args = Async.RunSynchronously <| async {
+    let ``Can roundtrip against Cosmos, correctly folding the events with With Snapshotting`` args = async {
         let service = arrangeCosmos createPrimaryContext categoryCosmosStreamWithSnapshotStrategy
         do! act service args
     }

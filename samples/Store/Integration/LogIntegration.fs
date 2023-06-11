@@ -103,7 +103,7 @@ type Tests(testOutputHelper) =
 
     // Protip: Debug this test to view standard metrics rendering
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can roundtrip against EventStore, hooking, extracting and substituting metrics in the logging information`` (ctx, skuId) = Async.RunSynchronously <| async {
+    let ``Can roundtrip against EventStore, hooking, extracting and substituting metrics in the logging information`` (ctx, skuId) = async {
         let batchSize = defaultBatchSize
         let buffer = ConcurrentQueue<string>()
         let log = createLoggerWithMetricsExtraction buffer.Enqueue
@@ -116,7 +116,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, hooking, extracting and substituting metrics in the logging information`` (ctx, skuId) = Async.RunSynchronously <| async {
+    let ``Can roundtrip against Cosmos, hooking, extracting and substituting metrics in the logging information`` (ctx, skuId) = async {
         let queryMaxItems = defaultQueryMaxItems
         let buffer = ConcurrentQueue<string>()
         let log = createLoggerWithMetricsExtraction buffer.Enqueue

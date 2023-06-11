@@ -39,7 +39,7 @@ type Tests(testOutputHelper) =
         test <@ value = actual @> }
 
     [<AutoData>]
-    let ``Can roundtrip in Memory, correctly folding the events`` args = Async.RunSynchronously <| async {
+    let ``Can roundtrip in Memory, correctly folding the events`` args = async {
         let store = createMemoryStore ()
         let service = createServiceMemory log store
         do! act service args
@@ -51,13 +51,13 @@ type Tests(testOutputHelper) =
         return ContactPreferences.create (createCategory context |> Decider.resolve log) }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can roundtrip against EventStore, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
+    let ``Can roundtrip against EventStore, correctly folding the events with normal semantics`` args = async {
         let! service = arrangeEs connectToLocalEventStoreNode createContext categoryGesWithoutAccessStrategy
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can roundtrip against EventStore, correctly folding the events with compaction semantics`` args = Async.RunSynchronously <| async {
+    let ``Can roundtrip against EventStore, correctly folding the events with compaction semantics`` args = async {
         let! service = arrangeEs connectToLocalEventStoreNode createContext categoryGesWithOptimizedStorageSemantics
         do! act service args
     }
@@ -67,19 +67,19 @@ type Tests(testOutputHelper) =
         ContactPreferences.create (createCategory context |> Decider.resolve log)
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly folding the events with Unoptimized semantics`` args = Async.RunSynchronously <| async {
+    let ``Can roundtrip against Cosmos, correctly folding the events with Unoptimized semantics`` args = async {
         let service = arrangeCosmos createPrimaryContext categoryCosmosUnoptimized defaultQueryMaxItems
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly folding the events with LatestKnownEvent semantics`` args = Async.RunSynchronously <| async {
+    let ``Can roundtrip against Cosmos, correctly folding the events with LatestKnownEvent semantics`` args = async {
         let service = arrangeCosmos createPrimaryContext categoryCosmosWithLatestKnownEventSemantics 1
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly folding the events with RollingUnfold semantics`` args = Async.RunSynchronously <| async {
+    let ``Can roundtrip against Cosmos, correctly folding the events with RollingUnfold semantics`` args = async {
         let service = arrangeCosmos createPrimaryContext categoryCosmosRollingUnfolds defaultQueryMaxItems
         do! act service args
     }
