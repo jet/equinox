@@ -1,5 +1,7 @@
-#if !LOCAL
+#if LOCAL
 #I "bin/Debug/net6.0/"
+#r "System.Net.Http"
+#r "System.Runtime.Caching.dll"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Newtonsoft.Json.dll"
@@ -11,7 +13,6 @@
 #r "FsCodec.NewtonsoftJson.dll"
 #r "FsCodec.SystemTextJson.dll"
 #r "Microsoft.Azure.Cosmos.Client.dll"
-#r "System.Net.Http"
 #r "Serilog.Sinks.Seq.dll"
 #r "Equinox.CosmosStore.dll"
 #else
@@ -24,6 +25,7 @@
 #endif
 
 open FSharp.UMX
+open System
 
 [<AutoOpen>]
 module Types =
@@ -115,7 +117,6 @@ module FulfilmentCenter =
         member _.QueryWithVersion(id, render : Fold.State -> 'res) : Async<int64*'res> = queryEx id render
 
 open Equinox.CosmosStore
-open System
 
 module Log =
 

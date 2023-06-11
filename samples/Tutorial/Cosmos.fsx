@@ -1,10 +1,12 @@
-﻿#if !LOCAL
+﻿#if LOCAL
 // Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
 #if VISUALSTUDIO
 #r "netstandard"
 #endif
 #I "bin/Debug/net6.0/"
+#r "System.Net.Http"
+#r "System.Runtime.Caching.dll"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Newtonsoft.Json.dll"
@@ -14,9 +16,7 @@
 #r "FSharp.UMX.dll"
 #r "FsCodec.dll"
 #r "FsCodec.SystemTextJson.dll"
-#r "FSharp.Control.TaskSeq.dll"
 #r "Microsoft.Azure.Cosmos.Client.dll"
-#r "System.Net.Http"
 #r "Serilog.Sinks.Seq.dll"
 #r "Equinox.CosmosStore.dll"
 #else

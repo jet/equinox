@@ -11,17 +11,18 @@
 // - the same general point applies to over-using querying of streams for read purposes as we do here;
 //   applying CQRS principles can often lead to a better model regardless of raw necessity
 
-#if !LOCAL
+#if LOCAL
 // Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
 #if VISUALSTUDIO
 #r "netstandard"
 #endif
 #I "bin/Debug/net6.0/"
+#r "System.Configuration.ConfigurationManager.dll"
+#r "System.Runtime.Caching.dll"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Serilog.Sinks.Seq.dll"
-#r "System.Configuration.ConfigurationManager.dll"
 #r "Equinox.Core.dll"
 #r "Newtonsoft.Json.dll"
 #r "FSharp.UMX.dll"
@@ -29,8 +30,6 @@
 #r "Equinox.dll"
 #r "TypeShape.dll"
 #r "FsCodec.SystemTextJson.dll"
-//#r "FSharp.Control.TaskSeq.dll"
-//#r "System.Net.Http"
 #r "EventStore.Client.dll"
 #r "EventStore.Client.Streams.dll"
 #r "Equinox.EventStoreDb.dll"
@@ -43,6 +42,7 @@
 #r "nuget:Equinox.EventStoreDb, *-*"
 #r "nuget:FsCodec.SystemTextJson, *-*"
 #endif
+
 open System
 
 let [<Literal>] Category = "Account"
@@ -157,7 +157,7 @@ module EventStore =
     let connection = EventStoreConnection(esc)
     let context = EventStoreContext(connection, batchSize = snapshotWindow)
     // cache so normal read pattern is to read from whatever we've built in memory
-    let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
+    let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     // rig snapshots to be injected as events into the stream every `snapshotWindow` events
     let accessStrategy = AccessStrategy.RollingSnapshots (Fold.isValid,Fold.snapshot)
     let cat = EventStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)

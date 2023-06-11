@@ -1,4 +1,4 @@
-#if !LOCAL
+#if LOCAL
 // Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
 #I "bin/Debug/net6.0/"
@@ -101,9 +101,9 @@ let clientAFavoritesStreamId = Equinox.StreamId.gen id "ClientA"
 let store = Equinox.MemoryStore.VolatileStore()
 // MemoryStore (as with most Event Stores) provides a way to observe events that have been persisted to a stream
 // For demo purposes we emit those to the log (which emits to the console)
-let logEvents categoryName streamId (events : FsCodec.ITimelineEvent<_>[]) =
-    log.Information("Committed to {categoryName}-{stream}, events: {@events}", categoryName, streamId, seq { for x in events -> x.EventType })
-let _ = store.Committed.Subscribe(fun struct (cn, sid, xs) -> logEvents cn sid xs)
+let logEvents sn (events: FsCodec.ITimelineEvent<_>[]) =
+    log.Information("Committed to {sn}, events: {@events}", FsCodec.StreamName.toString sn, seq { for x in events -> x.EventType })
+let _ = store.Committed.Subscribe(fun struct (sn, xs) -> logEvents sn xs)
 
 let codec =
     // For this example, we hand-code; normally one uses one of the FsCodec auto codecs, which codegen something similar
