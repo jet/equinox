@@ -1,9 +1,12 @@
 ﻿namespace global
 
 open Domain
-open FsCheck
+open FsCheck.FSharp
 open System
+open FSharp.UMX
 
+module Arb =
+    let generate<'t> = ArbMap.defaults |> ArbMap.generate<'t>
 type FsCheckGenerators =
     static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen
     static member ContactPreferencesId =
@@ -11,6 +14,7 @@ type FsCheckGenerators =
         |> Gen.map (fun x -> sprintf "%s@test.com" (x.ToString("N")))
         |> Gen.map ContactPreferences.ClientId
         |> Arb.fromGen
+    static member RequestId = Arb.generate<Guid> |> Gen.map (fun x -> RequestId.parse %x) |> Arb.fromGen
 
 #if STORE_POSTGRES || STORE_MSSQL || STORE_MYSQL
 open Equinox.SqlStreamStore

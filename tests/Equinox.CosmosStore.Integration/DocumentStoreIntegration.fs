@@ -98,7 +98,7 @@ type Tests(testOutputHelper) =
 #endif
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against DocStore, correctly batching the reads`` (eventsInTip, cartContext, skuId) = Async.RunSynchronously <| async {
+    let ``Can roundtrip against DocStore, correctly batching the reads`` (eventsInTip, cartContext, skuId) = async {
         capture.Clear() // for re-runs of the test
         let addRemoveCount = 40
         let eventsPerAction = addRemoveCount * 2 - 1
@@ -141,7 +141,7 @@ type Tests(testOutputHelper) =
 
 #if STORE_DYNAMO
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can read stream without traversing tip`` (cartContext, skuId, countToTry) = Async.RunSynchronously <| async {
+    let ``Can read stream without traversing tip`` (cartContext, skuId, countToTry) = async {
         capture.Clear() // for re-runs of the test
         let addRemoveCount = 40
         let _expectedEvents = addRemoveCount * 2 - 1
@@ -165,7 +165,7 @@ type Tests(testOutputHelper) =
 #endif
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against DocStore, managing sync conflicts by retrying`` (eventsInTip, ctx, initialState) = Async.RunSynchronously <| async {
+    let ``Can roundtrip against DocStore, managing sync conflicts by retrying`` (eventsInTip, ctx, initialState) = async {
         capture.Clear()
         let log1, capture1 = log, capture
         let queryMaxItems = 3
@@ -251,7 +251,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can correctly read and update Contacts against DocStore with LatestKnownEvent without Caching`` (eventsInTip, value: ContactPreferences.Events.Preferences) = Async.RunSynchronously <| async {
+    let ``Can correctly read and update Contacts against DocStore with LatestKnownEvent without Caching`` (eventsInTip, value: ContactPreferences.Events.Preferences) = async {
         let context = createPrimaryContextEx log 1 (if eventsInTip then 1 else 0)
         let service = ContactPreferences.createServiceWithoutCaching log context
         // We need to be sure every Update changes something as we rely on an expected number of events in the end
@@ -308,7 +308,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can correctly read and update Contacts against DocStore with LatestKnownEvent`` value = Async.RunSynchronously <| async {
+    let ``Can correctly read and update Contacts against DocStore with LatestKnownEvent`` value = async {
         let context = createPrimaryContextEx log 1 10
         let cache = Equinox.Cache("contacts", sizeMb = 50)
         let service = ContactPreferences.createServiceWithCaching log context cache
@@ -331,7 +331,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against DocStore with RollingState, detecting conflicts based on etag`` (ctx, initialState) = Async.RunSynchronously <| async {
+    let ``Can roundtrip against DocStore with RollingState, detecting conflicts based on etag`` (ctx, initialState) = async {
         let log1, capture1 = log, capture
         capture1.Clear()
         let context = createPrimaryContextEx log1 1 10
@@ -412,7 +412,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against DocStore, using Snapshotting to avoid queries`` (cartContext, skuId) = Async.RunSynchronously <| async {
+    let ``Can roundtrip against DocStore, using Snapshotting to avoid queries`` (cartContext, skuId) = async {
         let queryMaxItems = 10
         let context = createPrimaryContextEx log queryMaxItems 10
         let createServiceIndexed () = Cart.createServiceWithSnapshotStrategy log context
@@ -463,7 +463,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against DocStore, correctly using Snapshotting and Cache to avoid redundant reads`` (eventsInTip, cartContext, skuId) = Async.RunSynchronously <| async {
+    let ``Can roundtrip against DocStore, correctly using Snapshotting and Cache to avoid redundant reads`` (eventsInTip, cartContext, skuId) = async {
         let context = createPrimaryContextEx log 10 (if eventsInTip then 10 else 0)
         let cache = Equinox.Cache("cart", sizeMb = 50)
         let createServiceCached () = Cart.createServiceWithSnapshotStrategyAndCaching log context cache

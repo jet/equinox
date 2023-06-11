@@ -32,7 +32,7 @@ type Tests(testOutputHelper) =
         test <@ float rus >= Seq.sum (Seq.map snd tripRequestCharges) @>
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let append (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
+    let append (eventsInTip, TestStream streamName) = async {
         capture.Clear()
         let ctx = createPrimaryEventsContext log defaultQueryMaxItems (if eventsInTip then 1 else 0)
 
@@ -57,7 +57,7 @@ type Tests(testOutputHelper) =
     // It's conceivable that in the future we might allow zero-length batches as long as a sync mechanism leveraging the etags and unfolds update mechanisms
     // As it stands with the NoTipEvents stored proc, permitting empty batches a) yields an invalid state b) provides no conceivable benefit
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``append Throws when passed an empty batch`` (TestStream streamName) = Async.RunSynchronously <| async {
+    let ``append Throws when passed an empty batch`` (TestStream streamName) = async {
         let ctx = createPrimaryEventsContext log defaultQueryMaxItems 10
 
         let index = 0L
@@ -100,7 +100,7 @@ type Tests(testOutputHelper) =
     let verifyCorrectEvents = verifyCorrectEventsEx Direction.Forward
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``appendAtEnd and getNextIndex`` (eventsInTip, extras, TestStream streamName) = Async.RunSynchronously <| async {
+    let ``appendAtEnd and getNextIndex`` (eventsInTip, extras, TestStream streamName) = async {
         // If a fail triggers a rerun, we need to dump the previous log entries captured
         capture.Clear()
 
@@ -163,7 +163,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``append - fails on non-matching`` (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
+    let ``append - fails on non-matching`` (eventsInTip, TestStream streamName) = async {
         capture.Clear()
         let ctx = createPrimaryEventsContext log 10 (if eventsInTip then 1 else 0)
 
@@ -201,7 +201,7 @@ type Tests(testOutputHelper) =
     (* Forward *)
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let get (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
+    let get (eventsInTip, TestStream streamName) = async {
         let ctx = createPrimaryEventsContext log 3 (if eventsInTip then 10 else 0)
 
         // We're going to ignore the first, to prove we can
@@ -218,7 +218,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``get in 2 batches`` (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
+    let ``get in 2 batches`` (eventsInTip, TestStream streamName) = async {
         let ctx = createPrimaryEventsContext log 1 (if eventsInTip then 1 else 0)
 
         let! expected = add6EventsIn2BatchesEx ctx streamName 2
@@ -234,7 +234,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``get Lazy`` (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
+    let ``get Lazy`` (eventsInTip, TestStream streamName) = async {
         let ctx = createPrimaryEventsContext log 1 (if eventsInTip then 3 else 0)
 
         let! expected = add6EventsIn2BatchesEx ctx streamName 4
@@ -257,7 +257,7 @@ type Tests(testOutputHelper) =
     (* Backward *)
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let getBackwards (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
+    let getBackwards (eventsInTip, TestStream streamName) = async {
         let ctx = createPrimaryEventsContext log 1 (if eventsInTip then 1 else 0)
 
         let! expected = add6EventsIn2Batches ctx streamName
@@ -274,7 +274,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``getBackwards in 2 batches`` (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
+    let ``getBackwards in 2 batches`` (eventsInTip, TestStream streamName) = async {
         let ctx = createPrimaryEventsContext log 1 (if eventsInTip then 1 else 0)
 
         let! expected = add6EventsIn2BatchesEx ctx streamName 2
@@ -291,7 +291,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``getBackwards Lazy`` (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
+    let ``getBackwards Lazy`` (eventsInTip, TestStream streamName) = async {
         let ctx = createPrimaryEventsContext log 1 (if eventsInTip then 3 else 0)
 
         let! expected = add6EventsIn2BatchesEx ctx streamName 4
@@ -321,7 +321,7 @@ type Tests(testOutputHelper) =
     (* Prune *)
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let prune (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
+    let prune (eventsInTip, TestStream streamName) = async {
         let ctx, ctxUnsafe = createPrimaryEventsContextWithUnsafe log 10 (if eventsInTip then 3 else 0)
         let! expected = add6EventsIn2BatchesEx ctx streamName 4
 
@@ -387,7 +387,7 @@ type Tests(testOutputHelper) =
     (* Fallback *)
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let fallback (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
+    let fallback (eventsInTip, TestStream streamName) = async {
         let ctx1, ctx1Unsafe = createPrimaryEventsContextWithUnsafe log 10 (if eventsInTip then 3 else 0)
         let ctx2 = createArchiveEventsContext log defaultQueryMaxItems
         let ctx12 = createFallbackEventsContext log defaultQueryMaxItems
