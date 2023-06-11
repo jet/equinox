@@ -21,7 +21,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `CosmosStore.Prometheus`: Add `rut` tag to enable filtering/grouping by Read vs Write activity as per `DynamoStore` [#321](https://github.com/jet/equinox/pull/321)
 - `DynamoStore`/`DynamoStore.Prometheus`: Implements the majority of the `CosmosStore` functionality via `FSharp.AWS.DynamoDB` [#321](https://github.com/jet/equinox/pull/321)
 - `EventStoreDb`: As per `EventStore` module, but using the modern `EventStore.Client.Grpc.Streams` client [#196](https://github.com/jet/equinox/pull/196)
-- `MessageDb`: Implements a [message-db](http://docs.eventide-project.org/user-guide/message-db/) storage backend [#339](https://github.com/jet/equinox/pull/339) with OpenTelemetry tracing [#348](https://github.com/jet/equinox/pull/348) :pray: [@nordfjord](https://github.com/nordfjord)
+- `MessageDb`: Implements a [message-db](http://docs.eventide-project.org/user-guide/message-db/) storage backend [#339](https://github.com/jet/equinox/pull/339) with OpenTelemetry tracing and snapshotting support [#348](https://github.com/jet/equinox/pull/348) :pray: [@nordfjord](https://github.com/nordfjord)
 - `eqx dump`: `-s` flag is now optional
 
 ### Changed
