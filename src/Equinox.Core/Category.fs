@@ -57,16 +57,16 @@ type private Stream private () =
         System.Func<string, Core.StreamId, _>(fun categoryName streamId -> cat.Stream(log, context, categoryName, Core.StreamId.toString streamId))
 
 [<AbstractClass; Sealed; System.Runtime.CompilerServices.Extension>]
-type DeciderCore private () =
+type Factory private () =
     [<System.Runtime.CompilerServices.Extension>]
     static member Resolve(cat: Category<'event, 'state, 'context>, log, context): System.Func<string, Core.StreamId, DeciderCore<'event, 'state>> =
          System.Func<_, _, _>(fun c s -> Stream.Resolve(cat, log, context).Invoke(c, s) |> DeciderCore<'event, 'state>)
     [<System.Runtime.CompilerServices.Extension>]
     static member Resolve(cat: Category<'event, 'state, unit>, log): System.Func<string, Core.StreamId, DeciderCore<'event, 'state>> =
-        DeciderCore.Resolve(cat, log, ())
+        Factory.Resolve(cat, log, ())
 
 module Decider =
     let resolveWithContext log (cat: Category<'event, 'state, 'context>) categoryName context streamId =
-        DeciderCore.Resolve(cat, log, context).Invoke(categoryName, streamId) |> Decider
+        Factory.Resolve(cat, log, context).Invoke(categoryName, streamId) |> Decider<'event, 'state>
     let resolve log (cat: Category<'event, 'state, unit>) categoryName streamId =
         resolveWithContext log cat categoryName () streamId
