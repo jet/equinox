@@ -1325,9 +1325,10 @@ type CachingStrategy =
     /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
     /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
     /// Unless <c>LoadOption.AnyCachedValue</c> or <c>AllowStale</c> are used, cache hits still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
-    // NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
-    // track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the `u`nfolds in Tip
     | SlidingWindow of Equinox.Cache * window: TimeSpan
+    /// As per <c>SlidingWindow</c>, but maintain an an independent separate cache entry for this Category's State
+    /// NOTE In general, its much preferred to ensure that the snapshot includes all relevant state or use AccessStrategy.MultiSnapshot where possible
+    | SlidingWindowPrefixed of Equinox.Cache * window: TimeSpan * prefix: string
     /// Retain a single 'state per streamName, together with the associated etag.
     /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
     /// Typically combined with an `Equinox.LoadOption` to minimize loads.
@@ -1384,6 +1385,7 @@ type CosmosStoreCategory<'event, 'state, 'context> internal (resolveInner, empty
         let caching = caching |> function
             | CachingStrategy.NoCaching -> None
             | CachingStrategy.SlidingWindow (cache, window) -> Some (Equinox.CachingStrategy.SlidingWindow (cache, window))
+            | CachingStrategy.SlidingWindowPrefixed (cache, window, prefix) -> Some (Equinox.CachingStrategy.SlidingWindowPrefixed (cache, window, prefix))
             | CachingStrategy.FixedTimeSpan (cache, period) -> Some (Equinox.CachingStrategy.FixedTimeSpan (cache, period))
         let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<'event, 'state, 'context>>()
         let resolveCategory (categoryName, container) =

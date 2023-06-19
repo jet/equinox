@@ -19,6 +19,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Equinox.DeciderCore`: C# friendly equivalent of `Decider` (i.e. `Func` and `Task`) [#338](https://github.com/jet/equinox/pull/338)
 - `Equinox.ISyncContext.StreamEventBytes`: Exposes stored size of events in the stream (initial impl provides it for `DynamoStore` only) [#326](https://github.com/jet/equinox/pull/326)
 - `CosmosStore.Prometheus`: Add `rut` tag to enable filtering/grouping by Read vs Write activity as per `DynamoStore` [#321](https://github.com/jet/equinox/pull/321)
+- `CosmosStore/DynamoStore.CachingStrategy.SlidingWindowPrefixed`: As per other stores [#399](https://github.com/jet/equinox/pull/399)
 - `DynamoStore`/`DynamoStore.Prometheus`: Implements the majority of the `CosmosStore` functionality via `FSharp.AWS.DynamoDB` [#321](https://github.com/jet/equinox/pull/321)
 - `EventStoreDb`: As per `EventStore` module, but using the modern `EventStore.Client.Grpc.Streams` client [#196](https://github.com/jet/equinox/pull/196)
 - `MessageDb`: Implements a [message-db](http://docs.eventide-project.org/user-guide/message-db/) storage backend [#339](https://github.com/jet/equinox/pull/339) with OpenTelemetry tracing and snapshotting support [#348](https://github.com/jet/equinox/pull/348) :pray: [@nordfjord](https://github.com/nordfjord)
