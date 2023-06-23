@@ -72,9 +72,19 @@ type Tests() =
     let sut = Equinox.Core.Caching.apply isStale (Some strategy) cat
     let sn = Guid.NewGuid |> string
 
-    let requireLoad () = load sn TimeSpan.Zero sut
-    let anyCachedValue () = load sn TimeSpan.MaxValue sut
     let write () = write sn sut
+
+    let anyCachedValue () = load sn TimeSpan.MaxValue sut
+    let requireLoad () = load sn TimeSpan.Zero sut
+
+    let [<Fact>] ``anyCachedValue basics`` () = task {
+        let! struct (_token, state) = anyCachedValue ()
+        test <@ (1, 1, 0) = (state, cat.Loads, cat.Reloads) @>
+        do! write ()
+        let! struct (_token, state) = anyCachedValue ()
+        test <@ (expectedWriteState, 1, 0) = (state, cat.Loads, cat.Reloads) @>
+        let! struct (_token, state) = requireLoad ()
+        test <@ (2, 1, 1) = (state, cat.Loads, cat.Reloads) @> }
 
     let [<Fact>] ``requireLoad vs anyCachedValue`` () = task {
         let! struct (_token, state) = requireLoad ()
