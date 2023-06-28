@@ -626,13 +626,14 @@ module internal Sync =
         let req, predecessorBytes', tipEvents' =
             let eventOverflow = maxEvents |> Option.exists (fun limit -> events.Length + cur.events.Length > limit)
             if eventOverflow || cur.baseBytes + Unfold.arrayBytes unfolds + Event.arrayBytes events > maxBytes then
-                let calfEvents, residualEvents = ResizeArray(cur.events.Length + events.Length), ResizeArray()
+                let calfEvents, residualEvents = ResizeArray(cur.events.Length), ResizeArray()
                 let mutable calfFull, calfSize = false, 1024
-                for e in Seq.append cur.events events do
+                for e in cur.events do
                     match calfFull, calfSize + Event.Bytes e with
                     | false, calfSize' when calfSize' < maxDynamoDbItemSize -> calfSize <- calfSize'; calfEvents.Add e
                     | _ -> calfFull <- true; residualEvents.Add e
                 let calfEvents = calfEvents.ToArray()
+                residualEvents.AddRange events
                 let tipEvents = residualEvents.ToArray()
                 Req.Calve (calfEvents, tipEvents, events.Length), cur.calvedBytes + Event.arrayBytes calfEvents, tipEvents
             else Req.Append (Array.isEmpty cur.events, events), cur.calvedBytes, Array.append cur.events events
