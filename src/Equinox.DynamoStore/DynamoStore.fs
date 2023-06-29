@@ -138,11 +138,12 @@ module Batch =
             b: int option // iff Tip: bytes in predecessor batches
             etag: string option
             n: int64
-            // Count of items written in the most recent insert/update - used by the DDB Streams Consumer to identify the fresh events
-            a: int
-            // NOTE the per-event e.c values are actually stored here, so they can be selected out without hydrating the bodies
+            /// Count of events appended to stream with this insert/append.
+            /// N/A for calves; all writes go via Tip as only item updates guarantee ordered arrival at Lambda via DDB streams
+            a: int option
+            /// NOTE the per-event e.c values are actually stored here, so they can be selected out without hydrating the bodies
             c: string[]
-            // NOTE as per Event, but without c and t fields; we instead unroll those as arrays at top level
+            /// NOTE as per Event, but without c and t fields; we instead unroll those as arrays at top level
             e: EventSchema[]
             u: UnfoldSchema[] }
     and [<NoEquality; NoComparison>] EventSchema =
@@ -523,7 +524,7 @@ module internal Sync =
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
     type Req =
         | Append of tipWasEmpty: bool * events: Event[]
-        | Calve  of calfEvents: Event[] * updatedTipEvents: Event[] * appendedCount: int
+        | Calve  of calfEvents: Event[] * appendedEvents: Event[]
     [<RequireQualifiedAccess>]
     type internal Exp =
         | Version of int64
@@ -537,22 +538,20 @@ module internal Sync =
             | Req.Append (tipWasEmpty, eventsToAppendToTip) ->
                 let replaceTipEvents = tipWasEmpty && eventsToAppendToTip.Length <> 0
                 replaceTipEvents, eventsToAppendToTip.Length, Batch.eventsToSchema eventsToAppendToTip, None
-            | Req.Calve (calf, tipUpdatedEvents, freshEventsCount) ->
-                let tipA = min tipUpdatedEvents.Length freshEventsCount
+            | Req.Calve (calf, appendedEvents) ->
                 let calf: Batch.Schema =
-                    let calfA = freshEventsCount - tipA
-                    let calfC, calfE = Batch.eventsToSchema calf
-                    let tipIndex = n' - tipUpdatedEvents.LongLength
+                    let tipIndex = n' - appendedEvents.LongLength
                     let calfIndex = tipIndex - calf.LongLength
-                    { p = stream; i = calfIndex; a = calfA; b = None; etag = None; u = [||]; c = calfC; e = calfE; n = tipIndex }
-                true, tipA, (Batch.eventsToSchema tipUpdatedEvents), Some calf
+                    let calfC, calfE = Batch.eventsToSchema calf
+                    { p = stream; i = calfIndex; a = None; b = None; etag = None; u = [||]; c = calfC; e = calfE; n = tipIndex }
+                true, Array.length appendedEvents, Batch.eventsToSchema appendedEvents, Some calf
         let genFreshTipItem (): Batch.Schema =
-            { p = stream; i = Batch.tipMagicI; a = tipA; b = Some b'; etag = Some etag'; u = u; n = n'; e = tipE; c = tipC }
+            { p = stream; i = Batch.tipMagicI; a = Some tipA; b = Some b'; etag = Some etag'; u = u; n = n'; e = tipE; c = tipC }
         let updateTipIf condExpr =
             let updExpr: Quotations.Expr<Batch.Schema -> Batch.Schema> =
-                if replaceTipEvents  then <@ fun t -> { t with a = tipA; b = Some b'; etag = Some etag'; u = u; n = n'; e = tipE; c = tipC } @>
-                elif tipE.Length = 0 then <@ fun t -> { t with a = 0;    b = Some b'; etag = Some etag'; u = u } @>
-                else                      <@ fun t -> { t with a = tipA; b = Some b'; etag = Some etag'; u = u; n = n'; e = Array.append t.e tipE; c = Array.append t.c tipC } @>
+                if replaceTipEvents  then <@ fun t -> { t with a = Some tipA; b = Some b'; etag = Some etag'; u = u; n = n'; e = tipE; c = tipC } @>
+                elif tipE.Length = 0 then <@ fun t -> { t with a = Some 0;    b = Some b'; etag = Some etag'; u = u } @>
+                else                      <@ fun t -> { t with a = Some tipA; b = Some b'; etag = Some etag'; u = u; n = n'; e = Array.append t.e tipE; c = Array.append t.c tipC } @>
             updateTip stream updExpr condExpr
         [   match maybeCalf with
             | Some calfItem ->                 putItemIfNotExists calfItem
@@ -585,8 +584,7 @@ module internal Sync =
         let! t, ({ total = ru } as rc, result) = transact (container, stream) (req, unfolds, exp, b', n') |> Stopwatch.time ct
         let calfBytes, calfCount, tipBytes, tipEvents, appended = req |> function
             | Req.Append (_tipWasEmpty, appends) ->   0, 0, baseBytes + Event.arrayBytes appends, baseEvents + appends.Length, appends
-            | Req.Calve (calf, tip, appendedCount) -> Event.arrayBytes calf, calf.Length, baseBytes + Event.arrayBytes tip, tip.Length,
-                                                      Seq.append calf tip |> Seq.skip (calf.Length + tip.Length - appendedCount) |> Seq.toArray
+            | Req.Calve (calf, tip) ->                Event.arrayBytes calf, calf.Length, baseBytes + Event.arrayBytes tip, tip.Length, tip
         let exp, log = exp |> function
             | Exp.Etag etag ->  "e="+etag,       log |> Log.prop "expectedEtag" etag
             | Exp.Version ev -> "v="+string ev,  log |> Log.prop "expectedVersion" ev
@@ -612,8 +610,7 @@ module internal Sync =
         | Written of etag: string * predecessorBytes: int * events: Event[] * unfolds: Unfold[]
         | ConflictUnknown
 
-    let private maxDynamoDbItemSize = 400 * 1024
-    let handle log (maxEvents, maxBytes) (container, stream)
+    let handle log (maxEvents, maxBytes, maxEventBytes) (container, stream)
             (pos, exp, n', events: IEventData<EncodedBody>[], unfolds: IEventData<EncodedBody>[], ct) = task {
         let baseIndex = int n' - events.Length
         let events: Event[] = events |> Array.mapi (fun i e ->
@@ -624,18 +621,12 @@ module internal Sync =
         if Array.isEmpty events && Array.isEmpty unfolds then invalidOp "Must write either events or unfolds."
         let cur = Position.flatten pos
         let req, predecessorBytes', tipEvents' =
-            let eventOverflow = maxEvents |> Option.exists (fun limit -> events.Length + cur.events.Length > limit)
-            if eventOverflow || cur.baseBytes + Unfold.arrayBytes unfolds + Event.arrayBytes events > maxBytes then
-                let calfEvents, residualEvents = ResizeArray(cur.events.Length), ResizeArray()
-                let mutable calfFull, calfSize = false, 1024
-                for e in cur.events do
-                    match calfFull, calfSize + Event.Bytes e with
-                    | false, calfSize' when calfSize' < maxDynamoDbItemSize -> calfSize <- calfSize'; calfEvents.Add e
-                    | _ -> calfFull <- true; residualEvents.Add e
-                let calfEvents = calfEvents.ToArray()
-                residualEvents.AddRange events
-                let tipEvents = residualEvents.ToArray()
-                Req.Calve (calfEvents, tipEvents, events.Length), cur.calvedBytes + Event.arrayBytes calfEvents, tipEvents
+            if (maxEvents |> Option.exists (fun limit -> cur.events.Length + events.Length > limit)
+                || Event.arrayBytes cur.events + Event.arrayBytes events > maxEventBytes
+                || Event.arrayBytes cur.events + Event.arrayBytes events + Unfold.arrayBytes unfolds > maxBytes)
+               && (not << Array.isEmpty) cur.events then // even if a rule says we should calve, we don't want to produce empty ones
+                let calfE, tipE = cur.events, events
+                Req.Calve (calfE, tipE), cur.calvedBytes + Event.arrayBytes calfE, tipE
             else Req.Append (Array.isEmpty cur.events, events), cur.calvedBytes, Array.append cur.events events
         match! transactLogged (container, stream) (cur.baseBytes, cur.events.Length, req, unfolds, exp pos, predecessorBytes', n', ct) log with
         | Res.Written etag' -> return Result.Written (etag', predecessorBytes', tipEvents', unfolds)
@@ -1060,8 +1051,13 @@ type TipOptions
         [<O; D null>] ?maxEvents) =
     /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: limited by MaxBytes
     member val MaxEvents: int option = maxEvents
-    /// Maximum serialized size to permit to accumulate in Tip before events get moved out to a standalone Batch. Default: 32K.
+    /// Maximum serialized size allowed for the Tip (including snapshots) before accumulated events are forced out to a standalone Batch in order
+    /// to reduce the WCU impact of the buffered events on the cost of appending events. Default: 32K.
+    /// When combined with MaxEventBytes, either condition can trigger the Calving (and increasing this one opts into accepting large WCU costs
+    /// due to large snapshots without compromising on packing density of calved batches).
     member val MaxBytes = defaultArg maxBytes defaultTipMaxBytes
+    /// Maximum serialized size of events to accumulate in Tip before a Calve operation is forced (independent of capacity consumed by unfolds). Default: 32K.
+    member val MaxEventBytes = defaultArg maxBytes defaultTipMaxBytes
 
 type internal StoreClient(container: Container, fallback: Container option, query: QueryOptions, tip: TipOptions) =
 
@@ -1111,7 +1107,7 @@ type internal StoreClient(container: Container, fallback: Container option, quer
             | Tip.Res.Found (pos, i, xs) -> return! read (pos, i, xs) }
 
     member _.Sync(log, stream, pos, exp, n': int64, eventsEncoded, unfoldsEncoded, ct): Task<InternalSyncResult> = task {
-        match! Sync.handle log (tip.MaxEvents, tip.MaxBytes) (container, stream) (pos, exp, n', eventsEncoded, unfoldsEncoded, ct) with
+        match! Sync.handle log (tip.MaxEvents, tip.MaxBytes, tip.MaxEventBytes) (container, stream) (pos, exp, n', eventsEncoded, unfoldsEncoded, ct) with
         | Sync.Result.Written (etag', b', events, unfolds) ->
             return InternalSyncResult.Written (Token.create (Position.fromElements (stream, b', n', events, unfolds, etag')))
         | Sync.Result.ConflictUnknown -> return InternalSyncResult.ConflictUnknown }
