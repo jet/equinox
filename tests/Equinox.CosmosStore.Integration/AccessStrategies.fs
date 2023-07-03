@@ -1,12 +1,11 @@
 module Equinox.Store.Integration.AccessStrategies
 
-#if STORE_DYNAMO
 open Equinox.Core
+#if STORE_DYNAMO
 open Equinox.DynamoStore
 open Equinox.DynamoStore.Core
 open Equinox.DynamoStore.Integration.CosmosFixtures
 #else
-open Equinox.Core
 open Equinox.CosmosStore
 open Equinox.CosmosStore.Core
 open Equinox.CosmosStore.Integration.CosmosFixtures
@@ -14,8 +13,6 @@ open Equinox.CosmosStore.Integration.CosmosFixtures
 open Swensen.Unquote
 open System
 open Xunit
-
-
 
 [<AutoOpen>]
 module WiringHelpers =
@@ -143,17 +140,17 @@ type UnoptimizedTipReadingCorrectness(testOutputHelper) =
 
 
 module Token =
-    #if STORE_DYNAMO
+#if STORE_DYNAMO
     let getPos index = { index = index; etag = ""; calvedBytes = 0; baseBytes = 0; unfoldsBytes = 0; events = Array.empty }
-    #else
+#else
     let getPos index = { index = index; etag = None }
-    #endif
+#endif
     let [<Fact>] ``Candidate is not stale if we have no current`` () =
         let emptyToken = Unchecked.defaultof<StreamToken>
         let pos = getPos 0
         let candidate = Token.create pos
 
-        test <@ false = Token.isStale emptyToken candidate  @>
+        test <@ false = Token.isStale emptyToken candidate @>
 
     let [<Fact>] ``Candidate is not stale if higher index than current`` () =
         let pos1 = getPos 1
@@ -161,7 +158,7 @@ module Token =
         let current = Token.create pos1
         let candidate = Token.create pos2
 
-        test <@ false = Token.isStale current candidate  @>
+        test <@ false = Token.isStale current candidate @>
 
     let [<Fact>] ``Candidate is stale if lower index than current`` () =
         let pos1 = getPos 1
@@ -169,4 +166,4 @@ module Token =
         let current = Token.create pos2
         let candidate = Token.create pos1
 
-        test <@ true = Token.isStale current candidate  @>
+        test <@ true = Token.isStale current candidate @>
