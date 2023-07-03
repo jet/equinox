@@ -138,13 +138,14 @@ type UnoptimizedTipReadingCorrectness(testOutputHelper) =
         let! s2'' = service2.Read instanceId
         test <@ s1'' = s2'' @> }
 
-
 module Token =
+
 #if STORE_DYNAMO
     let getPos index = { index = index; etag = ""; calvedBytes = 0; baseBytes = 0; unfoldsBytes = 0; events = Array.empty }
 #else
     let getPos index = { index = index; etag = None }
 #endif
+
     let [<Fact>] ``Candidate is not stale if we have no current`` () =
         let emptyToken = Unchecked.defaultof<StreamToken>
         let pos = getPos 0
