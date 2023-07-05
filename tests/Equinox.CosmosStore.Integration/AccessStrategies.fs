@@ -146,25 +146,12 @@ module Token =
     let getPos index = { index = index; etag = None }
 #endif
 
-    let [<Fact>] ``Candidate is not stale if we have no current`` () =
-        let emptyToken = Unchecked.defaultof<StreamToken>
-        let pos = getPos 0
-        let candidate = Token.create pos
+    [<Theory;
+      InlineData(1, 1, false); // If we re-read the same data, either as a 200 or a 304 NotModified, we still need to update the lastVerified stamp
+      InlineData(1, 2, false);
+      InlineData(2, 1, true)>]
+    let ``Candidate is stale iff lower than current`` (currentIndex, candidateIndex, expectStale) =
+        let current = Token.create (getPos currentIndex)
+        let candidate = Token.create (getPos candidateIndex)
 
-        test <@ false = Token.isStale emptyToken candidate @>
-
-    let [<Fact>] ``Candidate is not stale if higher index than current`` () =
-        let pos1 = getPos 1
-        let pos2 = getPos 2
-        let current = Token.create pos1
-        let candidate = Token.create pos2
-
-        test <@ false = Token.isStale current candidate @>
-
-    let [<Fact>] ``Candidate is stale if lower index than current`` () =
-        let pos1 = getPos 1
-        let pos2 = getPos 2
-        let current = Token.create pos2
-        let candidate = Token.create pos1
-
-        test <@ true = Token.isStale current candidate @>
+        test <@ expectStale = Token.isStale current candidate @>
