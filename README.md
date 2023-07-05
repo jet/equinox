@@ -112,12 +112,15 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
     - Most features and behaviors are as per `Equinox.CosmosStore`, with the following key differences:
       - Instead of using a Stored Procedure as `CosmosStore` does, the implementation involves:
         - conditional `PutItem` and [`UpdateItem`](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html) requests to accumulate events in the Tip (where there is space available).
+        - All event writes are guaranteed to first be inserted or appended to the Tip (to guarantee the DynamoDB Streams output is correctly ordered)
+          [see #401](https://github.com/jet/equinox/pull/401) and [Propulsion #222](https://github.com/jet/propulsion/pull/222) :pray: [@epNickColeman](https://github.com/epNickColeman)
         - At the point where the Tip exceeds any of the configured and/or implicit limits, a [`TransactWriteItems`](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html) request is used (see [implementation in `FSharp.AWS.DynamoDB`](https://github.com/fsprojects/FSharp.AWS.DynamoDB/pull/48)):
           - maximum event count (not limited by default)
           - maximum accumulated event size (default 32KiB)
           - DynamoDB Item Size Limit (hard limit of 400KiB)
       - DynamoDB does not support an etag-checked Read API, which means a cache hit is not as efficient as it is on CosmosDB (and the data hence travels and is deserialized unnecessarily)
       - Concurrency conflicts necessitate an additional roundtrip to resync [as the DynamoDB Service does not yield the item in the event of a `ConditionalCheckFailedException`](https://stackoverflow.com/questions/71622525)
+        - NOTE: As of 30 June 2023, DDB now supports returning the conflicting events; TODO implement resync without an extra roundtrip via https://github.com/fsprojects/FSharp.AWS.DynamoDB/issues/68 
       - `Equinox.Cosmos.Core.Events.appendAtEnd`/`NonIdempotentAppend` has not been ported (there's no obvious clean and efficient way to do a conditional insert/update/split as the CosmosDB stored proc can, and this is a low usage feature)
       - The implementation uses [the excellent `FSharp.AWS.DynamoDB` library](https://github.com/fsprojects/FSharp.AWS.DynamoDB)) (which wraps the standard AWS `AWSSDK.DynamoDBv2` SDK Package), and leans on [significant preparatory research](https://github.com/pierregoudjo/dynamodb_conditional_writes) :pray: [@pierregoudjo](https://github.com/pierregoudjo)
       - `CosmosStore` dictates (as of V4) that event bodies be supplied as `System.Text.Json.JsonElement`s (in order that events can be included in the Document/ Items as JSON directly. This is also to underscore the fact that the only reasonable format to use is valid JSON; binary data would need to be base64 encoded. `DynamoStore` accepts and yields event bodies as arbitrary `ReadOnlyMemory<byte>` BLOBs (the AWS SDK round-trips such blobs as a `MemoryStream` and does not impose any restrictions on the blobs in terms of required format).

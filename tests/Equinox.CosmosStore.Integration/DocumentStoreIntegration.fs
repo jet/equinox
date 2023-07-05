@@ -98,7 +98,18 @@ type Tests(testOutputHelper) =
 #endif
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against DocStore, correctly batching the reads`` (eventsInTip, cartContext, skuId) = async {
+    let ``Can roundtrip against DocStore, correctly batching the reads`` (eventsInTip: bool, cartContext, skuId) = async {
+#if STORE_DYNAMO
+        // CosmosStore before V3 only ever wrote events as calves (i.e., no events in tip, ever). V>=3 continues to support such a configuration
+        // It's useful to hence cover such scenarios (they enable a naive reactor dramatically less frequently be subjected to at least once delivery effects)
+        // For Dynamo however, the only useful write algorithm (and the only one that made it based the RC stage) is to force all events to be written to the
+        // Tip before they become eligible for calving. This is due to the fact that only updates for a single Item are guaranteed correctly ordered egress via
+        // DDB streams (or Kinesis) - there is no guarantee of relative delivery order of items in the same logical partition (Yes, even if they are explicitly
+        // written in the correct order as part of a TransactWriteItems, as we need to do for correctness anyway)
+        // NOTE This does leave some corner cases like large snapshot updates (without new events) driving events to be calved but leaving the tip without
+        // events etc, which are not covered by this test
+        let eventsInTip = true
+#endif
         capture.Clear() // for re-runs of the test
         let addRemoveCount = 40
         let eventsPerAction = addRemoveCount * 2 - 1
@@ -107,9 +118,15 @@ type Tests(testOutputHelper) =
 
         let service = Cart.createServiceWithoutOptimization log context
         let expectedResponses n =
-            let finalEmptyPage = if expectFinalExtraPage () then 1 else 0
             let tipItem = 1
-            let expectedItems = tipItem + (if eventsInTip then n / 2 else n) + finalEmptyPage
+#if STORE_DYNAMO
+            let finalEmptyPage = if expectFinalExtraPage () then 1 else 0
+            // While we have events in the tip, unlike on Cosmos, new writes can't go straight to the calf, for reasons explained above
+            let noCalveOnFirstWrite = 1
+            let expectedItems = tipItem + n + finalEmptyPage - noCalveOnFirstWrite
+#else
+            let expectedItems = tipItem + (if eventsInTip then n / 2 else n)
+#endif
             max 1 (int (ceil (float expectedItems / float queryMaxItems)))
 
         let cartId = % Guid.NewGuid()
@@ -117,13 +134,14 @@ type Tests(testOutputHelper) =
         let transactions = 6
         for i in [1..transactions] do
             do! addAndThenRemoveItemsManyTimesExceptTheLastOne cartContext cartId skuId service addRemoveCount
+            // TODO fix math
             test <@ i = i && List.replicate (expectedResponses (i-1)) EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
 #if STORE_DYNAMO
-            if eventsInTip then verifyRequestChargesMax 190 // 189.5 [9.5; 180.0]
+            verifyRequestChargesMax 190 // 189.5 [9.5; 180.0]
 #else
             if eventsInTip then verifyRequestChargesMax 76 // 76.0 [3.72; 72.28]
-#endif
             else verifyRequestChargesMax 79 // 78.37 [3.15; 75.22]
+#endif
             capture.Clear()
 
         // Validate basic operation; Key side effect: Log entries will be emitted to `capture`
@@ -132,11 +150,11 @@ type Tests(testOutputHelper) =
 
         test <@ List.replicate (expectedResponses transactions) EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
 #if STORE_DYNAMO
-        if eventsInTip then verifyRequestChargesMax 12 // 11.5
+        verifyRequestChargesMax 12 // 11.5
 #else
         if eventsInTip then verifyRequestChargesMax 9 // 8.05
-#endif
         else verifyRequestChargesMax 15 // 14.01
+#endif
     }
 
 #if STORE_DYNAMO
@@ -237,6 +255,7 @@ type Tests(testOutputHelper) =
         // Intended conflicts arose
         let conflict = function EqxAct.Conflict | EqxAct.Resync as x -> Some x | _ -> None
 #if !STORE_DYNAMO
+        // TODO could now implement a Resync (when exposed via https://github.com/fsprojects/FSharp.AWS.DynamoDB/issues/68)
         if eventsInTip then
             test <@ let c2 = List.choose conflict capture2.ExternalCalls
                     [EqxAct.Resync] = List.choose conflict capture1.ExternalCalls
@@ -463,7 +482,11 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against DocStore, correctly using Snapshotting and Cache to avoid redundant reads`` (eventsInTip, cartContext, skuId) = async {
+    let ``Can roundtrip against DocStore, correctly using Snapshotting and Cache to avoid redundant reads`` (eventsInTip: bool, cartContext, skuId) = async {
+#if STORE_DYNAMO
+        // SEE NOTE above on similar override for details of why
+        let eventsInTip = true
+#endif
         let context = createPrimaryContextEx log 10 (if eventsInTip then 10 else 0)
         let cache = Equinox.Cache("cart", sizeMb = 50)
         let createServiceCached () = Cart.createServiceWithSnapshotStrategyAndCaching log context cache

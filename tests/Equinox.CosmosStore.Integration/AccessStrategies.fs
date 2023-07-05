@@ -9,6 +9,7 @@ open Equinox.CosmosStore.Integration.CosmosFixtures
 #endif
 open Swensen.Unquote
 open System
+open Xunit
 
 [<AutoOpen>]
 module WiringHelpers =
@@ -96,7 +97,7 @@ module Props =
     type FsCheckAttribute() =
         inherit AutoDataAttribute(MaxTest = maxTest, Arbitrary=[|typeof<GapGen>|])
 
-[<Xunit.Collection "DocStore">]
+[<Collection "DocStore">]
 type UnoptimizedTipReadingCorrectness(testOutputHelper) =
     let output = TestOutput(testOutputHelper)
     let log = output.CreateLogger()
@@ -133,3 +134,24 @@ type UnoptimizedTipReadingCorrectness(testOutputHelper) =
 
         let! s2'' = service2.Read instanceId
         test <@ s1'' = s2'' @> }
+
+module Token =
+
+// Helpers for producing tokens are note presently exposed, so we produce the records directly here
+#if STORE_DYNAMO
+    open Equinox.DynamoStore.Core
+    let getPos index = { index = index; etag = ""; calvedBytes = 0; baseBytes = 0; unfoldsBytes = 0; events = Array.empty }
+#else
+    open Equinox.CosmosStore.Core
+    let getPos index = { index = index; etag = None }
+#endif
+
+    [<Theory;
+      InlineData(1, 1, false); // If we re-read the same data, either as a 200 or a 304 NotModified, we still need to update the lastVerified stamp
+      InlineData(1, 2, false);
+      InlineData(2, 1, true)>]
+    let ``Candidate is stale iff lower than current`` (currentIndex, candidateIndex, expectStale) =
+        let current = Token.create (getPos currentIndex)
+        let candidate = Token.create (getPos candidateIndex)
+
+        test <@ expectStale = Token.isStale current candidate @>
