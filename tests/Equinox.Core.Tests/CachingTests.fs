@@ -9,9 +9,12 @@ open Xunit
 type State = int
 type Event = unit
 
-// We don't worry about the tokens in this test scenario - the timestamps are the deciding factor
-let mkToken () : Equinox.Core.StreamToken = { value = null; version = 0L; streamBytes = -1L }
-let isStale _cur _candidate = false
+// We don't worry about the tokens in these test scenarios - the timestamps are the deciding factor
+let mkToken () : Equinox.Core.StreamToken = { value = box 0; version = 0L; streamBytes = -1L }
+let isStale (cur: Equinox.Core.StreamToken) (candidate: Equinox.Core.StreamToken) =
+    ArgumentNullException.ThrowIfNull(cur.value, nameof cur)
+    ArgumentNullException.ThrowIfNull(candidate.value, nameof candidate)
+    false
 
 type SpyCategory() =
 
@@ -72,9 +75,19 @@ type Tests() =
     let sut = Equinox.Core.Caching.apply isStale (Some strategy) cat
     let sn = Guid.NewGuid |> string
 
-    let requireLoad () = load sn TimeSpan.Zero sut
-    let anyCachedValue () = load sn TimeSpan.MaxValue sut
     let write () = write sn sut
+
+    let anyCachedValue () = load sn TimeSpan.MaxValue sut
+    let requireLoad () = load sn TimeSpan.Zero sut
+
+    let [<Fact>] ``anyCachedValue basics`` () = task {
+        let! struct (_token, state) = anyCachedValue ()
+        test <@ (1, 1, 0) = (state, cat.Loads, cat.Reloads) @>
+        do! write ()
+        let! struct (_token, state) = anyCachedValue ()
+        test <@ (expectedWriteState, 1, 0) = (state, cat.Loads, cat.Reloads) @>
+        let! struct (_token, state) = requireLoad ()
+        test <@ (2, 1, 1) = (state, cat.Loads, cat.Reloads) @> }
 
     let [<Fact>] ``requireLoad vs anyCachedValue`` () = task {
         let! struct (_token, state) = requireLoad ()
