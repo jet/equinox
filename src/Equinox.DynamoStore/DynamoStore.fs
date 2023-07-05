@@ -989,10 +989,7 @@ module Token =
         { value = box { pos = pos }; version = v; streamBytes = b }
     let create: Position -> StreamToken = Some >> create_
     let empty = create_ None
-    let (|Unpack|) (token: StreamToken): Position option =
-        match token.value  with
-        | :? Token as t -> t.pos
-        | _ -> None
+    let (|Unpack|) (token: StreamToken): Position option = let t = unbox<Token> token.value in t.pos
 
     // TOCONSIDER for RollingState, comparing etags is not meaningful, and they are under our control;
     //            => should be replaced with a `revision` that increments if `index` is not changing as part of a write
