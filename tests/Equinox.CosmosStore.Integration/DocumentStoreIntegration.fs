@@ -118,9 +118,15 @@ type Tests(testOutputHelper) =
 
         let service = Cart.createServiceWithoutOptimization log context
         let expectedResponses n =
-            let finalEmptyPage = if expectFinalExtraPage () then 1 else 0
             let tipItem = 1
-            let expectedItems = tipItem + (if eventsInTip then n / 2 else n) + finalEmptyPage
+#if STORE_DYNAMO
+            let finalEmptyPage = if expectFinalExtraPage () then 1 else 0
+            // While we have events in the tip, unlike on Cosmos, new writes can't go straight to the calf, for reasons explained above
+            let noCalveOnFirstWrite = 1
+            let expectedItems = tipItem + n + finalEmptyPage - noCalveOnFirstWrite
+#else
+            let expectedItems = tipItem + (if eventsInTip then n / 2 else n)
+#endif
             max 1 (int (ceil (float expectedItems / float queryMaxItems)))
 
         let cartId = % Guid.NewGuid()
@@ -129,7 +135,7 @@ type Tests(testOutputHelper) =
         for i in [1..transactions] do
             do! addAndThenRemoveItemsManyTimesExceptTheLastOne cartContext cartId skuId service addRemoveCount
             // TODO fix math
-            // test <@ i = i && List.replicate (expectedResponses (i-1)) EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
+            test <@ i = i && List.replicate (expectedResponses (i-1)) EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
 #if STORE_DYNAMO
             verifyRequestChargesMax 190 // 189.5 [9.5; 180.0]
 #else
@@ -142,8 +148,7 @@ type Tests(testOutputHelper) =
         let! state = service.Read cartId
         test <@ addRemoveCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
 
-        // TODO fix math
-        // test <@ List.replicate (expectedResponses transactions) EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
+        test <@ List.replicate (expectedResponses transactions) EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
 #if STORE_DYNAMO
         verifyRequestChargesMax 12 // 11.5
 #else
@@ -478,6 +483,10 @@ type Tests(testOutputHelper) =
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against DocStore, correctly using Snapshotting and Cache to avoid redundant reads`` (eventsInTip: bool, cartContext, skuId) = async {
+#if STORE_DYNAMO
+        // SEE NOTE above on similar override for details of why
+        let eventsInTip = true
+#endif
         let context = createPrimaryContextEx log 10 (if eventsInTip then 10 else 0)
         let cache = Equinox.Cache("cart", sizeMb = 50)
         let createServiceCached () = Cart.createServiceWithSnapshotStrategyAndCaching log context cache
