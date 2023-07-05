@@ -1,13 +1,10 @@
 module Equinox.Store.Integration.AccessStrategies
 
-open Equinox.Core
 #if STORE_DYNAMO
 open Equinox.DynamoStore
-open Equinox.DynamoStore.Core
 open Equinox.DynamoStore.Integration.CosmosFixtures
 #else
 open Equinox.CosmosStore
-open Equinox.CosmosStore.Core
 open Equinox.CosmosStore.Integration.CosmosFixtures
 #endif
 open Swensen.Unquote
@@ -100,7 +97,7 @@ module Props =
     type FsCheckAttribute() =
         inherit AutoDataAttribute(MaxTest = maxTest, Arbitrary=[|typeof<GapGen>|])
 
-[<Xunit.Collection "DocStore">]
+[<Collection "DocStore">]
 type UnoptimizedTipReadingCorrectness(testOutputHelper) =
     let output = TestOutput(testOutputHelper)
     let log = output.CreateLogger()
@@ -140,9 +137,12 @@ type UnoptimizedTipReadingCorrectness(testOutputHelper) =
 
 module Token =
 
+// Helpers for producing tokens are note presently exposed, so we produce the records directly here
 #if STORE_DYNAMO
+    open Equinox.DynamoStore.Core
     let getPos index = { index = index; etag = ""; calvedBytes = 0; baseBytes = 0; unfoldsBytes = 0; events = Array.empty }
 #else
+    open Equinox.CosmosStore.Core
     let getPos index = { index = index; etag = None }
 #endif
 
