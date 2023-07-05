@@ -625,8 +625,7 @@ module internal Sync =
                 || Event.arrayBytes cur.events + Event.arrayBytes events > maxEventBytes
                 || Event.arrayBytes cur.events + Event.arrayBytes events + Unfold.arrayBytes unfolds > maxBytes)
                && (not << Array.isEmpty) cur.events then // even if a rule says we should calve, we don't want to produce empty ones
-                let calfE, tipE = cur.events, events
-                Req.Calve (calfE, tipE), cur.calvedBytes + Event.arrayBytes calfE, tipE
+                Req.Calve (cur.events, events), cur.calvedBytes + Event.arrayBytes cur.events, events
             else Req.Append (Array.isEmpty cur.events, events), cur.calvedBytes, Array.append cur.events events
         match! transactLogged (container, stream) (cur.baseBytes, cur.events.Length, req, unfolds, exp pos, predecessorBytes', n', ct) log with
         | Res.Written etag' -> return Result.Written (etag', predecessorBytes', tipEvents', unfolds)
