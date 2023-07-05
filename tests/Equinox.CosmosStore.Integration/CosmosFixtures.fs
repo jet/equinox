@@ -12,9 +12,10 @@ let private tableName = tryRead "EQUINOX_DYNAMO_TABLE" |> Option.defaultValue "e
 let private archiveTableName = tryRead "EQUINOX_DYNAMO_TABLE_ARCHIVE" |> Option.defaultValue "equinox-test-archive"
 
 let discoverConnection () =
-    match tryRead "EQUINOX_DYNAMO_SERVICE_URL" with // NOT USING EQUINOX_DYNAMO_SERVICE_URL env var as we don't want to go provisioning 2 tables in a random DB
+    // NOTE NOT using the EQUINOX_DYNAMO_SERVICE_URL env var that's commonly used in dotnet-templates, as we don't want to go provisioning 2 tables in a random DB
+    match tryRead "EQUINOX_DYNAMO_CONNECTION" with
     | None -> "dynamodb-local", "http://localhost:8000"
-    | Some connectionString -> "EQUINOX_DYNAMO_CONNECTION", connectionString
+    | Some connectionString -> "EQUINOX_DYNAMO_CONNECTION", connectionString // e.g "https://dynamodb.eu-west-1.amazonaws.com"
 let isSimulatorServiceUrl url = Uri(url).IsLoopback
 
 let createClient (log : Serilog.ILogger) name serviceUrl =
