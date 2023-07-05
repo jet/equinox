@@ -5,18 +5,24 @@ open Equinox.Core.Tracing
 open System
 open System.Threading
 
+/// NOTE During a ReadThrough operation, currentToken and currentState are both invalid and cannot be used, but the presence of the null entry is critical
+///      being able to `lock` on the CacheEntry, and do a CAS operation on the cell is central to
+///      a) coordinating to ensure only a single read request is in flight for requests that have a staleness tolerance
+///      b) ensuring that all loads after an initial successful load of the state are incremental reloads based on the state/token
 type private CacheEntry<'state>(initialToken: StreamToken, initialState: 'state, initialTimestamp: int64) =
-    let mutable currentToken = initialToken
-    let mutable currentState = initialState
-    let mutable verifiedTimestamp = initialTimestamp
+    let mutable currentToken = initialToken // NOTE: only contains a valid value when verifiedTimestamp <> 0L
+    let mutable currentState = initialState // NOTE: only contains a valid value when verifiedTimestamp <> 0L
+    let mutable verifiedTimestamp = initialTimestamp // Sentinel value of 0L implies this is a placeholder entry, whose state and token are both invalid
     let tryGet () =
         if verifiedTimestamp = 0L then ValueNone // 0 => Null cache entry
         else ValueSome (struct (currentToken, currentState))
     let mutable cell = AsyncLazy<struct(int64 * (struct (StreamToken * 'state)))>.Empty
     static member CreateEmpty() =
         new CacheEntry<'state>(Unchecked.defaultof<StreamToken>, Unchecked.defaultof<'state>, 0L) // 0 => Null cache entry signifies token and state both invalid
+    /// Attempt to retrieve the cached state, and associated token (ValueNone if this is a placeholder entry that's yet to complete its first Load operation)
     member x.TryGetValue(): (struct (StreamToken * 'state)) voption =
         lock x tryGet
+    /// Store or revalidate the entry based on a token and state that's either just been loaded, or has just been successfully written
     member x.MergeUpdates(isStale: Func<StreamToken, StreamToken, bool>, timestamp, token, state) =
         lock x <| fun () ->
             if verifiedTimestamp = 0L // placeholder slot (created via CreateEmpty) is not a valid token for comparison purposes
@@ -25,6 +31,7 @@ type private CacheEntry<'state>(initialToken: StreamToken, initialState: 'state,
                 currentState <- state
                 if verifiedTimestamp < timestamp then // Don't count attempts to overwrite with stale state as verification
                     verifiedTimestamp <- timestamp
+    /// Coordinates having a max of one in-flight request across all staleness-tolerant loads at all times
     // Follows high level flow of AsyncCacheCell.Await - read the comments there, and the AsyncCacheCell tests first!
     member x.ReadThrough(maxAge: TimeSpan, isStale, load: Func<_, _>) = task {
         let cacheEntryValidityCheckTimestamp = System.Diagnostics.Stopwatch.GetTimestamp()
