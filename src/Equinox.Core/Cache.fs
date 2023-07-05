@@ -10,16 +10,16 @@ type private CacheEntry<'state>(initialToken: StreamToken, initialState: 'state,
     let mutable currentState = initialState
     let mutable verifiedTimestamp = initialTimestamp
     let tryGet () =
-        if verifiedTimestamp = 0 then ValueNone
+        if verifiedTimestamp = 0 then ValueNone // 0 => Null cache entry
         else ValueSome (struct (currentToken, currentState))
     let mutable cell = AsyncLazy<struct(int64 * (struct (StreamToken * 'state)))>.Empty
     static member CreateEmpty() =
-        new CacheEntry<'state>(Unchecked.defaultof<StreamToken>, Unchecked.defaultof<'state>, 0)
+        new CacheEntry<'state>(Unchecked.defaultof<StreamToken>, Unchecked.defaultof<'state>, 0) // 0 => Null cache entry
     member x.TryGetValue(): (struct (StreamToken * 'state)) voption =
         lock x tryGet
     member x.MergeUpdates(isStale: Func<StreamToken, StreamToken, bool>, timestamp, token, state) =
         lock x <| fun () ->
-            if isNull currentToken.value // placeholder slot (created via CreateEmpty) is not a valid token for comparison purposes
+            if verifiedTimestamp = 0 // placeholder slot (created via CreateEmpty) is not a valid token for comparison purposes
                || not (isStale.Invoke(currentToken, token)) then
                 currentToken <- token
                 currentState <- state
