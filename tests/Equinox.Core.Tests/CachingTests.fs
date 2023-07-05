@@ -11,7 +11,10 @@ type Event = unit
 
 // We don't worry about the tokens in this test scenario - the timestamps are the deciding factor
 let mkToken () : Equinox.Core.StreamToken = { value = null; version = 0L; streamBytes = -1L }
-let isStale _cur _candidate = false
+let isStale (cur: Equinox.Core.StreamToken) (candidate: Equinox.Core.StreamToken) =
+    ArgumentNullException.ThrowIfNull(cur.value, nameof cur)
+    ArgumentNullException.ThrowIfNull(candidate.value, nameof candidate)
+    false
 
 type SpyCategory() =
 

@@ -19,7 +19,8 @@ type private CacheEntry<'state>(initialToken: StreamToken, initialState: 'state,
         lock x tryGet
     member x.MergeUpdates(isStale: Func<StreamToken, StreamToken, bool>, timestamp, token, state) =
         lock x <| fun () ->
-            if not (isStale.Invoke(currentToken, token)) then
+            if isNull currentToken.value // placeholder slot (created via CreateEmpty) is not a valid token for comparison purposes
+               || not (isStale.Invoke(currentToken, token)) then
                 currentToken <- token
                 currentState <- state
                 if verifiedTimestamp < timestamp then // Don't count attempts to overwrite with stale state as verification
