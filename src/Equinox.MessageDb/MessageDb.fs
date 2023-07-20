@@ -31,8 +31,8 @@ module private Write =
     let private eventDataBytes events = events |> Array.sumBy eventDataLen
     let private writeEventsLogged writer streamName version events ct: Task<MdbSyncResult> = task {
         let act = Activity.Current
-        let bytes, count = eventDataBytes events, events.Length
-        if act <> null then act.AddExpectedVersion(version).IncMetric(count, bytes) |> ignore
+        let bytes = eventDataBytes events
+        if act <> null then act.AddExpectedVersion(version).AddAppendBytes(bytes) |> ignore
         let! result = writeEventsAsync writer streamName version events ct
         match result with
         | MdbSyncResult.Written x ->
@@ -198,7 +198,12 @@ type MessageDbContext(client: MessageDbClient, batchOptions: BatchOptions) =
     member _.LoadSnapshot(category, streamId, requireLeader, tryDecode, eventType, ct) = task {
         let snapshotStream = Snapshot.streamName category streamId
         let! _, events = Read.loadLastEvent client.ReadRetryPolicy client.Reader requireLeader snapshotStream (Some eventType) ct
-        return Snapshot.decode tryDecode events }
+        let decoded = Snapshot.decode tryDecode events
+        let act = Activity.Current
+        if act <> null then
+          let version = match decoded with ValueNone -> -1L | ValueSome (t, _) -> t.version
+          act.SetTag("eqx.snapshot_version", version) |> ignore
+        return decoded }
 
     member _.Reload(streamName, requireLeader, token, tryDecode, fold, initial, ct): Task<struct(StreamToken * 'state)> = task {
         let streamVersion = Token.streamVersion token

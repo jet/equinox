@@ -31,6 +31,8 @@ and [<NoEquality; NoComparison; RequireQualifiedAccess>] SyncResult<'state> =
 /// Store-specific opaque token to be used for synchronization purposes
 and [<Struct; NoEquality; NoComparison>] StreamToken = { value: obj; version: int64; streamBytes: int64 }
 
+open Tracing
+
 type internal Impl() =
 
     static let run (stream: IStream<'e, 's>)
@@ -54,10 +56,12 @@ type internal Impl() =
 
     static member TransactAsync(stream, fetch: IStream<'e, 's> -> CancellationToken -> Task<struct (StreamToken * 's)>,
                                 decide, reload, mapResult, ct): Task<'v> = task {
+        use _ = source.StartActivity("Transact")
         let! originTokenAndState = fetch stream ct
         return! run stream decide reload mapResult originTokenAndState ct }
 
     static member QueryAsync(stream, fetch: IStream<'e, 's> -> CancellationToken -> Task<struct (StreamToken * 's)>,
                              projection: Func<struct (StreamToken * 's), 'v>, ct): Task<'v> = task {
+        use _ = source.StartActivity("Query")
         let! tokenAndState = fetch stream ct
         return projection.Invoke tokenAndState }

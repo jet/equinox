@@ -25,6 +25,8 @@ type private Activity with
 
     member act.AddAppendCount(count: int) = act.SetTag("eqx.append_count", count)
 
+    member act.AddAppendBytes(bytes: int) = act.SetTag("eqx.append_bytes", bytes)
+
     member act.IncMetric(count: int, bytes: int) =
         let currentCount = act.GetTagItem("eqx.count") |> ValueOption.ofObj |> ValueOption.map unbox<int> |> ValueOption.defaultValue 0
         let currentBytes = act.GetTagItem("eqx.bytes") |> ValueOption.ofObj |> ValueOption.map unbox<int> |> ValueOption.defaultValue 0

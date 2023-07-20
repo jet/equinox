@@ -5,7 +5,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Tracing.fs" />
     <Compile Include="Category.fs" />
     <Compile Include="StopwatchInterval.fs" />
     <Compile Include="Infrastructure.fs" />

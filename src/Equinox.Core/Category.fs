@@ -42,11 +42,11 @@ type Category<'event, 'state, 'context>
             member _.LoadEmpty() =
                 empty
             member _.Load(maxAge, requireLeader, ct) = task {
-                use act = source.StartActivity("Load", ActivityKind.Client)
+                use act = Activity.Current
                 if act <> null then act.AddStream(categoryName, streamId, streamName).AddLeader(requireLeader).AddStale(maxAge) |> ignore
                 return! inner.Load(log, categoryName, streamId, streamName, maxAge, requireLeader, ct) }
             member _.TrySync(attempt, (token, originState), events, ct) = task {
-                use act = source.StartActivity("TrySync", ActivityKind.Client)
+                use act = Activity.Current
                 if act <> null then act.AddStream(categoryName, streamId, streamName).AddSyncAttempt(attempt).AddAppendCount(events.Length) |> ignore
                 let log = if attempt = 1 then log else log.ForContext("attempts", attempt)
                 return! inner.TrySync(log, categoryName, streamId, streamName, context, init, token, originState, events, ct) } }
