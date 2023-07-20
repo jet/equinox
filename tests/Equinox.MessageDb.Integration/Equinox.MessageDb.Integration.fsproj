@@ -6,10 +6,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\samples\Store\Integration\TestOutput.fs" Link="TestOutput.fs" />
-    <Compile Include="..\Equinox.EventStoreDb.Integration\Infrastructure.fs" Link="Infrastructure.fs" />
     <Compile Include="..\..\samples\Store\Integration\AutoDataAttribute.fs" Link="AutoDataAttribute.fs" />
-    <Compile Include="..\Equinox.EventStoreDb.Integration\StoreIntegration.fs" Link="StoreIntegration.fs" />
+    <Compile Include="MessageDbIntegration.fs" />
 
   </ItemGroup>
 

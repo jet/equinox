@@ -34,11 +34,13 @@ type private CacheEntry<'state>(initialToken: StreamToken, initialState: 'state,
     /// Coordinates having a max of one in-flight request across all staleness-tolerant loads at all times
     // Follows high level flow of AsyncCacheCell.Await - read the comments there, and the AsyncCacheCell tests first!
     member x.ReadThrough(maxAge: TimeSpan, isStale, load: Func<_, _>) = task {
+        let act = System.Diagnostics.Activity.Current
         let cacheEntryValidityCheckTimestamp = System.Diagnostics.Stopwatch.GetTimestamp()
         let isWithinMaxAge cachedValueTimestamp = Stopwatch.TicksToSeconds(cacheEntryValidityCheckTimestamp - cachedValueTimestamp) <= maxAge.TotalSeconds
         let fetchStateConsistently () = struct (cell, tryGet (), isWithinMaxAge verifiedTimestamp)
         match lock x fetchStateConsistently with
         | _, ValueSome cachedValue, true ->
+            if act <> null then act.AddCacheHit(true)
             return cachedValue
         | ourInitialCellState, maybeBaseState, _ -> // If it's not good enough for us, trigger a request (though someone may have beaten us to that)
 
