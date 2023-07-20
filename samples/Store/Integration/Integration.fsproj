@@ -6,7 +6,6 @@
 
   <ItemGroup>
     <Compile Include="TestOutput.fs" />
-    <Compile Include="Infrastructure.fs" />
     <Compile Include="AutoDataAttribute.fs" />
     <Compile Include="CodecIntegration.fs" />
     <Compile Include="EventStoreIntegration.fs" />
