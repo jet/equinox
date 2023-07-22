@@ -60,7 +60,7 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
         let decider = resolve clientId
         decider.Transact(fun state ->
             let events = interpret command state
-            let state' = Fold.fold state (Seq.toArray events)
+            let state' = Fold.fold state events
             state'.items, events)
 
     member _.List(clientId): Async<Events.Todo seq> =
