@@ -46,7 +46,7 @@ let verifyCorrectEventGenerationWhenAppropriate command (originState: State) =
         | PatchItem (_, skuId, Some quantity, waive) -> [| mkAddQty skuId (quantity+1) waive |]
     let state = fold originState initialEvents
     let events = interpret command state
-    let state' = fold state (Seq.toArray events)
+    let state' = fold state events
 
     let find skuId = state'.items |> List.find (fun x -> x.skuId = skuId)
 
