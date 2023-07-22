@@ -38,15 +38,15 @@ let verifyCanProcessInOriginState cmd (originState: State) =
 let verifyCorrectEventGenerationWhenAppropriate command (originState: State) =
     let initialEvents = command |> function
         | AddItem _
-        | PatchItem (_, _, None, _) ->                  []
+        | PatchItem (_, _, None, _) ->                  [||]
         | RemoveItem (_, skuId)
-        | PatchItem (_, skuId, Some 0, _) ->            [ mkAdd skuId ]
+        | PatchItem (_, skuId, Some 0, _) ->            [| mkAdd skuId |]
         | PatchItem (_, skuId, Some quantity, Some waive) ->
-                                                        [ mkAddQty skuId (quantity+1) (Some (not waive)) ]
-        | PatchItem (_, skuId, Some quantity, waive) -> [ mkAddQty skuId (quantity+1) waive]
+                                                        [| mkAddQty skuId (quantity+1) (Some (not waive)) |]
+        | PatchItem (_, skuId, Some quantity, waive) -> [| mkAddQty skuId (quantity+1) waive |]
     let state = fold originState initialEvents
     let events = interpret command state
-    let state' = fold state events
+    let state' = fold state (Seq.toArray events)
 
     let find skuId = state'.items |> List.find (fun x -> x.skuId = skuId)
 
@@ -81,12 +81,12 @@ let verifyCorrectEventGenerationWhenAppropriate command (originState: State) =
 /// (and hence potentially-conflicting) changes
 let verifyIdempotency (cmd: Command) (originState: State) =
     // Put the aggregate into the state where the command should not trigger an event
-    let establish: Events.Event list = cmd |> function
-        | AddItem (_, skuId, qty, waive) ->             [ mkAddQty skuId qty waive]
+    let establish: Events.Event[] = cmd |> function
+        | AddItem (_, skuId, qty, waive) ->             [| mkAddQty skuId qty waive|]
         | RemoveItem _
         | PatchItem (_, _, Some 0, _)
-        | PatchItem (_, _, None, _) ->                  []
-        | PatchItem (_, skuId, Some quantity, waived) ->[ mkAddQty skuId quantity waived ]
+        | PatchItem (_, _, None, _) ->                  [||]
+        | PatchItem (_, skuId, Some quantity, waived) ->[| mkAddQty skuId quantity waived |]
     let state = fold originState establish
     let events = interpret cmd state
 

@@ -60,7 +60,7 @@ module Fold =
             updateItems (List.map (function
                 | i when i.skuId = e.skuId -> { i with returnsWaived = Some e.waived }
                 | i -> i))
-    let fold: State -> Events.Event seq -> State = Seq.fold evolve
+    let fold = Array.fold evolve
     let isOrigin = function Events.Snapshotted _ -> true | _ -> false
     let snapshot = State.toSnapshot >> Events.Snapshotted
 
@@ -131,11 +131,14 @@ type Accumulator<'event, 'state>(fold: 'state -> 'event seq -> 'state, originSta
         return result }
 #else
 let interpretMany fold interpreters (state: 'state): 'state * 'event list =
-    ((state,[]),interpreters)
-    ||> Seq.fold (fun (state: 'state, acc: 'event list) interpret ->
+    let mutable result = []
+    let mutable state = state
+    interpreters
+    |> Seq.iter (fun interpret ->
         let events = interpret state
-        let state' = fold state events
-        state', acc @ events)
+        result <- result @ events
+        state <- fold state (Seq.toArray events))
+    state, List.ofSeq result
 #endif
 
 type Service internal (resolve: CartId -> Equinox.Decider<Events.Event, Fold.State>) =

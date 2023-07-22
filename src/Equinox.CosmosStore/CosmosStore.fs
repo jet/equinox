@@ -1067,7 +1067,7 @@ type StoreClient(container: Container, archive: Container option, query: QueryOp
 
 type internal Category<'event, 'state, 'context>
     (   store: StoreClient, codec: IEventCodec<'event, EventBody, 'context>,
-        fold: 'state -> 'event seq -> 'state, initial: 'state, isOrigin: 'event -> bool,
+        fold: 'state -> 'event[] -> 'state, initial: 'state, isOrigin: 'event -> bool,
         checkUnfolds, compressUnfolds, mapUnfolds: Choice<unit, 'event[] -> 'state -> 'event[], 'event[] -> 'state -> 'event[] * 'event[]>) =
 
     let reload (log, streamName, (Token.Unpack pos as streamToken), state) preloaded ct: Task<struct (StreamToken * 'state)> = task {

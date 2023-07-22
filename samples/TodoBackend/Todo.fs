@@ -32,7 +32,7 @@ module Fold =
         | Events.Deleted          { id=id } -> { s with items = s.items  |> List.filter (fun x -> x.id <> id) }
         | Events.Cleared ->       { s with items = [] }
         | Events.Snapshotted      { items = items } -> { s with items = List.ofArray items }
-    let fold: State -> Events.Event seq -> State = Seq.fold evolve
+    let fold = Array.fold evolve
     let isOrigin = function Events.Cleared | Events.Snapshotted _ -> true | _ -> false
     let snapshot state = Events.Snapshotted { items = Array.ofList state.items }
 
@@ -60,7 +60,7 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
         let decider = resolve clientId
         decider.Transact(fun state ->
             let events = interpret command state
-            let state' = Fold.fold state events
+            let state' = Fold.fold state (Seq.toArray events)
             state'.items, events)
 
     member _.List(clientId): Async<Events.Todo seq> =

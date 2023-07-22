@@ -1116,9 +1116,9 @@ type internal StoreClient(container: Container, fallback: Container option, quer
 
 type internal Category<'event, 'state, 'context>
     (   store: StoreClient, codec: IEventCodec<'event, EncodedBody, 'context>,
-        fold: 'state -> 'event seq -> 'state, initial: 'state, isOrigin: 'event -> bool,
+        fold: 'state -> 'event[] -> 'state, initial: 'state, isOrigin: 'event -> bool,
         checkUnfolds, mapUnfolds: Choice<unit, 'event[] -> 'state -> 'event[], 'event[] -> 'state -> 'event[] * 'event[]>) =
-    let fetch state f = task { let! token', events = f in return struct (token', fold state (Seq.ofArray events)) }
+    let fetch state f = task { let! token', events = f in return struct (token', fold state events) }
     let reload (log, streamNam, requireLeader, (Token.Unpack pos as streamToken), state) ct: Task<struct (StreamToken * 'state)> = task {
         match! store.Reload(log, (streamNam, pos), requireLeader, (codec.TryDecode, isOrigin), ct) with
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)

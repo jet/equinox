@@ -397,7 +397,7 @@ type private Category<'event, 'state, 'context>(context: EventStoreContext, code
         | None -> None
         | Some AccessStrategy.LatestKnownEvent -> Some (fun _ -> true)
         | Some (AccessStrategy.RollingSnapshots (isValid, _)) -> Some isValid
-    let fetch state f = task { let! struct (token', events) = f in return struct (token', fold state (Seq.ofArray events)) }
+    let fetch state f = task { let! struct (token', events) = f in return struct (token', fold state events) }
     let reload (log, sn, leader, token, state) ct = fetch state (context.Reload(log, sn, leader, token, tryDecode, compactionPredicate, ct))
     interface Caching.IReloadable<'state> with member _.Reload(log, sn, leader, token, state, ct) = reload (log, sn, leader, token, state) ct
     interface ICategory<'event, 'state, 'context> with

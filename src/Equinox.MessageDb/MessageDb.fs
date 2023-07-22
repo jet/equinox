@@ -385,7 +385,7 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
                 let! token, rest = context.Reload(log, streamName, requireLeader, pos, codec.TryDecode, ct)
                 return token, Array.insertAt 0 snapshotEvent rest
             | ValueNone -> return! context.LoadBatched(log, streamName, requireLeader, codec.TryDecode, ct) }
-    let fetch state f = task { let! token', events = f in return struct (token', fold state (Seq.ofArray events)) }
+    let fetch state f = task { let! token', events = f in return struct (token', fold state events) }
     let reload (log, sn, leader, token, state) ct = fetch state (context.Reload(log, sn, leader, token, codec.TryDecode, ct))
     interface ICategory<'event, 'state, 'context> with
         member _.Load(log, categoryName, streamId, streamName, _maxAge, requireLeader, ct) =
@@ -395,7 +395,7 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
             let encodedEvents: IEventData<EventBody>[] = events |> Array.map encode
             match! context.TrySync(log, categoryName, streamId, streamName, token, encodedEvents, ct) with
             | GatewaySyncResult.Written token' ->
-                let state' = fold state (Seq.ofArray events)
+                let state' = fold state events
                 match access with
                 | None | Some AccessStrategy.LatestKnownEvent -> ()
                 | Some (AccessStrategy.AdjacentSnapshots(_, toSnap)) ->
