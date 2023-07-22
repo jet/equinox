@@ -10,7 +10,7 @@ type Commit<'Format> = (struct (FsCodec.StreamName * FsCodec.ITimelineEvent<'For
 
 /// Maintains a dictionary of ITimelineEvent<'Format>[] per stream-name, allowing one to vary the encoding used to match
 /// that of a given concrete store, or optimize test run performance
-type VolatileStore<'Format> private (lock) =
+type VolatileStore<'Format>() =
 
     let streams = System.Collections.Concurrent.ConcurrentDictionary<string, FsCodec.ITimelineEvent<'Format>[]>()
 
@@ -47,13 +47,6 @@ type VolatileStore<'Format> private (lock) =
             let struct (succeeded, _) as outcome = trySync streamName expectedCount events
             if succeeded then committed.Trigger(FSharp.UMX.UMX.tag streamName, events)
             outcome
-
-    /// As per note in TrySync, it's a really bad idea to trigger callbacks (and especially nested ones) in reaction to the Committed event
-    /// It's recommended to make use of the constructs in Propulsion.MemoryStore instead of resorting to that
-    /// This hack will be removed in V4
-    [<System.Obsolete>]
-    static member WithOrderingGuaranteesDisabled() = VolatileStore(fun _ f -> f ())
-    new () = VolatileStore(lock)
 
 type Token = int
 
