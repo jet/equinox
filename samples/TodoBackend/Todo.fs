@@ -40,13 +40,13 @@ type Command = Add of Events.Todo | Update of Events.Todo | Delete of id: int | 
 
 let interpret c (state: Fold.State) =
     match c with
-    | Add value -> [Events.Added { value with id = state.nextId }]
+    | Add value -> [|Events.Added { value with id = state.nextId }|]
     | Update value ->
         match state.items |> List.tryFind (function { id = id } -> id = value.id) with
-        | Some current when current <> value -> [Events.Updated value]
-        | _ -> []
-    | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Events.Deleted {id=id}] else []
-    | Clear -> if state.items |> List.isEmpty then [] else [Events.Cleared]
+        | Some current when current <> value -> [|Events.Updated value|]
+        | _ -> [||]
+    | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [|Events.Deleted {id=id}|] else [||]
+    | Clear -> if state.items |> List.isEmpty then [||] else [|Events.Cleared|]
 
 type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 

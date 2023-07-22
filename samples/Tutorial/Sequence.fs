@@ -22,12 +22,12 @@ module Fold =
     let initial = { next = 0L }
     let private evolve _ignoreState = function
         | Events.Reserved e -> { next = e.next }
-    let fold (state: State) (events: seq<Events.Event>) : State =
-        Seq.tryLast events |> Option.fold evolve state
+    let fold (state: State) (events: Events.Event[]) : State =
+        Array.tryLast events |> Option.fold evolve state
     let snapshot (state : State) = Events.Reserved { next = state.next }
 
-let decideReserve (count : int) (state : Fold.State) : int64 * Events.Event list =
-    state.next,[Events.Reserved { next = state.next + int64 count }]
+let decideReserve (count : int) (state : Fold.State) : int64 * Events.Event[] =
+    state.next, [|Events.Reserved { next = state.next + int64 count }|]
 
 type Service internal (resolve : SequenceId -> Equinox.Decider<Events.Event, Fold.State>) =
 

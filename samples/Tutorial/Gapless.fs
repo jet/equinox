@@ -45,13 +45,13 @@ module Fold =
     let isOrigin = function Events.Snapshotted _ -> true | _ -> false
     let snapshot state = Events.Snapshotted { reservations = Array.ofSeq state.reserved; nextId = state.next }
 
-let decideReserve count (state : Fold.State) : int64 list*Events.Event list =
+let decideReserve count (state : Fold.State) : int64 list*Events.Event[] =
     failwith "TODO"
 
-let decideConfirm item (state : Fold.State) : Events.Event list =
+let decideConfirm item (state : Fold.State) : Events.Event[] =
     failwith "TODO"
 
-let decideRelease item (state : Fold.State) : Events.Event list =
+let decideRelease item (state : Fold.State) : Events.Event[] =
     failwith "TODO"
 
 type Service internal (resolve : SequenceId -> Equinox.Decider<Events.Event, Fold.State>) =

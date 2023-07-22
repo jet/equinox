@@ -32,11 +32,11 @@ let interpret add remove (state : Fold.State<'v>) =
     let fresh = [| for k,v in add do if not (state |> Map.containsKey k) then yield k,v |]
     let dead = [| for k in remove do if state |> Map.containsKey k then yield k |]
     match fresh,dead with
-    | [||],[||] -> (0,0),[]
+    | [||],[||] -> (0,0),[||]
     | adds,removes ->
         (adds.Length,removes.Length),
-        [   if adds.Length <> 0 then yield Events.Added { items = Map.ofSeq adds }
-            if removes.Length <> 0 then yield Events.Deleted { items = removes } ]
+        [|   if adds.Length <> 0 then yield Events.Added { items = Map.ofSeq adds }
+             if removes.Length <> 0 then yield Events.Deleted { items = removes } |]
 
 type Service<'t> internal (decider : Equinox.Decider<Events.Event<'t>, Fold.State<'t>>) =
 

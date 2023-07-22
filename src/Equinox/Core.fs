@@ -34,7 +34,7 @@ and [<Struct; NoEquality; NoComparison>] StreamToken = { value: obj; version: in
 type internal Impl() =
 
     static let run (stream: IStream<'e, 's>)
-            (decide: Func<struct (_ * _), CancellationToken, Task<struct ('r * 'e seq)>>)
+            (decide: Func<struct (_ * _), CancellationToken, Task<struct ('r * 'e[])>>)
             (validateResync: int -> unit)
             (mapResult: Func<'r, struct (StreamToken * 's), 'v>)
             originTokenAndState ct: Task<'v> =

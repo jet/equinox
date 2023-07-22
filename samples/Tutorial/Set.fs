@@ -32,11 +32,11 @@ let interpret add remove (state : Fold.State) =
     let fresh = [| for i in add do if not (state.Contains i) then yield i |]
     let dead = [| for i in remove do if state.Contains i then yield i |]
     match fresh,dead with
-    | [||],[||] -> (0,0),[]
+    | [||],[||] -> (0,0),[||]
     | adds,removes ->
         (adds.Length,removes.Length),
-        [   if adds.Length <> 0 then yield Events.Added { items = adds }
-            if removes.Length <> 0 then yield Events.Deleted { items = removes } ]
+        [|   if adds.Length <> 0 then yield Events.Added { items = adds }
+             if removes.Length <> 0 then yield Events.Deleted { items = removes } |]
 
 type Service internal (decider : Equinox.Decider<Events.Event, Fold.State>) =
 

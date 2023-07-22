@@ -47,13 +47,13 @@ module Fold =
 let doesntHave skuId (state: Fold.State) = state |> Array.exists (fun x -> x.skuId = skuId) |> not
 
 let decideFavorite date skuIds state =
-    [ for skuId in Seq.distinct skuIds do
-        if state |> doesntHave skuId then
-            yield Events.Favorited { date = date; skuId = skuId } ]
+    [| for skuId in Seq.distinct skuIds do
+         if state |> doesntHave skuId then
+             yield Events.Favorited { date = date; skuId = skuId } |]
 
 let decideUnfavorite skuId state =
-    if state |> doesntHave skuId then [] else
-    [ Events.Unfavorited { skuId = skuId } ]
+    if state |> doesntHave skuId then [||] else
+    [| Events.Unfavorited { skuId = skuId } |]
 
 type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 

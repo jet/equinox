@@ -30,9 +30,9 @@ let verifyCanProcessInOriginState cmd (originState: State) =
     match cmd with
     | PatchItem (_, _, Some 0, _)
     | RemoveItem _ ->
-        test <@ List.isEmpty events @>
+        test <@ Array.isEmpty events @>
     | _ ->
-        test <@ (not << List.isEmpty) events @>
+        test <@ not (Array.isEmpty events) @>
 
 /// Put the aggregate into the state where the command should trigger an event; verify correct events are yielded
 let verifyCorrectEventGenerationWhenAppropriate command (originState: State) =
@@ -51,18 +51,18 @@ let verifyCorrectEventGenerationWhenAppropriate command (originState: State) =
     let find skuId = state'.items |> List.find (fun x -> x.skuId = skuId)
 
     match command, events with
-    | AddItem (_, csku, quantity, waive),               [ Events.ItemAdded e ] ->
+    | AddItem (_, csku, quantity, waive),               [| Events.ItemAdded e |] ->
         test <@ e = { context = e.context; skuId = csku; quantity = quantity; waived = waive }
                 && quantity = (find csku).quantity @>
-    | PatchItem (_, csku, Some 0, _),                   [ Events.ItemRemoved e ]
-    | RemoveItem (_, csku),                             [ Events.ItemRemoved e ] ->
+    | PatchItem (_, csku, Some 0, _),                   [| Events.ItemRemoved e |]
+    | RemoveItem (_, csku),                             [| Events.ItemRemoved e |] ->
         test <@ e = { Events.ItemRemovedInfo.context = e.context; skuId = csku }
                 && not (state'.items |> List.exists (fun x -> x.skuId = csku)) @>
     | PatchItem (_, csku, quantity, waive),    es ->
         match quantity with
         | Some value ->
             test <@ es
-                    |> List.exists (function
+                    |> Array.exists (function
                        | Events.ItemQuantityChanged e -> e = { context = e.context; skuId = csku; quantity = value }
                        | _ -> false)
                     && value = (find csku).quantity @>
@@ -71,7 +71,7 @@ let verifyCorrectEventGenerationWhenAppropriate command (originState: State) =
         | None -> ()
         | Some value ->
             test <@ es
-                    |> List.exists (function
+                    |> Array.exists (function
                         | Events.ItemPropertiesChanged e -> e = { context = e.context; skuId = csku; waived = value }
                         | _ -> false)
                     && value = (find csku).returnsWaived.Value @>
@@ -91,7 +91,7 @@ let verifyIdempotency (cmd: Command) (originState: State) =
     let events = interpret cmd state
 
     // Assert we decided nothing needs to happen
-    test <@ List.isEmpty events @>
+    test <@ Array.isEmpty events @>
 
 /// These cases are assumed to be covered by external validation, so logic can treat them as hypotheticals rather than have to reject
 let isValid = function

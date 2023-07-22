@@ -76,22 +76,22 @@ let interpret command (state: Fold.State) =
     let toEventContext (reqContext: Context)            = { requestId = reqContext.requestId; time = reqContext.time }: Events.ContextInfo
     let (|Context|) (context: Context)                 = toEventContext context
     let maybePropChanges c skuId = function
-        | None -> []
+        | None -> [||]
         | Some waived ->
-            if not (itemExistsWithDifferentWaiveStatus skuId waived) then []
-            else [ Events.ItemPropertiesChanged { context = c; skuId = skuId; waived = waived } ]
+            if not (itemExistsWithDifferentWaiveStatus skuId waived) then [||]
+            else [| Events.ItemPropertiesChanged { context = c; skuId = skuId; waived = waived } |]
     let maybeQuantityChanges c skuId quantity =
-        if not (itemExistsWithDifferentQuantity skuId quantity) then [] else
-        [ Events.ItemQuantityChanged { context = c; skuId = skuId; quantity = quantity } ]
+        if not (itemExistsWithDifferentQuantity skuId quantity) then [||] else
+        [| Events.ItemQuantityChanged { context = c; skuId = skuId; quantity = quantity } |]
     match command with
     // a request to set quantity of `0` represents a removal request
     | SyncItem (Context c, skuId, Some 0, _) ->
-        if itemExistsWithSkuId skuId then [ Events.ItemRemoved { context = c; skuId = skuId } ]
-        else []
+        if itemExistsWithSkuId skuId then [| Events.ItemRemoved { context = c; skuId = skuId } |]
+        else [||]
     // Add/quantity change with potential waive change at same time
     | SyncItem (Context c, skuId, Some q, w) ->
-        if itemExistsWithSkuId skuId then maybeQuantityChanges c skuId q @ maybePropChanges c skuId w
-        else [ Events.ItemAdded { context = c; skuId = skuId; quantity = q; waived = w } ]
+        if itemExistsWithSkuId skuId then Array.append (maybeQuantityChanges c skuId q) (maybePropChanges c skuId w)
+        else [| Events.ItemAdded { context = c; skuId = skuId; quantity = q; waived = w } |]
     // Waive return status change only
     | SyncItem (Context c, skuId, None, w) ->
         maybePropChanges c skuId w
@@ -130,15 +130,14 @@ type Accumulator<'event, 'state>(fold: 'state -> 'event seq -> 'state, originSta
         accumulated.AddRange newEvents
         return result }
 #else
-let interpretMany fold interpreters (state: 'state): 'state * 'event list =
-    let mutable result = []
+let interpretMany fold interpreters (state: 'state): 'state * 'event[] =
+    let result = ResizeArray()
     let mutable state = state
-    interpreters
-    |> Seq.iter (fun interpret ->
+    for interpret in interpreters do
         let events = interpret state
-        result <- result @ events
-        state <- fold state (Seq.toArray events))
-    state, List.ofSeq result
+        result.AddRange(events)
+        state <- fold state events
+    state, result.ToArray()
 #endif
 
 type Service internal (resolve: CartId -> Equinox.Decider<Events.Event, Fold.State>) =

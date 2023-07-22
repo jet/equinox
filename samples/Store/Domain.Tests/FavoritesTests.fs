@@ -32,14 +32,14 @@ let verifyCorrectEventGenerationWhenAppropriate command (originState: State) =
         let stateHasSku (s: State) (skuId: SkuId) = s |> Array.exists (function { skuId = sSkuId } -> sSkuId = skuId)
         stateHasSku state, stateHasSku state'
     match command, events with
-    | Unfavorite skuId, [ Unfavorited e] ->
+    | Unfavorite skuId, [| Unfavorited e|] ->
         test <@ e = { skuId = skuId}
                 && not (hasSkuId skuId) @>
     | Favorite (_date, skuIds), events ->
         let isFavoritingEventFor skuId = function
             | Favorited { skuId = eSkuId } -> eSkuId = skuId
             | _ -> false
-        test <@ skuIds |> List.forall (fun skuId -> hadSkuId skuId || events |> List.exists (isFavoritingEventFor skuId))
+        test <@ skuIds |> List.forall (fun skuId -> hadSkuId skuId || events |> Array.exists (isFavoritingEventFor skuId))
                 && skuIds |> List.forall (fun skuId -> hasSkuId skuId) @>
     | c,e -> failwithf "Invalid result - Command %A yielded Events %A in State %A" c e state
 
@@ -52,7 +52,7 @@ let verifyIdempotency (command: Command) (originState: State) =
     let state = fold originState initialEvents
     let events = interpret command state
     // Assert we decided nothing needs to happen
-    test <@ List.isEmpty events @>
+    test <@ Array.isEmpty events @>
 
 [<DomainProperty(MaxTest = 1000)>]
 let ``interpret yields correct events, idempotently`` (cmd: Command) (state: State) =

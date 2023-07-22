@@ -10,15 +10,15 @@ open Xunit
 
 (* Test execution helpers *)
 
-let decide cmd state: bool * Events.Event list =
+let decide cmd state: bool * Events.Event[] =
     decide Int32.MaxValue cmd state
-let interpret cmd state: Events.Event list =
+let interpret cmd state: Events.Event[] =
     decide cmd state |> snd
-let run (commands: Command list): State * Events.Event list =
+let run (commands: Command list): State * Events.Event[] =
     let folder (s,eAcc) c =
         let events = interpret c s
-        fold s events, eAcc @ events
-    List.fold folder (initial,[]) commands
+        fold s events, Array.append eAcc events
+    List.fold folder (initial,[||]) commands
 
 (* State extraction helpers *)
 
@@ -88,7 +88,7 @@ let ``Event aggregation should carry set semantics`` (commands: Command list) =
         state
 
     let state',events = run commands
-    let expectedSkus = events |> List.fold evolveSet (HashSet())
+    let expectedSkus = events |> Array.fold evolveSet (HashSet())
     let actualSkus = seq { for item in state' -> item.skuId }
     test <@ expectedSkus.SetEquals actualSkus @>
 
@@ -110,20 +110,20 @@ let ``State should produce a stable output for skus with the same saved date`` (
     test <@ skusState = shuffledSkusState @>
 
 module Specification =
-    let mkAppendDated d skus = if Array.isEmpty skus then [] else [ Events.Added { dateSaved = d; skus = skus }]
-    let mkMerged items = [ Events.Merged { items = items } ]
+    let mkAppendDated d skus = if Array.isEmpty skus then [||] else [| Events.Added { dateSaved = d; skus = skus }|]
+    let mkMerged items = [| Events.Merged { items = items } |]
 
     /// Processing should allow for any given Command to be retried at will, without avoidable side-effects
     let verifyIdempotency (command: Command) state =
         // Establish a state where the command should not trigger an event
-        let eventsToEstablish: Events.Event list = command |> function
+        let eventsToEstablish: Events.Event[] = command |> function
             | Add (d,skus) ->      mkAppendDated d skus
             | Merge items ->       mkMerged items
-            | Remove _ ->          []
+            | Remove _ ->          [||]
         let state = fold state eventsToEstablish
         let events = interpret command state
         // Assert we decided nothing needs to happen
-        test <@ List.isEmpty events @>
+        test <@ Array.isEmpty events @>
 
     let (|TakeHalf|) items = items |> Seq.mapi (fun i x -> if i % 2 = 0 then Some x else None) |> Seq.choose id |> Seq.toArray
     let mkAppend skus = mkAppendDated DateTimeOffset.Now skus
@@ -132,27 +132,27 @@ module Specification =
 
     /// Put the aggregate into a state where the command should trigger an event; verify correct state achieved and correct events yielded
     let verify variant command originState =
-        let initialEvents: Events.Event list =
+        let initialEvents: Events.Event[] =
             match command, variant with
             | Remove skus, Choice1Of2 randomSkus ->            mkAppend <| Array.append skus randomSkus
             | Remove (TakeHalf skus), Choice2Of2 randomSkus -> mkAppend <| Array.append skus randomSkus
             | Add (d,_skus), Choice1Of2 randomSkus ->          mkAppendDated d randomSkus
-            | Add (d,TakeHalf skus), Choice2Of2 moreSkus ->    mkAppendDated d skus @ mkAppendDated (let n = DateTimeOffset.Now in n.AddDays -1.) moreSkus
-            | Merge items, Choice1Of2 randomSkus ->            mkAppend randomSkus @ mkMerged items
-            | Merge (TakeHalf items), Choice2Of2 randomSkus -> mkAppend randomSkus @ mkMerged items
+            | Add (d,TakeHalf skus), Choice2Of2 moreSkus ->    Array.append <| mkAppendDated d skus <| mkAppendDated (let n = DateTimeOffset.Now in n.AddDays -1.) moreSkus
+            | Merge items, Choice1Of2 randomSkus ->            Array.append <| mkAppend randomSkus <| mkMerged items
+            | Merge (TakeHalf items), Choice2Of2 randomSkus -> Array.append <| mkAppend randomSkus <| mkMerged items
         let state = fold originState initialEvents
         let events = interpret command state
         let state' = fold state events
         match command, events with
         // Remove command that resulted in no action
-        | Remove requested,    [] ->
+        | Remove requested,    [||] ->
             let original, remaining = state |> asSkus |> set, state' |> asSkus |> set
             // Verify there definitely wasn't anything to do
             test <@ requested |> Seq.forall (not << original.Contains) @>
             // Verify there still isn't anything to do
             test <@ requested |> Seq.forall (not << remaining.Contains) @>
         // A removal event should be optimal, with no redundant skus
-        | Remove requested,    [ Events.Removed { skus = removed } ] ->
+        | Remove requested,    [| Events.Removed { skus = removed } |] ->
             let original, remaining = state |> asSkus |> set, state' |> asSkus
             let requested, removed = set requested, set removed
             // Verify the request maps to the event correctly
@@ -165,8 +165,8 @@ module Specification =
             let original, updated = state |> asSkus, state' |> asSkuToState
             // Verify the request maps to the event (or absence thereof) correctly
             match events with
-            | [] -> ()
-            | [Events.Added e] ->
+            | [||] -> ()
+            | [|Events.Added e|] ->
                 test <@ e.dateSaved = date
                         && e.skus |> Seq.forall updated.ContainsKey @>
             | x -> x |> failwithf "Unexpected %A"
@@ -179,8 +179,8 @@ module Specification =
             let original, updated = state |> asSkuToState, state' |> asSkuToState
             // Verify the request maps to the event (or absence thereof) correctly
             match events with
-            | [] -> ()
-            | [Events.Merged e] ->
+            | [||] -> ()
+            | [|Events.Merged e|] ->
                 let originalIsSupersededByMerged (item: Events.Item) =
                     match original.TryGetValue item.skuId with
                     | true, originalItem -> originalItem |> Fold.isSupersededAt item.dateSaved

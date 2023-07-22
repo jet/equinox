@@ -433,7 +433,7 @@ type GeneralTests(testOutputHelper) =
         let decider = SimplestThing.resolve log context SimplestThing.Category (Equinox.StreamId.gen toStreamId id)
 
         let! before, after = decider.TransactEx(
-            (fun state -> state.Version, [SimplestThing.StuffHappened]),
+            (fun state -> state.Version, [|SimplestThing.StuffHappened|]),
             mapResult = (fun result ctx-> result, ctx.Version))
         test <@ [before; after] = [0L; 1L] @>
     }
