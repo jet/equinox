@@ -37,10 +37,10 @@ module private Write =
         match result with
         | MdbSyncResult.Written x ->
             if act <> null then
-                act.SetStatus(ActivityStatusCode.Ok).AddTag("eqx.new_version", x) |> ignore
+                act.SetStatus(ActivityStatusCode.Ok).SetTag("eqx.new_version", x) |> ignore
         | MdbSyncResult.ConflictUnknown ->
             let eventTypes = [| for x in events -> x.EventType |]
-            if act <> null then act.RecordConflict().AddTag("eqx.event_types", eventTypes) |> ignore
+            if act <> null then act.RecordConflict().SetTag("eqx.event_types", eventTypes) |> ignore
         return result }
     let writeEvents retryPolicy writer streamName version events ct: Task<MdbSyncResult> = task {
         let call = writeEventsLogged writer streamName version events
