@@ -327,7 +327,7 @@ type MessageDbContext(client: MessageDbClient, batchOptions: BatchOptions) =
         return struct(Token.create version, state) }
     member _.LoadLast(log, streamName, requireLeader, tryDecode, fold, initial, ct): Task<struct(StreamToken * 'state)> = task {
         let! version, events = Read.loadLastEvent log client.ReadRetryPolicy client.Reader requireLeader streamName None ct
-        return struct(Token.create version, events |> Array.chooseV tryDecode |> fold initial) }
+        return struct(Token.create version, events |> Seq.chooseV tryDecode |> fold initial) }
     member _.LoadSnapshot(log, category, streamId, requireLeader, tryDecode, eventType, ct) = task {
         let snapshotStream = Snapshot.streamName category streamId
         let! _, events = Read.loadLastEvent log client.ReadRetryPolicy client.Reader requireLeader snapshotStream (Some eventType) ct
