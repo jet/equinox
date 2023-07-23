@@ -394,7 +394,7 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
             let encodedEvents: IEventData<EventBody>[] = events |> Array.map encode
             match! context.TrySync(log, categoryName, streamId, streamName, token, encodedEvents, ct) with
             | GatewaySyncResult.Written token' ->
-                let state' = fold state events
+                let state' = fold state (Seq.ofArray events)
                 match access with
                 | None | Some AccessStrategy.LatestKnownEvent -> ()
                 | Some (AccessStrategy.AdjacentSnapshots(_, toSnap)) ->
