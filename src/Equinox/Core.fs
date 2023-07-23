@@ -39,10 +39,9 @@ type internal Impl() =
             (mapResult: Func<'r, struct (StreamToken * 's), 'v>)
             originTokenAndState ct: Task<'v> =
         let rec loop attempt tokenAndState: Task<'v> = task {
-            let! result, events = decide.Invoke(tokenAndState, ct)
-            match Array.ofSeq events with
-            | [||] -> return mapResult.Invoke(result, tokenAndState)
-            | events ->
+            match! decide.Invoke(tokenAndState, ct) with
+            | result, [||] -> return mapResult.Invoke(result, tokenAndState)
+            | result, events ->
                 match! stream.TrySync(attempt, tokenAndState, events, ct) with
                 | SyncResult.Written tokenAndState' ->
                     return mapResult.Invoke(result, tokenAndState')
