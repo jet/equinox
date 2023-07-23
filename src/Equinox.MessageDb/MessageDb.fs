@@ -192,12 +192,12 @@ module Read =
             "Read", count, slice.LastVersion)
         return slice }
 
-    let private readBatches (log: ILogger) fold initial tryDecode batchSize (readSlice: int64 -> int -> ILogger -> CancellationToken -> Task<StreamEventsSlice>)
+    let private readBatches (log: ILogger) fold originState tryDecode (readSlice: int64 -> int -> ILogger -> CancellationToken -> Task<StreamEventsSlice>)
             (maxPermittedBatchReads: int option) (startPosition: int64) ct
-        : Task<int64 * 'state> =
-        let mutable batchCount, pos = 0, startPosition
+        : Task<int64 * 'state * int * int> =
+        let mutable batchCount, eventCount, pos = 0, 0, startPosition
         let mutable version = -1L
-        let mutable state = initial
+        let mutable state = originState
         let rec loop () : Task<unit> = task {
             match maxPermittedBatchReads with
             | Some mpbr when batchCount >= mpbr -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
@@ -206,24 +206,25 @@ module Read =
             let batchLog = log |> Log.prop "batchIndex" batchCount
             let! slice = readSlice pos batchCount batchLog ct
             version <- max version slice.LastVersion
-            state <- slice.Messages |> Array.chooseV tryDecode |> fold state
+            state <- slice.Messages |> Seq.chooseV tryDecode |> fold state
+            batchCount <- batchCount + 1
+            eventCount <- eventCount + slice.Messages.Length
+            pos <- slice.LastVersion  + 1L
             if not slice.IsEnd then
-                batchCount <- batchCount + 1
-                pos <- slice.LastVersion  + 1L
                 return! loop () }
         task {
             do! loop ()
             let act = Activity.Current
             if act <> null then act.AddBatches(batchCount).AddLastVersion(version) |> ignore
-            return version, state }
+            return version, state, batchCount, eventCount }
 
-    let private logBatchRead streamName t version (log: ILogger) =
+    let private logBatchRead streamName batches events t version (log: ILogger) =
         let reqMetric: Log.Measurement = { stream = streamName; interval = t; bytes = 0; count = 0}
         let action = "Load"
         let evt = Log.Metric.Batch (1, reqMetric)
         (log |> Log.event evt).Information(
-            "Mdb{action:l} stream={stream} version={version}",
-            action, streamName, version)
+            "Mdb{action:l} stream={stream} count={count}/{batches} version={version}",
+            action, streamName, events, batches, version)
 
     let private logLastEventRead streamName t events (version: int64) (log: ILogger) =
         let bytes = resolvedEventBytes events
@@ -254,8 +255,8 @@ module Read =
         let call = loggedReadSlice reader streamName batchSize requiresLeader
         let retryingLoggingReadSlice pos batchIndex = Log.withLoggedRetries retryPolicy "readAttempt" (call pos batchIndex)
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
-        let! t, (version, state) = readBatches log fold initial tryDecode batchSize retryingLoggingReadSlice maxPermittedBatchReads startPosition |> Stopwatch.time ct
-        log |> logBatchRead streamName t version
+        let! t, (version, state, batchCount, eventCount) = readBatches log fold initial tryDecode retryingLoggingReadSlice maxPermittedBatchReads startPosition |> Stopwatch.time ct
+        log |> logBatchRead streamName batchCount eventCount t version
         return version, state }
 
 module private Token =
