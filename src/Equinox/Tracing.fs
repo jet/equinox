@@ -4,7 +4,7 @@ let [<Literal>] SourceName = "Equinox"
 let internal source = new System.Diagnostics.ActivitySource(SourceName)
 
 module Tags =
-    // General tags
+    (* General tags *)
 
     /// The full stream name
     let [<Literal>] stream_name = "eqx.stream_name"
@@ -15,7 +15,7 @@ module Tags =
     /// The store being used
     let [<Literal>] store = "eqx.store"
 
-    // Information about loading events
+    (* Information about loading events *)
 
     /// The version of the stream at read time (empty stream = 0)
     let [<Literal>] read_version = "eqx.load.version"
@@ -42,7 +42,7 @@ module Tags =
     /// If a snapshot was read, what version of the stream was it based on
     let [<Literal>] snapshot_version = "eqx.snapshot.version"
 
-    // Information about appending of events
+    (* Information about appending of events *)
 
     /// Whether there was at least one conflict during transact
     let [<Literal>] conflict = "eqx.conflict"
