@@ -10,7 +10,6 @@
         </Compile>
         <Compile Include="MessageDbClient.fs" />
         <Compile Include="MessageDb.fs" />
-        <Content Include="Tracing.md" />
     </ItemGroup>
 
     <ItemGroup>
