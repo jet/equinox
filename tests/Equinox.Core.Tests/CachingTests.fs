@@ -33,7 +33,7 @@ type SpyCategory() =
             Interlocked.Increment &loads |> ignore
             do! Task.Delay(x.Delay, ct)
             return struct (mkToken(), Interlocked.Increment &state) }
-        member _.Sync(_log, _cat, _sid, _sn, _ctx, _maybeInit, _originToken, originState, events, _ct) = task {
+        member _.Sync(_log, _cat, _sid, _sn, _ctx, _originToken, originState, events, _ct) = task {
             return Equinox.Core.SyncResult.Written (mkToken(), originState + events.Length) }
 
     interface Equinox.Core.Caching.IReloadable<State> with
@@ -49,7 +49,7 @@ let writeOriginState = 99
 let expectedWriteState = 99 + 2 // events written
 
 let write sn (sut: Equinox.Core.ICategory<_, _, _>) = task {
-    let! wr = sut.Sync(Serilog.Log.Logger, null, null, sn, (), ValueNone, Unchecked.defaultof<_>, writeOriginState, Array.replicate 2 (), CancellationToken.None)
+    let! wr = sut.Sync(Serilog.Log.Logger, null, null, sn, (), Unchecked.defaultof<_>, writeOriginState, Array.replicate 2 (), CancellationToken.None)
     let wState' = trap <@ match wr with Equinox.Core.SyncResult.Written (_token, state') -> state' | _ -> failwith "unexpected" @>
     test <@ expectedWriteState = wState' @> }
 

@@ -17,7 +17,6 @@ type ICategory<'event, 'state, 'context> =
     /// NB the central precondition upon which the sync is predicated is that the stream has not diverged from the `originState` represented by `token`
     ///    where the precondition is not met, the SyncResult.Conflict bears a [lazy] async result (in a specific manner optimal for the store)
     abstract Sync: log: ILogger * categoryName: string * streamId: string * streamName: string * 'context
-                   * maybeInit: (CancellationToken -> Task<unit>) voption
                    * originToken: StreamToken * originState: 'state * events: 'event[]
                    * CancellationToken -> Task<SyncResult<'state>>
 
@@ -31,12 +30,12 @@ open Equinox.Core.Tracing
 type Category<'event, 'state, 'context>(categoryName, resolveStream) =
 
     /// Stores without custom routing for categoryName/streamId to Table/Container etc use this default impl
-    new(categoryName, inner) = Category(categoryName, fun streamId -> struct (inner, Core.StreamName.render categoryName streamId, ValueNone))
+    new(categoryName, inner) = Category(categoryName, fun streamId -> struct (inner, Core.StreamName.render categoryName streamId))
 
     /// Provides access to the low level store operations used for Loading and/or Syncing updates via the Decider
     /// (Normal usage is via the adjacent `module Decider` / `Stream.Resolve` helpers)
     member _.Stream(log: Serilog.ILogger, context: 'context, streamId: string) =
-        let struct (inner: Core.ICategory<'event, 'state, 'context>, streamName, init) = resolveStream streamId
+        let struct (inner: Core.ICategory<'event, 'state, 'context>, streamName) = resolveStream streamId
         { new Core.IStream<'event, 'state> with
             member _.Name = streamName
             member _.LoadEmpty() = inner.Empty
@@ -48,7 +47,7 @@ type Category<'event, 'state, 'context>(categoryName, resolveStream) =
                 use act = source.StartActivity("Sync", System.Diagnostics.ActivityKind.Client)
                 if act <> null then act.AddStream(categoryName, streamId, streamName).AddSyncAttempt(attempt) |> ignore
                 let log = if attempt = 1 then log else log.ForContext("attempts", attempt)
-                return! inner.Sync(log, categoryName, streamId, streamName, context, init, token, originState, events, ct) } }
+                return! inner.Sync(log, categoryName, streamId, streamName, context, token, originState, events, ct) } }
 
 [<AbstractClass; Sealed; System.Runtime.CompilerServices.Extension>]
 type Stream private () =

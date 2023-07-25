@@ -578,10 +578,10 @@ module Initialization =
     /// Holds Container state, coordinating initialization activities
     type internal ContainerInitializerGuard(container: Container, fallback: Container option, ?initContainer: Container -> CancellationToken -> Task<unit>) =
         let initGuard = initContainer |> Option.map (fun init -> AsyncCacheCell<unit>(init container))
-
         member _.Container = container
         member _.Fallback = fallback
-        member internal _.InitializationGate = match initGuard with Some g when not (g.IsValid())  -> ValueSome g.Await | _ -> ValueNone
+        member internal _.Initialize(ct): ValueTask =
+            match initGuard with Some g when not (g.IsValid()) -> g.Await(ct) |> ValueTask.ofTask |> ValueTask.ignore | _ -> ValueTask.CompletedTask
 
 module internal Tip =
 
@@ -1064,7 +1064,7 @@ type StoreClient(container: Container, archive: Container option, query: QueryOp
         Prune.until log (container, stream) query.MaxItems index ct
 
 type internal Category<'event, 'state, 'context>
-    (   store: StoreClient, codec: IEventCodec<'event, EventBody, 'context>,
+    (   store: StoreClient, initialize: CancellationToken -> System.Threading.Tasks.ValueTask, codec: IEventCodec<'event, EventBody, 'context>,
         fold: 'state -> 'event[] -> 'state, initial: 'state, isOrigin: 'event -> bool,
         checkUnfolds, compressUnfolds, mapUnfolds: Choice<unit, 'event[] -> 'state -> 'event[], 'event[] -> 'state -> 'event[] * 'event[]>) =
 
@@ -1077,7 +1077,7 @@ type internal Category<'event, 'state, 'context>
         member _.Load(log, _categoryName, _streamId, stream, _maxAge, _requireLeader, ct): Task<struct (StreamToken * 'state)> = task {
             let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds, ct)
             return struct (token, fold initial events) }
-        member _.Sync(log, _categoryName, _streamId, streamName, ctx, maybeInit, (Token.Unpack pos as streamToken), state, events, ct) = task {
+        member _.Sync(log, _categoryName, _streamId, streamName, ctx, (Token.Unpack pos as streamToken), state, events, ct) = task {
             let state' = fold state events
             let exp, events, eventsEncoded, projectionsEncoded =
                 let encode e = codec.Encode(ctx, e)
@@ -1090,7 +1090,7 @@ type internal Category<'event, 'state, 'context>
             let renderElement = if compressUnfolds then JsonElement.undefinedToNull >> JsonElement.deflate else JsonElement.undefinedToNull
             let projections = projectionsEncoded |> Seq.map (Sync.mkUnfold renderElement baseIndex)
             let batch = Sync.mkBatch streamName eventsEncoded projections
-            match maybeInit with ValueNone -> () | ValueSome i -> do! i ct
+            do! initialize ct
             match! store.Sync(log, streamName, exp, batch, ct) with
             | InternalSyncResult.Written token' -> return SyncResult.Written (token', state')
             | InternalSyncResult.ConflictUnknown _token' -> return SyncResult.Conflict (reload (log, streamName, streamToken, state) None)
@@ -1306,7 +1306,7 @@ type CosmosStoreContext(storeClient: CosmosStoreClient, tipOptions, queryOptions
     member internal x.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId) =
         let struct (cg, streamName) = storeClient.ResolveContainerGuardAndStreamName(categoryName, streamId)
         let store = StoreClient(cg.Container, cg.Fallback, x.QueryOptions, x.TipOptions)
-        struct (store, streamName, cg.InitializationGate)
+        struct (store, streamName, cg.Initialize)
 
 /// For CosmosDB, caching is typically a central aspect of managing RU consumption to maintain performance and capacity.
 /// The cache holds the Tip document's etag, which enables use of etag-contingent Reads (which cost only 1RU in the case where the document is unchanged)
@@ -1385,14 +1385,14 @@ type CosmosStoreCategory<'event, 'state, 'context> internal (name, resolveStream
             | CachingStrategy.SlidingWindow (cache, window) -> Some (Equinox.CachingStrategy.SlidingWindow (cache, window))
             | CachingStrategy.FixedTimeSpan (cache, period) -> Some (Equinox.CachingStrategy.FixedTimeSpan (cache, period))
         let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<'event, 'state, 'context>>()
-        let resolveInner (categoryName, container) =
+        let resolveInner (categoryName, container, initialize) =
             let createCategory _name: ICategory<_, _, 'context> =
-                Category<'event, 'state, 'context>(container, codec, fold, initial, isOrigin, checkUnfolds, compressUnfolds, mapUnfolds)
+                Category<'event, 'state, 'context>(container, initialize, codec, fold, initial, isOrigin, checkUnfolds, compressUnfolds, mapUnfolds)
                 |> Caching.apply Token.isStale caching
             categories.GetOrAdd(categoryName, createCategory)
         let resolveStream streamId =
-            let struct (container, streamName, maybeContainerInitializationGate) = context.ResolveContainerClientAndStreamIdAndInit(name, streamId)
-            struct (resolveInner (name, container), streamName, maybeContainerInitializationGate)
+            let struct (container, streamName, initialize) = context.ResolveContainerClientAndStreamIdAndInit(name, streamId)
+            struct (resolveInner (name, container, initialize), streamName)
         CosmosStoreCategory(name, resolveStream)
 
 namespace Equinox.CosmosStore.Core
@@ -1482,9 +1482,8 @@ type EventsContext internal
         // Writes go through the stored proc, which we need to provision per container
         // Having to do this here in this way is far from ideal, but work on caching, external snapshots and caching is likely
         //   to move this about before we reach a final destination in any case
-        match x.ResolveStream stream |> ValueTuple.snd with
-        | ValueNone -> ()
-        | ValueSome init -> do! init ct
+        let struct(_, init) = x.ResolveStream(stream)
+        do! init ct
         let batch = Sync.mkBatch stream events Seq.empty
         match! store.Sync(log, stream, SyncExp.Version position.index, batch, ct) with
         | InternalSyncResult.Written (Token.Unpack pos) -> return AppendResult.Ok pos

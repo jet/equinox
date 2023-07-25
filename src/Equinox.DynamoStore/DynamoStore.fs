@@ -1125,7 +1125,7 @@ type internal Category<'event, 'state, 'context>
         member _.Empty = Token.empty, initial
         member _.Load(log, _categoryName, _streamId, streamName, _maxAge, requireLeader, ct) =
             fetch initial (store.Load(log, (streamName, None), requireLeader, (codec.TryDecode, isOrigin), checkUnfolds, ct))
-        member _.Sync(log, _categoryName, _streamId, streamName, ctx, _maybeInit, (Token.Unpack pos as streamToken), state, events, ct) = task {
+        member _.Sync(log, _categoryName, _streamId, streamName, ctx, (Token.Unpack pos as streamToken), state, events, ct) = task {
             let state' = fold state events
             let exp, events, eventsEncoded, unfoldsEncoded =
                 let encode e = codec.Encode(ctx, e)
@@ -1340,7 +1340,7 @@ type DynamoStoreCategory<'event, 'state, 'context>(name, resolveStream) =
             categories.GetOrAdd(categoryName, createCategory)
         let resolveStream streamId =
             let struct (container, streamName) = context.ResolveContainerClientAndStreamName(name, streamId)
-            struct (resolveInner (name, container), streamName, ValueNone)
+            struct (resolveInner (name, container), streamName)
         DynamoStoreCategory(name, resolveStream)
 
 module Exceptions =
