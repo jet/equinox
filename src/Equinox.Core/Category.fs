@@ -4,8 +4,10 @@ open Serilog
 open System.Threading
 open System.Threading.Tasks
 
-/// Store-agnostic interface representing interactions an Application can have with a set of streams with a given pair of Event and State types
+/// Store-agnostic interface representing interactions a Decider can have with a set of streams with a given pair of Event and State types
 type ICategory<'event, 'state, 'context> =
+    /// Obtain a Null state for optimistic processing
+    abstract Empty: struct (StreamToken * 'state)
     /// Obtain the state from the target stream
     abstract Load: log: ILogger * categoryName: string * streamId: string * streamName: string
                    * maxAge: System.TimeSpan * requireLeader: bool
@@ -21,37 +23,34 @@ type ICategory<'event, 'state, 'context> =
                    * originToken: StreamToken * originState: 'state * events: 'event[]
                    * CancellationToken -> Task<SyncResult<'state>>
 
-// Low level stream impl, used by Store-specific Category types that layer policies such as Caching in
+// Low level stream operations skeleton; base type for Store-specific Category types
 namespace Equinox
 
 open Equinox.Core.Tracing
-open System.Diagnostics
-open System.Threading
-open System.Threading.Tasks
 
-/// Store-agnostic baseline functionality for a Category of 'event representations that fold to a given 'state
+/// Store-agnostic baseline functionality for Load and Syncing a Category of 'event representations that fold to a given 'state
 [<NoComparison; NoEquality>]
-type Category<'event, 'state, 'context>
-    (   name,
-        resolveStream: string -> string -> struct (Core.ICategory<'event, 'state, 'context> * string * (CancellationToken -> Task<unit>) voption),
-        empty: struct (Core.StreamToken * 'state)) =
+type Category<'event, 'state, 'context>(categoryName, resolveStream) =
+
+    /// Stores without custom routing for categoryName/streamId to Table/Container etc use this default impl
+    new(categoryName, inner) = Category(categoryName, fun streamId -> struct (inner, Core.StreamName.render categoryName streamId, ValueNone))
+
     /// Provides access to the low level store operations used for Loading and/or Syncing updates via the Decider
     /// (Normal usage is via the adjacent `module Decider` / `Stream.Resolve` helpers)
-    member _.Stream(log: Serilog.ILogger, context: 'context, streamId) =
-        let struct (inner, streamName, init) = resolveStream name streamId
+    member _.Stream(log: Serilog.ILogger, context: 'context, streamId: string) =
+        let struct (inner: Core.ICategory<'event, 'state, 'context>, streamName, init) = resolveStream streamId
         { new Core.IStream<'event, 'state> with
             member _.Name = streamName
-            member _.LoadEmpty() =
-                empty
+            member _.LoadEmpty() = inner.Empty
             member _.Load(maxAge, requireLeader, ct) = task {
-                use act = source.StartActivity("Load", ActivityKind.Client)
-                if act <> null then act.AddStream(name, streamId, streamName).AddLeader(requireLeader).AddStale(maxAge) |> ignore
-                return! inner.Load(log, name, streamId, streamName, maxAge, requireLeader, ct) }
+                use act = source.StartActivity("Load", System.Diagnostics.ActivityKind.Client)
+                if act <> null then act.AddStream(categoryName, streamId, streamName).AddLeader(requireLeader).AddStale(maxAge) |> ignore
+                return! inner.Load(log, categoryName, streamId, streamName, maxAge, requireLeader, ct) }
             member _.Sync(attempt, token, originState, events, ct) = task {
-                use act = source.StartActivity("Sync", ActivityKind.Client)
-                if act <> null then act.AddStream(name, streamId, streamName).AddSyncAttempt(attempt) |> ignore
+                use act = source.StartActivity("Sync", System.Diagnostics.ActivityKind.Client)
+                if act <> null then act.AddStream(categoryName, streamId, streamName).AddSyncAttempt(attempt) |> ignore
                 let log = if attempt = 1 then log else log.ForContext("attempts", attempt)
-                return! inner.Sync(log, name, streamId, streamName, context, init, token, originState, events, ct) } }
+                return! inner.Sync(log, categoryName, streamId, streamName, context, init, token, originState, events, ct) } }
 
 [<AbstractClass; Sealed; System.Runtime.CompilerServices.Extension>]
 type Stream private () =

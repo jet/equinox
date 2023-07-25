@@ -16,10 +16,10 @@ module WiringHelpers =
 
     let private createCategoryUncached name codec initial fold accessStrategy context =
         let noCachingCacheStrategy = CachingStrategy.NoCaching
-        StoreCategory(context, name, codec, fold, initial, noCachingCacheStrategy, accessStrategy)
+        StoreCategory(context, name, codec, fold, initial, accessStrategy, noCachingCacheStrategy)
     let private createCategory name codec initial fold accessStrategy (context, cache) =
         let sliding20mCacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        StoreCategory(context, name, codec, fold, initial, sliding20mCacheStrategy, accessStrategy)
+        StoreCategory(context, name, codec, fold, initial, accessStrategy, sliding20mCacheStrategy)
 
     let createCategoryUnoptimizedUncached name codec initial fold context =
         let accessStrategy = AccessStrategy.Unoptimized

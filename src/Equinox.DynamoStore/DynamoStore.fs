@@ -1124,6 +1124,7 @@ type internal Category<'event, 'state, 'context>
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
     interface ICategory<'event, 'state, 'context> with
+        member _.Empty = Token.empty, initial
         member _.Load(log, _categoryName, _streamId, streamName, _maxAge, requireLeader, ct) =
             fetch initial (store.Load(log, (streamName, None), requireLeader, (codec.TryDecode, isOrigin), checkUnfolds, ct))
         member _.Sync(log, _categoryName, _streamId, streamName, ctx, _maybeInit, (Token.Unpack pos as streamToken), state, events, ct) = task {
@@ -1318,9 +1319,9 @@ type AccessStrategy<'event, 'state> =
     /// </remarks>
     | Custom of isOrigin: ('event -> bool) * transmute: ('event[] -> 'state -> 'event[] * 'event[])
 
-type DynamoStoreCategory<'event, 'state, 'context>(name, resolveInner, empty) =
-    inherit Equinox.Category<'event, 'state, 'context>(name, resolveInner, empty)
-    new(context: DynamoStoreContext, name, codec, fold, initial, caching, access) =
+type DynamoStoreCategory<'event, 'state, 'context>(name, resolveStream) =
+    inherit Equinox.Category<'event, 'state, 'context>(name, resolveStream = resolveStream)
+    new(context: DynamoStoreContext, name, codec, fold, initial, access, caching) =
         let isOrigin, checkUnfolds, mapUnfolds =
             match access with
             | AccessStrategy.Unoptimized ->                      (fun _ -> false), false, Choice1Of3 ()
@@ -1334,16 +1335,15 @@ type DynamoStoreCategory<'event, 'state, 'context>(name, resolveInner, empty) =
             | CachingStrategy.SlidingWindow (cache, window) -> Some (Equinox.CachingStrategy.SlidingWindow (cache, window))
             | CachingStrategy.FixedTimeSpan (cache, period) -> Some (Equinox.CachingStrategy.FixedTimeSpan (cache, period))
         let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<'event, 'state, 'context>>()
-        let resolveCategory (categoryName, container) =
+        let resolveInner (categoryName, container) =
             let createCategory _name: ICategory<_, _, 'context> =
                 Category<'event, 'state, 'context>(container, codec, fold, initial, isOrigin, checkUnfolds, mapUnfolds)
                 |> Caching.apply Token.isStale caching
             categories.GetOrAdd(categoryName, createCategory)
-        let resolveInner categoryName streamId =
-            let struct (container, streamName) = context.ResolveContainerClientAndStreamName(categoryName, streamId)
-            struct (resolveCategory (categoryName, container), streamName, ValueNone)
-        let empty = struct (Token.empty, initial)
-        DynamoStoreCategory(name, resolveInner, empty)
+        let resolveStream streamId =
+            let struct (container, streamName) = context.ResolveContainerClientAndStreamName(name, streamId)
+            struct (resolveInner (name, container), streamName, ValueNone)
+        DynamoStoreCategory(name, resolveStream)
 
 module Exceptions =
 

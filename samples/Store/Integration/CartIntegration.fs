@@ -24,9 +24,9 @@ let categoryGesStreamWithoutCustomAccessStrategy context =
     EventStoreDb.EventStoreCategory(context, Cart.Category, codec, fold, initial)
 
 let categoryCosmosStreamWithSnapshotStrategy context =
-    CosmosStore.CosmosStoreCategory(context, Cart.Category, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot)
+    CosmosStore.CosmosStoreCategory(context, Cart.Category, codecJe, fold, initial, CosmosStore.AccessStrategy.Snapshot snapshot, CosmosStore.CachingStrategy.NoCaching)
 let categoryCosmosStreamWithoutCustomAccessStrategy context =
-    CosmosStore.CosmosStoreCategory(context, Cart.Category, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Unoptimized)
+    CosmosStore.CosmosStoreCategory(context, Cart.Category, codecJe, fold, initial, CosmosStore.AccessStrategy.Unoptimized, CosmosStore.CachingStrategy.NoCaching)
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Cart.Service) count =
     service.ExecuteManyAsync(cartId, false, seq {

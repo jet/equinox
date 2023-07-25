@@ -22,12 +22,12 @@ let categoryGesWithoutAccessStrategy context =
     EventStoreDb.EventStoreCategory(context defaultBatchSize, Category, codec, fold, initial)
 
 let categoryCosmosWithLatestKnownEventSemantics context =
-    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.LatestKnownEvent)
+    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, CosmosStore.AccessStrategy.LatestKnownEvent, CosmosStore.CachingStrategy.NoCaching)
 let categoryCosmosUnoptimized context =
-    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Unoptimized)
+    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, CosmosStore.AccessStrategy.Unoptimized, CosmosStore.CachingStrategy.NoCaching)
 let categoryCosmosRollingUnfolds context =
     let access = CosmosStore.AccessStrategy.Custom(ContactPreferences.Fold.isOrigin, ContactPreferences.Fold.transmute)
-    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, access)
+    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, access, CosmosStore.CachingStrategy.NoCaching)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutput testOutputHelper

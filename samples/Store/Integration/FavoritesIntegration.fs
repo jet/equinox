@@ -23,13 +23,13 @@ let createServiceGes log context =
     |> Favorites.create
 
 let createServiceCosmosSnapshotsUncached log context =
-    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot)
+    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, CosmosStore.AccessStrategy.Snapshot snapshot, CosmosStore.CachingStrategy.NoCaching)
     |> Decider.forStream log
     |> Favorites.create
 
 let createServiceCosmosRollingStateUncached log context =
     let access = CosmosStore.AccessStrategy.RollingState Favorites.Fold.snapshot
-    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, access)
+    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, access, CosmosStore.CachingStrategy.NoCaching)
     |> Decider.forStream log
     |> Favorites.create
 
@@ -38,7 +38,7 @@ let createServiceCosmosUnoptimizedButCached log context =
     let caching =
         let cache = Cache ("name", 10)
         CosmosStore.CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
-    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, caching, access)
+    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, access, caching)
     |> Decider.forStream log
     |> Favorites.create
 

@@ -30,6 +30,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Equinox`: Merge `ResolveOption` and `XXXStoreCategory.FromMemento` as `LoadOption` [#308](https://github.com/jet/equinox/pull/308)
 - `Equinox`: Merge `XXXStoreCategory.Resolve(sn, ?ResolveOption)` and `XXXStoreCategory.FromMemento` as option `LoadOption` parameter on all `Transact` and `Query` methods [#308](https://github.com/jet/equinox/pull/308)
 - `Equinox.*.*Category`: Added mandatory `name` argument, and `Name` property [#410](https://github.com/jet/equinox/pull/410)
+- `Equinox.*.*Category`: Changed caching to be last argument, to reflect that it is applied over the top [#410](https://github.com/jet/equinox/pull/410)
 - `Equinox.LoadOption`: Rename `AllowStale` to `AnyCachedValue` [#386](https://github.com/jet/equinox/pull/386)
 - `Equinox.Decider`: `log` is now supplied via `Equinox.Category` [#337](https://github.com/jet/equinox/pull/337)
 - `Equinox.Decider`: Replaced `maxAttempts` with a default policy and an optional argument on `Transact*` APIs [#337](https://github.com/jet/equinox/pull/337)

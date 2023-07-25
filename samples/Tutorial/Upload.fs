@@ -59,7 +59,7 @@ module Cosmos =
     open Equinox.CosmosStore
     let category (context, cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        CosmosStoreCategory(context, Category, Events.codecJe, Fold.fold, Fold.initial, cacheStrategy, AccessStrategy.LatestKnownEvent)
+        CosmosStoreCategory(context, Category, Events.codecJe, Fold.fold, Fold.initial, AccessStrategy.LatestKnownEvent, cacheStrategy)
 
 module EventStore =
     open Equinox.EventStoreDb

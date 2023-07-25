@@ -457,6 +457,7 @@ type private Category<'event, 'state, 'context>(context: EventStoreContext, code
     let fetch state f = task { let! token', events = f in return struct (token', fold state (Seq.ofArray events)) }
     let reload (log, sn, leader, token, state) = fetch state (context.Reload(log, sn, leader, token, tryDecode, compactionPredicate))
     interface ICategory<'event, 'state, 'context> with
+        member _.Empty = context.TokenEmpty, initial
         member _.Load(log, _categoryName, _streamId, streamName, _maxAge, requireLeader, _ct) =
             fetch initial (loadAlgorithm log streamName requireLeader)
         member _.Sync(log, _categoryName, _streamId, streamName, ctx, _maybeInit, (Token.Unpack token as streamToken), state, events, _ct) = task {
@@ -473,13 +474,12 @@ type private Category<'event, 'state, 'context>(context: EventStoreContext, code
             | GatewaySyncResult.ConflictUnknown _ -> return SyncResult.Conflict (fun _ct -> reload (log, streamName, true, streamToken, state)) }
     interface Caching.IReloadable<'state> with member _.Reload(log, sn, leader, token, state, _ct) = reload (log, sn, leader, token, state)
 
-type EventStoreCategory<'event, 'state, 'context> internal (name, resolveInner, empty) =
-    inherit Equinox.Category<'event, 'state, 'context>(name, resolveInner, empty)
-    new(context: EventStoreContext, name, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial,
+type EventStoreCategory<'event, 'state, 'context> internal (name, inner) =
+    inherit Equinox.Category<'event, 'state, 'context>(name, inner = inner)
+    new(context: EventStoreContext, name, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, [<O; D(null)>] ?access,
         // Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
         // e.g., A key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
-        [<O; D(null)>] ?caching,
-        [<O; D(null)>] ?access) =
+        [<O; D(null)>] ?caching) =
         do  match access with
             | Some AccessStrategy.LatestKnownEvent when Option.isSome caching ->
                 "Equinox.EventStore does not support (and it would make things _less_ efficient even if it did)"
@@ -487,9 +487,7 @@ type EventStoreCategory<'event, 'state, 'context> internal (name, resolveInner, 
                 |> invalidOp
             | _ -> ()
         let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
-        let resolveInner categoryName streamId = struct (cat, StreamName.render categoryName streamId, ValueNone)
-        let empty = struct (context.TokenEmpty, initial)
-        EventStoreCategory(name, resolveInner, empty)
+        EventStoreCategory(name, inner = cat)
 
 type private SerilogAdapter(log: ILogger) =
     interface EventStore.ClientAPI.ILogger with

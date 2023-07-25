@@ -18,16 +18,16 @@ type Store(store) =
             Equinox.MemoryStore.MemoryStoreCategory(store, name, codec, fold, initial)
         | Store.Context.Cosmos (store, caching, unfolds) ->
             let accessStrategy = if unfolds then Equinox.CosmosStore.AccessStrategy.Snapshot snapshot else Equinox.CosmosStore.AccessStrategy.Unoptimized
-            Equinox.CosmosStore.CosmosStoreCategory<'event,'state,_>(store, name, codec.ToJsonElementCodec(), fold, initial, caching, accessStrategy)
+            Equinox.CosmosStore.CosmosStoreCategory<'event,'state,_>(store, name, codec.ToJsonElementCodec(), fold, initial, accessStrategy, caching)
         | Store.Context.Dynamo (store, caching, unfolds) ->
             let accessStrategy = if unfolds then Equinox.DynamoStore.AccessStrategy.Snapshot snapshot else Equinox.DynamoStore.AccessStrategy.Unoptimized
-            Equinox.DynamoStore.DynamoStoreCategory<'event,'state,_>(store, name, FsCodec.Deflate.EncodeTryDeflate codec, fold, initial, caching, accessStrategy)
+            Equinox.DynamoStore.DynamoStoreCategory<'event,'state,_>(store, name, FsCodec.Deflate.EncodeTryDeflate codec, fold, initial, accessStrategy, caching)
         | Store.Context.Es (context, caching, unfolds) ->
             let accessStrategy = if unfolds then Equinox.EventStoreDb.AccessStrategy.RollingSnapshots snapshot |> Some else None
-            Equinox.EventStoreDb.EventStoreCategory<'event,'state,_>(context, name, codec, fold, initial, ?caching = caching, ?access = accessStrategy)
+            Equinox.EventStoreDb.EventStoreCategory<'event,'state,_>(context, name, codec, fold, initial, ?access = accessStrategy, ?caching = caching)
         | Store.Context.Sql (context, caching, unfolds) ->
             let accessStrategy = if unfolds then Equinox.SqlStreamStore.AccessStrategy.RollingSnapshots snapshot |> Some else None
-            Equinox.SqlStreamStore.SqlStreamStoreCategory<'event,'state,_>(context, name, codec, fold, initial, ?caching = caching, ?access = accessStrategy)
+            Equinox.SqlStreamStore.SqlStreamStoreCategory<'event,'state,_>(context, name, codec, fold, initial, ?access = accessStrategy, ?caching = caching)
         | Store.Context.Mdb (context, caching) ->
             Equinox.MessageDb.MessageDbCategory<'event,'state,_>(context, name, codec, fold, initial, ?caching = caching)
 

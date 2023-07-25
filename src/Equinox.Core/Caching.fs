@@ -17,6 +17,7 @@ let private tee f (inner: CancellationToken -> Task<struct (StreamToken * 'state
 type private Decorator<'event, 'state, 'context, 'cat when 'cat :> ICategory<'event, 'state, 'context> and 'cat :> IReloadable<'state> >
     (category: 'cat, cache: Equinox.Cache, isStale, createKey, createOptions) =
     interface ICategory<'event, 'state, 'context> with
+        member _.Empty = category.Empty
         member _.Load(log, categoryName, streamId, streamName, maxAge, requireLeader, ct) = task {
             let loadOrReload ct = function
                 | ValueNone -> category.Load(log, categoryName, streamId, streamName, maxAge, requireLeader, ct)

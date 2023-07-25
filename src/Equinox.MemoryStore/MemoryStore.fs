@@ -71,6 +71,7 @@ module private Token =
 /// Represents the state of a set of streams in a style consistent withe the concrete Store types - no constraints on memory consumption (but also no persistence!).
 type private Category<'event, 'state, 'context, 'Format>(store: VolatileStore<'Format>, codec: FsCodec.IEventCodec<'event, 'Format, 'context>, fold, initial) =
     interface ICategory<'event, 'state, 'context> with
+        member _.Empty = Token.ofEmpty, initial
         member _.Load(_log, _categoryName, _streamId, streamName, _maxAge, _requireLeader, _ct) = task {
             match store.Load(streamName) with
             | null -> return (Token.ofEmpty, initial)
@@ -87,10 +88,5 @@ type private Category<'event, 'state, 'context, 'Format>(store: VolatileStore<'F
                     return struct (token', fold state (conflictingEvents |> Seq.skip eventCount |> Seq.chooseV codec.TryDecode)) }
                 return SyncResult.Conflict resync }
 
-type MemoryStoreCategory<'event, 'state, 'Format, 'context> internal (categoryName, resolveInner, empty) =
-    inherit Equinox.Category<'event, 'state, 'context>(categoryName, resolveInner, empty)
-    new(store: VolatileStore<'Format>, name: string, codec: FsCodec.IEventCodec<'event, 'Format, 'context>, fold, initial) =
-        let impl = Category<'event, 'state, 'context, 'Format>(store, codec, fold, initial) :> ICategory<_, _, _>
-        let resolveStream categoryName streamId = struct (impl, StreamName.render categoryName streamId, ValueNone)
-        let empty = struct (Token.ofEmpty, initial)
-        MemoryStoreCategory(name, resolveStream, empty)
+type MemoryStoreCategory<'event, 'state, 'Format, 'context>(store: VolatileStore<'Format>, name: string, codec, fold, initial) =
+    inherit Equinox.Category<'event, 'state, 'context>(name, inner = Category(store, codec, fold, initial))

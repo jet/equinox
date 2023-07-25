@@ -433,6 +433,7 @@ type private Category<'event, 'state, 'context>(context: SqlStreamStoreContext, 
     let fetch state f = task { let! token', events = f in return struct (token', fold state (Seq.ofArray events)) }
     let reload (log, sn, leader, token, state) ct = fetch state (context.Reload(log, sn, leader, token, tryDecode, compactionPredicate, ct))
     interface ICategory<'event, 'state, 'context> with
+        member _.Empty = context.TokenEmpty, initial
         member _.Load(log, _categoryName, _streamId, streamName, _maxAge, requireLeader, ct) =
             fetch initial (loadAlgorithm log streamName requireLeader ct)
         member _.Sync(log, _categoryName, _streamId, streamName, ctx, _maybeInit, (Token.Unpack token as streamToken), state, events, ct) = task {
@@ -449,13 +450,12 @@ type private Category<'event, 'state, 'context>(context: SqlStreamStoreContext, 
             | GatewaySyncResult.ConflictUnknown -> return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, streamToken, state)) }
     interface Caching.IReloadable<'state> with member _.Reload(log, sn, leader, token, state, ct) = reload (log, sn, leader, token, state) ct
 
-type SqlStreamStoreCategory<'event, 'state, 'context> internal (name, resolveInner, empty) =
-    inherit Equinox.Category<'event, 'state, 'context>(name, resolveInner, empty)
-    new(context: SqlStreamStoreContext, name, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial,
+type SqlStreamStoreCategory<'event, 'state, 'context> internal (name, inner) =
+    inherit Equinox.Category<'event, 'state, 'context>(name, inner = inner)
+    new(context: SqlStreamStoreContext, name, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, [<O; D(null)>]?access,
         // For SqlStreamStore, caching is less critical than it is for e.g. CosmosDB
         // As such, it can often be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
-        [<O; D(null)>]?caching,
-        [<O; D(null)>]?access) =
+        [<O; D(null)>]?caching) =
         do  match access with
             | Some AccessStrategy.LatestKnownEvent when Option.isSome caching ->
                 "Equinox.SqlStreamStore does not support (and it would make things _less_ efficient even if it did)"
@@ -463,9 +463,7 @@ type SqlStreamStoreCategory<'event, 'state, 'context> internal (name, resolveInn
                 |> invalidOp
             | _ -> ()
         let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
-        let resolveInner categoryName streamId = struct (cat, StreamName.render categoryName streamId, ValueNone)
-        let empty = struct (context.TokenEmpty, initial)
-        SqlStreamStoreCategory(name, resolveInner, empty)
+        SqlStreamStoreCategory(name, cat)
 
 [<AbstractClass>]
 type ConnectorBase([<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =

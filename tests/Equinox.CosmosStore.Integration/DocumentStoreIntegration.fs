@@ -23,27 +23,27 @@ module Cart =
     let codec = Cart.Events.codecJe
 #endif
     let createServiceWithoutOptimization log context =
-        StoreCategory(context, Cart.Category, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized)
+        StoreCategory(context, Cart.Category, codec, fold, initial, AccessStrategy.Unoptimized, CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log
         |> Cart.create
     /// Trigger looking in Tip (we want those calls to occur, but without leaning on snapshots, which would reduce the paths covered)
     let createServiceWithEmptyUnfolds log context =
         let unfArgs = Cart.Fold.isOrigin, fun _ -> Array.empty
-        StoreCategory(context, Cart.Category, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.MultiSnapshot unfArgs)
+        StoreCategory(context, Cart.Category, codec, fold, initial, AccessStrategy.MultiSnapshot unfArgs, CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log
         |> Cart.create
     let createServiceWithSnapshotStrategy log context =
-        StoreCategory(context, Cart.Category, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot)
+        StoreCategory(context, Cart.Category, codec, fold, initial, AccessStrategy.Snapshot snapshot, CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log
         |> Cart.create
     let createServiceWithSnapshotStrategyAndCaching log context cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        StoreCategory(context, Cart.Category, codec, fold, initial, sliding20m, AccessStrategy.Snapshot snapshot)
+        StoreCategory(context, Cart.Category, codec, fold, initial, AccessStrategy.Snapshot snapshot, sliding20m)
         |> Equinox.Decider.forStream log
         |> Cart.create
     let createServiceWithRollingState log context =
         let access = AccessStrategy.RollingState Cart.Fold.snapshot
-        StoreCategory(context, Cart.Category, codec, fold, initial, CachingStrategy.NoCaching, access)
+        StoreCategory(context, Cart.Category, codec, fold, initial, access, CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log
         |> Cart.create
     let streamName = Cart.streamId >> StreamName.render Cart.Category
@@ -56,7 +56,7 @@ module ContactPreferences =
     let codec = ContactPreferences.Events.codecJe
 #endif
     let private createServiceWithLatestKnownEvent context log cachingStrategy =
-        StoreCategory(context, ContactPreferences.Category, codec, fold, initial, cachingStrategy, AccessStrategy.LatestKnownEvent)
+        StoreCategory(context, ContactPreferences.Category, codec, fold, initial, AccessStrategy.LatestKnownEvent, cachingStrategy)
         |> Equinox.Decider.forStream log
         |> ContactPreferences.create
     let createServiceWithoutCaching log context =
