@@ -45,7 +45,7 @@ type Service<'t> internal (decider : Equinox.Decider<Events.Event<'t>, Fold.Stat
     member _.Read() : Async<Map<string,'t>> =
         decider.Query id
 
-let create<'t> cat indexId =
+let create<'t> indexId cat =
     Service(streamId indexId |> Equinox.Decider.forStream Serilog.Log.Logger cat)
 
 module Cosmos =
