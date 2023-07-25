@@ -95,7 +95,7 @@ type Listener() =
     let spans = ResizeArray()
     let listener = new ActivityListener(
         ActivityStarted = (fun s -> if v.Value = scope then spans.Add(s)),
-        ShouldListenTo = (fun s -> s.Name = "Equinox"),
+        ShouldListenTo = (fun s -> s.Name = Equinox.Core.Tracing.SourceName),
         Sample = (fun _ -> ActivitySamplingResult.AllDataAndRecorded))
     do ActivitySource.AddActivityListener(listener)
 

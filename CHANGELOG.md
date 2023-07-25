@@ -50,7 +50,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Removed
  
-- Removed `netstandard2.1`; minimum target not `net6.0` [#407](https://github.com/jet/equinox/pull/407)
+- Removed `netstandard2.1`; minimum target now `net6.0` [#407](https://github.com/jet/equinox/pull/407)
 - Remove explicit `net461` handling; minimum target now `net6.0` / `FSharp.Core` v `6.0.0` [#310](https://github.com/jet/equinox/pull/310) [#323](https://github.com/jet/equinox/pull/323) [#354](https://github.com/jet/equinox/pull/354)
 - Remove `Equinox.Core.ICache` (there is/was only one impl, and the interface has changed as part of [#386](https://github.com/jet/equinox/pull/386)) [#389](https://github.com/jet/equinox/pull/389)
 

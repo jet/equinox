@@ -22,7 +22,7 @@ module Retry =
         | None -> f ct
         | Some retryPolicy ->
             let withRetryTag count =
-                Activity.setTags [|Tags.retries, count|]
+                Activity.setTags [|Tags.append_retries, count|]
                 f
             retryPolicy withRetryTag
 
@@ -35,7 +35,7 @@ module private Write =
         Activity.setTags [|Tags.append_bytes, eventDataBytes events|]
         let! result = writer.WriteMessages(streamName, events, version, ct)
         match result with
-        | MdbSyncResult.Written x -> Activity.setTags [|Tags.new_version, x|]
+        | MdbSyncResult.Written x -> Activity.setTags [|Tags.append_version, x|]
         | MdbSyncResult.ConflictUnknown ->
             let eventTypes =
                 if events.Length <= 3
