@@ -35,7 +35,6 @@ type Category<'event, 'state, 'context>
     (   name,
         resolveStream: string -> string -> struct (Core.ICategory<'event, 'state, 'context> * string * (CancellationToken -> Task<unit>) voption),
         empty: struct (Core.StreamToken * 'state)) =
-    member val private Name = name
     /// Provides access to the low level store operations used for Loading and/or Syncing updates via the Decider
     /// (Normal usage is via the adjacent `module Decider` / `Stream.Resolve` helpers)
     member _.Stream(log: Serilog.ILogger, context: 'context, streamId) =
