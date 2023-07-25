@@ -6,8 +6,6 @@ open SqlStreamStore
 open SqlStreamStore.Streams
 open System
 open System.Collections.Generic
-open System.Threading
-open System.Threading.Tasks
 
 type EventBody = ReadOnlyMemory<byte>
 type EventData = NewStreamMessage
@@ -430,7 +428,7 @@ type private Category<'event, 'state, 'context>(context: SqlStreamStoreContext, 
         | None -> None
         | Some AccessStrategy.LatestKnownEvent -> Some (fun _ -> true)
         | Some (AccessStrategy.RollingSnapshots (isValid, _)) -> Some isValid
-    let fetch state f = task { let! token', events = f in return struct (token', fold state (Seq.ofArray events)) }
+    let fetch state f = task { let! token', events = f in return struct (token', fold state events) }
     let reload (log, sn, leader, token, state) ct = fetch state (context.Reload(log, sn, leader, token, tryDecode, compactionPredicate, ct))
     interface ICategory<'event, 'state, 'context> with
         member _.Empty = context.TokenEmpty, initial

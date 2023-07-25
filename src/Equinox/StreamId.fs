@@ -1,7 +1,7 @@
 namespace Equinox.Core
 
 open FSharp.UMX
-open System
+type private String = System.String
 
 module StreamName =
 
@@ -42,8 +42,8 @@ module StreamId =
 
 namespace Equinox
 
-/// Helpers for composing and rendering StreamId values
-type StreamId =
+[<AbstractClass; Sealed>]
+type StreamId private () =
 
     /// Generate a StreamId from a single application-level id, given a rendering function that maps to a non empty fragment without embedded `_` chars
     static member Map(f: 'a -> string) = System.Func<'a, Core.StreamId>(fun id -> Core.StreamId.ofFragment (f id))

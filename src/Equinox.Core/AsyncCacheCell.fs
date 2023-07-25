@@ -1,8 +1,6 @@
 namespace Equinox.Core
 
 open System
-open System.Threading
-open System.Threading.Tasks
 
 /// Asynchronous Lazy<'T> used to gate a workflow to ensure at most once execution of a computation.
 type AsyncLazy<'T>(startTask: Func<Task<'T>>) =
@@ -15,7 +13,7 @@ type AsyncLazy<'T>(startTask: Func<Task<'T>>) =
         if not workflow.IsValueCreated then ValueNone else
 
         let t = workflow.Value
-        if t.Status <> TaskStatus.RanToCompletion then ValueNone
+        if t.Status <> System.Threading.Tasks.TaskStatus.RanToCompletion then ValueNone
         else ValueSome t.Result
 
     /// Used to rule out values where the computation yielded an exception or the result has now expired

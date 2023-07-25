@@ -26,8 +26,8 @@ module Fold =
         Seq.tryLast events |> Option.fold evolve state
     let snapshot (state : State) = Events.Reserved { next = state.next }
 
-let decideReserve (count : int) (state : Fold.State) : int64 * Events.Event list =
-    state.next,[Events.Reserved { next = state.next + int64 count }]
+let decideReserve (count : int) (state : Fold.State) : int64 * Events.Event[] =
+    state.next, [| Events.Reserved { next = state.next + int64 count } |]
 
 type Service internal (resolve : SequenceId -> Equinox.Decider<Events.Event, Fold.State>) =
 

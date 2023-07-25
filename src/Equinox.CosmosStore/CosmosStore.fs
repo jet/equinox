@@ -8,8 +8,6 @@ open Serilog
 open System
 open System.Collections.Generic
 open System.Text.Json
-open System.Threading
-open System.Threading.Tasks
 
 type EventBody = JsonElement
 
@@ -841,7 +839,7 @@ module internal Query =
         | _, Choice1Of2 allowMissing ->
             logMissing (minIndex, i) "Origin event not found; no Archive Container supplied"
             if allowMissing then return pos, events
-            else return failwithf "Origin event not found; no Archive Container supplied"
+            else return failwith "Origin event not found; no Archive Container supplied"
         | _, Choice2Of2 fallback ->
 
         let maxIndex = match primary with Some p -> Some p.minIndex | None -> maxIndex // if no batches in primary, high water mark from tip is max
@@ -877,7 +875,7 @@ module Prune =
             match! container.TryReadItem<Tip>(PartitionKey stream, Tip.WellKnownDocumentId, ct) with
             | _, ReadResult.NotModified -> return failwith "unexpected NotModified; no etag supplied"
             | _, ReadResult.NotFound -> return failwith "unexpected NotFound"
-            | _, ReadResult.Found tip when tip.i <> expectedI -> return failwithf "Concurrent write detected; Expected i=%d actual=%d" expectedI tip.i
+            | _, ReadResult.Found tip when tip.i <> expectedI -> return failwith $"Concurrent write detected; Expected i=%d{expectedI} actual=%d{tip.i}"
             | tipRu, ReadResult.Found tip ->
 
             let tip = { tip with i = tip.i + int64 count; e = Array.skip count tip.e }
@@ -1067,7 +1065,7 @@ type StoreClient(container: Container, archive: Container option, query: QueryOp
 
 type internal Category<'event, 'state, 'context>
     (   store: StoreClient, codec: IEventCodec<'event, EventBody, 'context>,
-        fold: 'state -> 'event seq -> 'state, initial: 'state, isOrigin: 'event -> bool,
+        fold: 'state -> 'event[] -> 'state, initial: 'state, isOrigin: 'event -> bool,
         checkUnfolds, compressUnfolds, mapUnfolds: Choice<unit, 'event[] -> 'state -> 'event[], 'event[] -> 'state -> 'event[] * 'event[]>) =
 
     let reload (log, streamName, (Token.Unpack pos as streamToken), state) preloaded ct: Task<struct (StreamToken * 'state)> = task {
@@ -1399,11 +1397,10 @@ type CosmosStoreCategory<'event, 'state, 'context> internal (name, resolveStream
 
 namespace Equinox.CosmosStore.Core
 
-open System.Collections.Generic
-open System.Threading.Tasks
 open Equinox.Core
 open FsCodec
 open FSharp.Control
+open System.Collections.Generic
 
 /// Outcome of appending events, specifying the new and/or conflicting events, together with the updated Target write position
 [<RequireQualifiedAccess; NoComparison>]

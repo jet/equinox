@@ -78,7 +78,7 @@ module FulfilmentCenter =
             | Events.FcAddressChanged x -> { state with address = Some x.address }
             | Events.FcContactChanged x -> { state with contact = Some x.contact }
             | Events.FcDetailsChanged x -> { state with details = Some x.details }
-        let fold : State -> Events.Event seq -> State = Seq.fold evolve
+        let fold = Array.fold evolve
 
     type Command =
         | Register of FcName
@@ -172,7 +172,7 @@ module FulfilmentCenterSummary =
     let initial = None
     let evolve _state = function
         | Events.Updated v -> Some v
-    let fold s xs = Seq.fold evolve s xs
+    let fold = Array.fold evolve
 
     type Command =
         | Update of version : int64 * Types.Summary

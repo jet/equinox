@@ -4,8 +4,6 @@ open Equinox.Core
 open EventStore.Client
 open Serilog
 open System
-open System.Threading
-open System.Threading.Tasks
 
 type EventBody = ReadOnlyMemory<byte>
 
@@ -134,9 +132,9 @@ module private Write =
             log.Information("Esdb Sync VersionMismatch writing {EventTypes}, actual {ActualVersion}",
                 [| for x in events -> x.Type |], wr.NextExpectedVersion)
             return EsSyncResult.Conflict wr.NextExpectedVersion
-        elif wr.Status = ConditionalWriteStatus.StreamDeleted then return failwithf "Unexpected write to deleted stream %s" streamName
+        elif wr.Status = ConditionalWriteStatus.StreamDeleted then return failwith $"Unexpected write to deleted stream %s{streamName}"
         elif wr.Status = ConditionalWriteStatus.Succeeded then return EsSyncResult.Written wr
-        else return failwithf "Unexpected write response code %O" wr.Status }
+        else return failwith $"Unexpected write response code {wr.Status}" }
 
     let private eventDataBytes events =
         let eventDataLen (x: EventData) = match x.Data, x.Metadata with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
@@ -397,7 +395,7 @@ type private Category<'event, 'state, 'context>(context: EventStoreContext, code
         | None -> None
         | Some AccessStrategy.LatestKnownEvent -> Some (fun _ -> true)
         | Some (AccessStrategy.RollingSnapshots (isValid, _)) -> Some isValid
-    let fetch state f = task { let! struct (token', events) = f in return struct (token', fold state (Seq.ofArray events)) }
+    let fetch state f = task { let! struct (token', events) = f in return struct (token', fold state events) }
     let reload (log, sn, leader, token, state) ct = fetch state (context.Reload(log, sn, leader, token, tryDecode, compactionPredicate, ct))
     interface Caching.IReloadable<'state> with member _.Reload(log, sn, leader, token, state, ct) = reload (log, sn, leader, token, state) ct
     interface ICategory<'event, 'state, 'context> with

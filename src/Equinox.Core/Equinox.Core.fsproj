@@ -6,9 +6,9 @@
 
   <ItemGroup>
     <Compile Include="Tracing.fs" />
+    <Compile Include="Infrastructure.fs" />
     <Compile Include="Category.fs" />
     <Compile Include="StopwatchInterval.fs" />
-    <Compile Include="Infrastructure.fs" />
     <Compile Include="AsyncCacheCell.fs" />
     <Compile Include="Cache.fs" />
     <Compile Include="Caching.fs" />

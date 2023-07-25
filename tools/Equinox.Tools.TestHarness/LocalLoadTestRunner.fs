@@ -16,7 +16,7 @@ module Local =
     /// <param name="errorCutoff">Number of errors after which the load test should be automatically aborted.</param>
     /// <param name="duration">Duration of the load test.</param>
     /// <param name="sessionFactoryFactory">Asynchronous session factory. Responsible for obtaining a context for running a single test. Sessions may be reused for multiple test runs, but never concurrently.</param>
-    /// <param name="executeSingleIteration">Load test runner lambda. Performs the actual load test given a session context. Values are treated are succesful test runs, exceptions are treated as failed runs.</param>
+    /// <param name="executeSingleIteration">Load test runner lambda. Performs the actual load test given a session context. Values are treated are successful test runs, exceptions are treated as failed runs.</param>
     let runLoadTest (log : ILogger) (aggregationIntervals : TimeSpan[])
                     (targetTestsPerSecond : int) (errorCutoff : int64) (duration : TimeSpan)
                     (sessionFactoryFactory : Async<Async<'Session>>)
@@ -37,7 +37,7 @@ module Local =
         // subscribe aggregate logging
         for agg in aggregates do agg |> Observable.logAggregate log |> ignore
         // subscribe aggregate collector
-        let aggregateQ = new ConcurrentQueue<Envelope<TestResultAggregate>>()
+        let aggregateQ = ConcurrentQueue<Envelope<TestResultAggregate>>()
         for agg in aggregates do agg |> Observable.subscribe aggregateQ.Enqueue |> ignore
 
         // start test, await completion, return aggregates

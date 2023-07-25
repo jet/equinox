@@ -3,8 +3,6 @@
 open Equinox.Core
 open Swensen.Unquote
 open System
-open System.Threading
-open System.Threading.Tasks
 open Xunit
 
 [<Fact>]

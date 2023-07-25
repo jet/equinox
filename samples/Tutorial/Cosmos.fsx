@@ -59,9 +59,9 @@ module Favorites =
         type State = string list
         let initial : State = []
         let evolve state = function
-            | Events.Added {sku = sku } -> sku :: state
-            | Events.Removed {sku = sku } -> state |> List.filter (fun x -> x <> sku)
-        let fold s xs = Seq.fold evolve s xs
+            | Events.Added { sku = sku } -> sku :: state
+            | Events.Removed { sku = sku } -> state |> List.filter (fun x -> x <> sku)
+        let fold s xs = Array.fold evolve s xs
 
     type Command =
         | Add of string

@@ -25,28 +25,27 @@ module Events =
 module Fold =
     type State = { items: Events.Todo list; nextId: int }
     let initial = { items = []; nextId = 0 }
-    let evolve s e =
-        match e with
+    let evolve s = function
         | Events.Added item ->    { s with items = item :: s.items; nextId = s.nextId + 1 }
         | Events.Updated value -> { s with items = s.items |> List.map (function { id = id } when id = value.id -> value | item -> item) }
         | Events.Deleted          { id=id } -> { s with items = s.items  |> List.filter (fun x -> x.id <> id) }
         | Events.Cleared ->       { s with items = [] }
         | Events.Snapshotted      { items = items } -> { s with items = List.ofArray items }
-    let fold: State -> Events.Event seq -> State = Seq.fold evolve
+    let fold = Array.fold evolve
     let isOrigin = function Events.Cleared | Events.Snapshotted _ -> true | _ -> false
     let snapshot state = Events.Snapshotted { items = Array.ofList state.items }
 
 type Command = Add of Events.Todo | Update of Events.Todo | Delete of id: int | Clear
 
-let interpret c (state: Fold.State) =
+let interpret c (state: Fold.State) = [|
     match c with
-    | Add value -> [Events.Added { value with id = state.nextId }]
+    | Add value -> Events.Added { value with id = state.nextId }
     | Update value ->
         match state.items |> List.tryFind (function { id = id } -> id = value.id) with
-        | Some current when current <> value -> [Events.Updated value]
-        | _ -> []
-    | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Events.Deleted {id=id}] else []
-    | Clear -> if state.items |> List.isEmpty then [] else [Events.Cleared]
+        | Some current when current <> value -> Events.Updated value
+        | _ -> ()
+    | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then Events.Deleted { id = id }
+    | Clear -> if state.items |> List.isEmpty |> not then Events.Cleared |]
 
 type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 

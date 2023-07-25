@@ -35,14 +35,14 @@ let initial : State = []
 let evolve state = function
     | Added sku -> sku :: state
     | Removed sku -> state |> List.filter (fun x -> x <> sku)
-let fold s xs = Seq.fold evolve s xs
+let fold s xs = Array.fold evolve s xs
 
 (* With the basic Events and `fold` defined, we have enough to build the state from the Events:- *)
 
 let initialState = initial
 //val initialState : string list = []
 
-let favesCba = fold initialState [Added "a"; Added "b"; Added "c"]
+let favesCba = fold initialState [| Added "a"; Added "b"; Added "c" |]
 //val favesCba : string list = ["c"; "b"; "a"]
 
 (*

@@ -36,7 +36,7 @@ type TestResultAggregate with
                 avg = ArrayStatistics.Mean sortedLatencies |> TimeSpan.FromMilliseconds
                 stddev =
                     let stdDev = ArrayStatistics.StandardDeviation sortedLatencies
-                    // stdev of singletons is NaN
+                    // stddev of singletons is NaN
                     if Double.IsNaN stdDev then None else TimeSpan.FromMilliseconds stdDev |> Some
 
                 min = SortedArrayStatistics.Minimum sortedLatencies |> TimeSpan.FromMilliseconds
@@ -55,7 +55,7 @@ type TestResultAggregate with
         }
 
     static member Render(e: Envelope<TestResultAggregate>) =
-        let sb = new StringBuilder()
+        let sb = StringBuilder()
 
         let renderOutcome (sb:StringBuilder) (kvs: OutcomeDistribution) =
             for k,v in kvs |> Seq.sortBy fst do sb.Appendf " %s=%d" k.Id v

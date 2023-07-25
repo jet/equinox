@@ -50,7 +50,7 @@ let evolve state event =
 
 (* Fold is folding the evolve function over all events to get the current state
    It's equivalent to LINQ's Aggregate function *)
-let fold state events = Seq.fold evolve state events
+let fold state events = Array.fold evolve state events
 
 (* Commands are the things we intend to happen, though they may not*)
 type Command =

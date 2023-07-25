@@ -5,8 +5,6 @@ open EventStore.ClientAPI
 open Serilog // NB must shadow EventStore.ClientAPI.ILogger
 open System
 open System.Collections.Generic
-open System.Threading
-open System.Threading.Tasks
 
 type EventBody = ReadOnlyMemory<byte>
 
@@ -454,7 +452,7 @@ type private Category<'event, 'state, 'context>(context: EventStoreContext, code
         | None -> None
         | Some AccessStrategy.LatestKnownEvent -> Some (fun _ -> true)
         | Some (AccessStrategy.RollingSnapshots (isValid, _)) -> Some isValid
-    let fetch state f = task { let! token', events = f in return struct (token', fold state (Seq.ofArray events)) }
+    let fetch state f = task { let! token', events = f in return struct (token', fold state events) }
     let reload (log, sn, leader, token, state) = fetch state (context.Reload(log, sn, leader, token, tryDecode, compactionPredicate))
     interface ICategory<'event, 'state, 'context> with
         member _.Empty = context.TokenEmpty, initial

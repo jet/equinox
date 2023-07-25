@@ -86,25 +86,25 @@ type private Index(state: Events.Item seq) =
         this.DoesNotAlreadyContainSameOrMoreRecent item.dateSaved item.skuId
 
 // yields true if the command was executed, false if it would have breached the invariants
-let decide (maxSavedItems: int) (cmd: Command) (state: Fold.State): bool * Events.Event list =
+let decide (maxSavedItems: int) (cmd: Command) (state: Fold.State): bool * Events.Event[] =
     let validateAgainstInvariants events =
-        if Fold.proposedEventsWouldExceedLimit maxSavedItems events state then false, []
+        if Fold.proposedEventsWouldExceedLimit maxSavedItems events state then false, [||]
         else true, events
     match cmd with
     | Merge merges ->
         let net = merges |> Array.filter (Index state).DoesNotAlreadyContainItem
-        if Array.isEmpty net then true, []
-        else validateAgainstInvariants [ Events.Merged { items = net } ]
+        if Array.isEmpty net then true, [||]
+        else validateAgainstInvariants [| Events.Merged { items = net } |]
     | Remove skuIds ->
         let content = seq { for item in state -> item.skuId } |> set
         let net = skuIds |> Array.filter content.Contains
-        if Array.isEmpty net then true, []
-        else true, [ Events.Removed { skus = net } ]
+        if Array.isEmpty net then true, [||]
+        else true, [| Events.Removed { skus = net } |]
     | Add (dateSaved, skus) ->
         let index = Index state
         let net = skus |> Array.filter (index.DoesNotAlreadyContainSameOrMoreRecent dateSaved)
-        if Array.isEmpty net then true, []
-        else validateAgainstInvariants [ Events.Added { skus = net ; dateSaved = dateSaved } ]
+        if Array.isEmpty net then true, [||]
+        else validateAgainstInvariants [| Events.Added { skus = net ; dateSaved = dateSaved } |]
 
 type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>, maxSavedItems) =
 

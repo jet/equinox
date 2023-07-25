@@ -348,7 +348,7 @@ module Fold =
     let evolve state = function
         | Events.X -> (state update)
         | Events.Y -> (state update)
-    let fold events = Seq.fold evolve events
+    let fold = Array.fold evolve
 
     (* Storage Model helpers *)
 
@@ -472,7 +472,7 @@ events on a given category of stream:
   [Null Object Pattern](https://en.wikipedia.org/wiki/Null_object_pattern),
   [Identity element](https://en.wikipedia.org/wiki/Identity_element)
 
-- `fold : 'state -> 'event seq -> 'state`: function used to fold one or more
+- `fold : 'state -> 'event[] -> 'state`: function used to fold one or more
   loaded (or proposed) events (real ones and/or unfolded ones) into a given
   running
   [persistent data structure](https://en.wikipedia.org/wiki/Persistent_data_structure)
@@ -567,7 +567,7 @@ let evolve state = function
     | Snapshotted items -> List.ofArray items
     | Added item -> item :: state
     | Removed id -> state |> List.filter (is id)
-let fold state = Seq.fold evolve state
+let fold = Array.fold evolve
 
 (*
  * Decision Processing to translate a Command's intent to Events that would
@@ -743,11 +743,11 @@ type Event =
     | Added of string
     | Removed of string
 
-let initial : string list = []
+let initial: string list = []
 let evolve state = function
     | Added sku -> sku :: state
     | Removed sku -> state |> List.filter (fun x -> x <> sku)
-let fold s xs = Seq.fold evolve s xs
+let fold = Array.fold evolve
 ```
 
 Events are represented as an F# Discriminated Union; see the [article on the
@@ -986,7 +986,7 @@ let evolve s = function
     | Deleted id -> { s with items = s.items |> List.filter (fun x -> x.id <> id) }
     | Cleared -> { s with items = [] }
     | Snapshotted items -> { s with items = List.ofArray items }
-let fold : State -> Events.Event seq -> State = Seq.fold evolve
+let fold = Array.fold evolve
 let isOrigin = function Cleared | Snapshotted _ -> true | _ -> false
 let snapshot state = Snapshotted (Array.ofList state.items)
 ```
@@ -1302,19 +1302,21 @@ There's an example of such a case in the
 [Cart's Domain Service](https://github.com/jet/equinox/blob/master/samples/Store/Domain/Cart.fs#L128):
 
 ```fsharp
-let interpretMany fold interpreters (state : 'state) : 'state * 'event list =
-    ((state,[]),interpreters)
-    ||> Seq.fold (fun (state : 'state, acc : 'event list) interpret ->
-        let events = interpret state
-        let state' = fold state events
-        state', acc @ events)
+let interpretMany fold interpreters (state: 'state): 'state * 'event[] =
+    let mutable state = state
+    let events = [|
+        for interpret in interpreters do
+            let events = interpret state
+            yield! events
+            state <- fold state events |]
+    state, events
 
-type Service internal (resolve : CartId -> Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (resolve: CartId -> Equinox.Decider<Events.Event, Fold.State>) =
 
     member _.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
         let decider = resolve cartId
         let opt = if optimistic then Equinox.AnyCachedValue else Equinox.RequireLoad
-        decider.Transact(fun state -> async {
+        decider.TransactAsync(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
             return interpretMany Fold.fold (Seq.map interpret commands) state }, opt)
 ```
@@ -1337,13 +1339,13 @@ first)
 ```fsharp
 /// Maintains a rolling folded State while Accumulating Events pended as part
 /// of a decision flow
-type Accumulator<'event, 'state>(fold : 'state -> 'event seq -> 'state, originState : 'state) =
+type Accumulator<'event, 'state>(fold : 'state -> 'event[] -> 'state, originState : 'state) =
     let accumulated = ResizeArray<'event>()
 
     /// The Events that have thus far been pended via the `decide` functions
     /// `Execute`/`Decide`d during the course of this flow
-    member _.Accumulated : 'event list =
-        accumulated |> List.ofSeq
+    member _.Accumulated : 'event[] =
+        accumulated.ToArray()
 
     /// The current folded State, based on the Stream's `originState` + any
     /// events that have been Accumulated during the the decision flow
@@ -1352,22 +1354,22 @@ type Accumulator<'event, 'state>(fold : 'state -> 'event seq -> 'state, originSt
 
     /// Invoke a decision function, gathering the events (if any) that it
     /// decides are necessary into the `Accumulated` sequence
-    member x.Transact(interpret : 'state -> 'event list) : unit =
+    member x.Transact(interpret : 'state -> 'event[]) : unit =
         interpret x.State |> accumulated.AddRange
     /// Invoke an Async decision function, gathering the events (if any) that
     /// it decides are necessary into the `Accumulated` sequence
-    member x.Transact(interpret : 'state -> Async<'event list>) : Async<unit> = async {
+    member x.Transact(interpret : 'state -> Async<'event[]>) : Async<unit> = async {
         let! events = interpret x.State
         accumulated.AddRange events }
     /// Invoke a decision function, while also propagating a result yielded as
     /// the fst of an (result, events) pair
-    member x.Transact(decide : 'state -> 'result * 'event list) : 'result =
+    member x.Transact(decide : 'state -> 'result * 'event[]) : 'result =
         let result, newEvents = decide x.State
         accumulated.AddRange newEvents
         result
     /// Invoke a decision function, while also propagating a result yielded as
     /// the fst of an (result, events) pair
-    member x.Transact(decide : 'state -> Async<'result * 'event list>) : Async<'result> = async {
+    member x.Transact(decide : 'state -> Async<'result * 'event[]>) : Async<'result> = async {
         let! result, newEvents = decide x.State
         accumulated.AddRange newEvents
         return result }

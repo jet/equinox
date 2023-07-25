@@ -54,7 +54,7 @@ let evolve s (e : Event) =
     | Deleted { id=id } -> { s with items = s.items |> List.filter (fun x -> x.id <> id) }
     | Cleared -> { s with items = [] }
     | Snapshotted { items=items } -> { s with items = List.ofArray items }
-let fold : State -> Event seq -> State = Seq.fold evolve
+let fold = Array.fold evolve
 let isOrigin = function Cleared | Snapshotted _ -> true | _ -> false
 let snapshot state = Snapshotted { items = Array.ofList state.items }
 
