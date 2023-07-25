@@ -416,9 +416,9 @@ type private Category<'event, 'state, 'context>(context: EventStoreContext, code
             | GatewaySyncResult.Written token' ->    return SyncResult.Written  (token', fold state events)
             | GatewaySyncResult.ConflictUnknown _ -> return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, streamToken, state)) }
 
-type EventStoreCategory<'event, 'state, 'context> internal (resolveInner, empty) =
-    inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
-    new(context: EventStoreContext, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial,
+type EventStoreCategory<'event, 'state, 'context> internal (name, resolveInner, empty) =
+    inherit Equinox.Category<'event, 'state, 'context>(name, resolveInner, empty)
+    new(context: EventStoreContext, name, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial,
         // Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
         // e.g., A key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
         [<O; D(null)>] ?caching,
@@ -432,7 +432,7 @@ type EventStoreCategory<'event, 'state, 'context> internal (resolveInner, empty)
         let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
         let resolveInner categoryName streamId = struct (cat, StreamName.render categoryName streamId, ValueNone)
         let empty = struct (context.TokenEmpty, initial)
-        EventStoreCategory(resolveInner, empty)
+        EventStoreCategory(name, resolveInner, empty)
 
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =

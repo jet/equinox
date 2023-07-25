@@ -411,9 +411,9 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
             FsCodec.Core.EventData.Create(rawEvent.EventType, rawEvent.Data, meta = Snapshot.meta token)
         context.StoreSnapshot(log, category, streamId, encodedWithMeta, ct)
 
-type MessageDbCategory<'event, 'state, 'context> internal (resolveInner, empty) =
-    inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
-    new(context: MessageDbContext, codec: IEventCodec<_, _, 'context>, fold, initial,
+type MessageDbCategory<'event, 'state, 'context> internal (name, resolveInner, empty) =
+    inherit Equinox.Category<'event, 'state, 'context>(name, resolveInner, empty)
+    new(context: MessageDbContext, name, codec: IEventCodec<_, _, 'context>, fold, initial,
         // For MessageDb, caching is less critical than it is for e.g. CosmosDB
         // As such, it can often be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
         [<O; D(null)>]?caching,
@@ -421,4 +421,4 @@ type MessageDbCategory<'event, 'state, 'context> internal (resolveInner, empty) 
         let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
         let resolveInner categoryName streamId = struct (cat, StreamName.render categoryName streamId, ValueNone)
         let empty = struct (context.TokenEmpty, initial)
-        MessageDbCategory(resolveInner, empty)
+        MessageDbCategory(name, resolveInner, empty)

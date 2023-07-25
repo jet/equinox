@@ -87,10 +87,10 @@ type private Category<'event, 'state, 'context, 'Format>(store: VolatileStore<'F
                     return struct (token', fold state (conflictingEvents |> Seq.skip eventCount |> Seq.chooseV codec.TryDecode)) }
                 return SyncResult.Conflict resync }
 
-type MemoryStoreCategory<'event, 'state, 'Format, 'context> internal (resolveInner, empty) =
-    inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
-    new(store: VolatileStore<'Format>, codec: FsCodec.IEventCodec<'event, 'Format, 'context>, fold, initial) =
+type MemoryStoreCategory<'event, 'state, 'Format, 'context> internal (categoryName, resolveInner, empty) =
+    inherit Equinox.Category<'event, 'state, 'context>(categoryName, resolveInner, empty)
+    new(store: VolatileStore<'Format>, name: string, codec: FsCodec.IEventCodec<'event, 'Format, 'context>, fold, initial) =
         let impl = Category<'event, 'state, 'context, 'Format>(store, codec, fold, initial) :> ICategory<_, _, _>
-        let resolveInner categoryName streamId = struct (impl, StreamName.render categoryName streamId, ValueNone)
+        let resolveStream categoryName streamId = struct (impl, StreamName.render categoryName streamId, ValueNone)
         let empty = struct (Token.ofEmpty, initial)
-        MemoryStoreCategory(resolveInner, empty)
+        MemoryStoreCategory(name, resolveStream, empty)

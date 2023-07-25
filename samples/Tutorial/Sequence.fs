@@ -36,24 +36,22 @@ type Service internal (resolve : SequenceId -> Equinox.Decider<Events.Event, Fol
         let decider = resolve series
         decider.Transact(decideReserve (defaultArg count 1))
 
-let create resolve = Service(streamId >> resolve Category)
+let create cat = Service(streamId >> Equinox.Decider.forStream (Serilog.Log.ForContext<Service>()) cat)
 
 module Cosmos =
 
     open Equinox.CosmosStore
     let private create (context, cache, accessStrategy) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-        |> Equinox.Decider.resolve (Serilog.Log.ForContext<Service>())
-        |> create
+        CosmosStoreCategory(context, Category, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
 
     module LatestKnownEvent =
 
-        let create (context,cache) =
+        let category (context, cache) =
             let accessStrategy = AccessStrategy.LatestKnownEvent
-            create (context,cache,accessStrategy)
+            create (context, cache, accessStrategy)
 
     module RollingUnfolds =
 
-        let create (context,cache) =
-            create (context,cache,AccessStrategy.RollingState Fold.snapshot)
+        let category (context, cache) =
+            create (context, cache, AccessStrategy.RollingState Fold.snapshot)

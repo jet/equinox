@@ -79,4 +79,4 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
         decider.TransactEx((fun c -> (), decideUnfavorite sku c.State), fun () c -> c.Version)
 
 let create resolve =
-    Service(streamId >> resolve Category)
+    Service(streamId >> resolve)

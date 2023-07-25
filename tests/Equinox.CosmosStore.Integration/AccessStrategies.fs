@@ -14,20 +14,20 @@ open Xunit
 [<AutoOpen>]
 module WiringHelpers =
 
-    let private createCategoryUncached codec initial fold accessStrategy context =
+    let private createCategoryUncached name codec initial fold accessStrategy context =
         let noCachingCacheStrategy = CachingStrategy.NoCaching
-        StoreCategory(context, codec, fold, initial, noCachingCacheStrategy, accessStrategy)
-    let private createCategory codec initial fold accessStrategy (context, cache) =
+        StoreCategory(context, name, codec, fold, initial, noCachingCacheStrategy, accessStrategy)
+    let private createCategory name codec initial fold accessStrategy (context, cache) =
         let sliding20mCacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        StoreCategory(context, codec, fold, initial, sliding20mCacheStrategy, accessStrategy)
+        StoreCategory(context, name, codec, fold, initial, sliding20mCacheStrategy, accessStrategy)
 
-    let createCategoryUnoptimizedUncached codec initial fold context =
+    let createCategoryUnoptimizedUncached name codec initial fold context =
         let accessStrategy = AccessStrategy.Unoptimized
-        createCategoryUncached codec initial fold accessStrategy context
+        createCategoryUncached name codec initial fold accessStrategy context
 
-    let createCategoryUnoptimized codec initial fold (context, cache) =
+    let createCategoryUnoptimized name codec initial fold (context, cache) =
         let accessStrategy = AccessStrategy.Unoptimized
-        createCategory codec initial fold accessStrategy (context, cache)
+        createCategory name codec initial fold accessStrategy (context, cache)
 
 /// Test Aggregation used to validate that the reading logic in Equinox.CosmosStore correctly reads, deserializes and folds the events
 /// This is especially relevant when events are spread between a Tip page and preceding pages as the Tip reading logic is special cased compared to querying
@@ -71,14 +71,14 @@ module SequenceCheck =
             decider.Transact(decide (value, count), id)
 
     let private create resolve =
-        Service(streamId >> resolve Category)
+        Service(streamId >> resolve)
 
     module Config =
 
         let createUncached log context =
-            createCategoryUnoptimizedUncached Events.codec Fold.initial Fold.fold context |> Equinox.Decider.resolve log |> create
+            createCategoryUnoptimizedUncached Category Events.codec Fold.initial Fold.fold context |> Equinox.Decider.forStream log |> create
         let create log (context, cache) =
-            createCategoryUnoptimized Events.codec Fold.initial Fold.fold (context, cache) |> Equinox.Decider.resolve log |> create
+            createCategoryUnoptimized Category Events.codec Fold.initial Fold.fold (context, cache) |> Equinox.Decider.forStream log |> create
 
 module Props =
     open FsCheck

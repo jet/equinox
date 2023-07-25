@@ -449,9 +449,9 @@ type private Category<'event, 'state, 'context>(context: SqlStreamStoreContext, 
             | GatewaySyncResult.ConflictUnknown -> return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, streamToken, state)) }
     interface Caching.IReloadable<'state> with member _.Reload(log, sn, leader, token, state, ct) = reload (log, sn, leader, token, state) ct
 
-type SqlStreamStoreCategory<'event, 'state, 'context> internal (resolveInner, empty) =
-    inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
-    new(context: SqlStreamStoreContext, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial,
+type SqlStreamStoreCategory<'event, 'state, 'context> internal (name, resolveInner, empty) =
+    inherit Equinox.Category<'event, 'state, 'context>(name, resolveInner, empty)
+    new(context: SqlStreamStoreContext, name, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial,
         // For SqlStreamStore, caching is less critical than it is for e.g. CosmosDB
         // As such, it can often be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
         [<O; D(null)>]?caching,
@@ -465,7 +465,7 @@ type SqlStreamStoreCategory<'event, 'state, 'context> internal (resolveInner, em
         let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
         let resolveInner categoryName streamId = struct (cat, StreamName.render categoryName streamId, ValueNone)
         let empty = struct (context.TokenEmpty, initial)
-        SqlStreamStoreCategory(resolveInner, empty)
+        SqlStreamStoreCategory(name, resolveInner, empty)
 
 [<AbstractClass>]
 type ConnectorBase([<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =

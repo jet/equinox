@@ -473,9 +473,9 @@ type private Category<'event, 'state, 'context>(context: EventStoreContext, code
             | GatewaySyncResult.ConflictUnknown _ -> return SyncResult.Conflict (fun _ct -> reload (log, streamName, true, streamToken, state)) }
     interface Caching.IReloadable<'state> with member _.Reload(log, sn, leader, token, state, _ct) = reload (log, sn, leader, token, state)
 
-type EventStoreCategory<'event, 'state, 'context> internal (resolveInner, empty) =
-    inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
-    new(context: EventStoreContext, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial,
+type EventStoreCategory<'event, 'state, 'context> internal (name, resolveInner, empty) =
+    inherit Equinox.Category<'event, 'state, 'context>(name, resolveInner, empty)
+    new(context: EventStoreContext, name, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial,
         // Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
         // e.g., A key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
         [<O; D(null)>] ?caching,
@@ -489,7 +489,7 @@ type EventStoreCategory<'event, 'state, 'context> internal (resolveInner, empty)
         let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
         let resolveInner categoryName streamId = struct (cat, StreamName.render categoryName streamId, ValueNone)
         let empty = struct (context.TokenEmpty, initial)
-        EventStoreCategory(resolveInner, empty)
+        EventStoreCategory(name, resolveInner, empty)
 
 type private SerilogAdapter(log: ILogger) =
     interface EventStore.ClientAPI.ILogger with

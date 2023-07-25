@@ -60,4 +60,4 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
         decider.Query(id, Equinox.AnyCachedValue)
 
 let create resolve =
-    Service(streamId >> resolve Category)
+    Service(streamId >> resolve)

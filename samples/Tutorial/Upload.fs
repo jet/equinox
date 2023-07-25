@@ -52,18 +52,16 @@ type Service internal (resolve : CompanyId * PurchaseOrderId -> Equinox.Decider<
         let decider = resolve (companyId, purchaseOrderId)
         decider.Transact(decide value)
 
-let create resolve = Service(streamId >> resolve Category)
+let create cat = Service(streamId >> Equinox.Decider.forStream Serilog.Log.Logger cat)
 
 module Cosmos =
 
     open Equinox.CosmosStore
-    let create (context,cache) =
+    let category (context, cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        CosmosStoreCategory(context, Events.codecJe, Fold.fold, Fold.initial, cacheStrategy, AccessStrategy.LatestKnownEvent)
-        |> Equinox.Decider.resolve Serilog.Log.Logger |> create
+        CosmosStoreCategory(context, Category, Events.codecJe, Fold.fold, Fold.initial, cacheStrategy, AccessStrategy.LatestKnownEvent)
 
 module EventStore =
     open Equinox.EventStoreDb
-    let create context =
-        EventStoreCategory(context, Events.codec, Fold.fold, Fold.initial, access=AccessStrategy.LatestKnownEvent)
-        |> Equinox.Decider.resolve Serilog.Log.Logger |> create
+    let category context =
+        EventStoreCategory(context, Category, Events.codec, Fold.fold, Fold.initial, access = AccessStrategy.LatestKnownEvent)

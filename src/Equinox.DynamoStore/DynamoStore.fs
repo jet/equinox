@@ -1318,9 +1318,9 @@ type AccessStrategy<'event, 'state> =
     /// </remarks>
     | Custom of isOrigin: ('event -> bool) * transmute: ('event[] -> 'state -> 'event[] * 'event[])
 
-type DynamoStoreCategory<'event, 'state, 'context>(resolveInner, empty) =
-    inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
-    new(context: DynamoStoreContext, codec, fold, initial, caching, access) =
+type DynamoStoreCategory<'event, 'state, 'context>(name, resolveInner, empty) =
+    inherit Equinox.Category<'event, 'state, 'context>(name, resolveInner, empty)
+    new(context: DynamoStoreContext, name, codec, fold, initial, caching, access) =
         let isOrigin, checkUnfolds, mapUnfolds =
             match access with
             | AccessStrategy.Unoptimized ->                      (fun _ -> false), false, Choice1Of3 ()
@@ -1343,7 +1343,7 @@ type DynamoStoreCategory<'event, 'state, 'context>(resolveInner, empty) =
             let struct (container, streamName) = context.ResolveContainerClientAndStreamName(categoryName, streamId)
             struct (resolveCategory (categoryName, container), streamName, ValueNone)
         let empty = struct (Token.empty, initial)
-        DynamoStoreCategory(resolveInner, empty)
+        DynamoStoreCategory(name, resolveInner, empty)
 
 module Exceptions =
 

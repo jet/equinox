@@ -44,14 +44,14 @@ type Arguments =
             | Dump _ ->                     "Load and show events in a specified stream (supports all stores)."
 and [<NoComparison; NoEquality>] InitParameters =
     | [<AltCommandLine "-ru"; Unique>]      Rus of int
-    | [<AltCommandLine "-A"; Unique>]       Autoscale
+    | [<AltCommandLine "-A"; Unique>]       AutoScale
     | [<AltCommandLine "-m"; Unique>]       Mode of CosmosModeType
     | [<AltCommandLine "-P"; Unique>]       SkipStoredProc
     | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Store.Cosmos.Parameters>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Rus _ ->                      "Specify RU/s level to provision (Not applicable for Serverless Mode; Default: 400 RU/s for Container/Database; Default: Max 4000 RU/s for Container/Database when Autoscale specified)."
-            | Autoscale ->                  "Autoscale provisioned throughput. Use --rus to specify the maximum RU/s."
+            | AutoScale ->                  "Autoscale provisioned throughput. Use --rus to specify the maximum RU/s."
             | Mode _ ->                     "Configure RU mode to use Container-level RU, Database-level RU, or Serverless allocations (Default: Use Container-level allocation)."
             | SkipStoredProc ->             "Inhibit creation of stored procedure in specified Container."
             | Cosmos _ ->                   "Cosmos Connection parameters."
@@ -60,7 +60,7 @@ and CosmosInitArguments(p : ParseResults<InitParameters>) =
     let rusOrDefault value = p.GetResult(Rus, value)
     let throughput auto = if auto then CosmosInit.Throughput.Autoscale (rusOrDefault 4000) else CosmosInit.Throughput.Manual (rusOrDefault 400)
     member val ProvisioningMode =
-        match p.GetResult(Mode, CosmosModeType.Container), p.Contains Autoscale with
+        match p.GetResult(Mode, CosmosModeType.Container), p.Contains AutoScale with
         | CosmosModeType.Container, auto -> CosmosInit.Provisioning.Container (throughput auto)
         | CosmosModeType.Db, auto ->        CosmosInit.Provisioning.Database (throughput auto)
         | CosmosModeType.Serverless, auto when auto || p.Contains Rus -> Store.missingArg "Cannot specify RU/s or Autoscale in Serverless mode"
@@ -506,8 +506,9 @@ module Dump =
                      else $"(%d{s.Length} chars)"
                  with e -> log.Warning(e, "UTF-8 Parse failure - use --Blobs option to inhibit"); reraise()
         let dumpEvents (streamName : FsCodec.StreamName) = async {
-            let resolve = store.Category(idCodec, fold, initial, isOriginAndSnapshot) |> Equinox.Decider.resolve storeLog
-            let decider = let struct (cat, sid) = FsCodec.StreamName.splitCategoryAndStreamId streamName in resolve cat (UMX.tag sid)
+            let struct (categoryName, sid) = FsCodec.StreamName.splitCategoryAndStreamId streamName
+            let cat = store.Category(categoryName, idCodec, fold, initial, isOriginAndSnapshot)
+            let decider = Equinox.Decider.forStream storeLog cat (UMX.tag sid)
             let! streamBytes, events = decider.QueryEx(fun c -> c.StreamEventBytes, c.State)
             let mutable prevTs = None
             for x in events |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do

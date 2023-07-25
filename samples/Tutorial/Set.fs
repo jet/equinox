@@ -46,20 +46,18 @@ type Service internal (decider: Equinox.Decider<Events.Event, Fold.State>) =
     member _.Read() : Async<Set<string>> =
         decider.Query id
 
-let create resolve setId =
-    Service(streamId setId |> resolve Category)
+let create setId cat =
+    Service(streamId setId |> Equinox.Decider.forStream Serilog.Log.Logger cat)
 
 module Cosmos =
 
     open Equinox.CosmosStore
-    let create (context, cache) =
+    let category (context, cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         let accessStrategy = AccessStrategy.RollingState Fold.snapshot
-        CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-        |> Equinox.Decider.resolve Serilog.Log.Logger |> create
+        CosmosStoreCategory(context, Category, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
 
 module MemoryStore =
 
-    let create store =
-        Equinox.MemoryStore.MemoryStoreCategory(store, Events.codec, Fold.fold, Fold.initial)
-        |> Equinox.Decider.resolve Serilog.Log.Logger |> create
+    let category store =
+        Equinox.MemoryStore.MemoryStoreCategory(store, Category, Events.codec, Fold.fold, Fold.initial)

@@ -1366,9 +1366,9 @@ type AccessStrategy<'event, 'state> =
     /// </remarks>
     | Custom of isOrigin: ('event -> bool) * transmute: ('event[] -> 'state -> 'event[] * 'event[])
 
-type CosmosStoreCategory<'event, 'state, 'context> internal (resolveInner, empty) =
-    inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
-    new(context: CosmosStoreContext, codec, fold, initial, caching, access,
+type CosmosStoreCategory<'event, 'state, 'context> internal (name, resolveInner, empty) =
+    inherit Equinox.Category<'event, 'state, 'context>(name, resolveInner, empty)
+    new(context: CosmosStoreContext, name, codec, fold, initial, caching, access,
         // Compress Unfolds in Tip. Default: <c>true</c>.
         // NOTE when set to <c>false</c>, requires Equinox.CosmosStore or Equinox.Cosmos Version >= 2.3.0 to be able to read
         [<O; D null>] ?compressUnfolds) =
@@ -1395,7 +1395,7 @@ type CosmosStoreCategory<'event, 'state, 'context> internal (resolveInner, empty
             let struct (container, streamName, maybeContainerInitializationGate) = context.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId)
             struct (resolveCategory (categoryName, container), streamName, maybeContainerInitializationGate)
         let empty = struct (Token.create Position.fromKnownEmpty, initial)
-        CosmosStoreCategory(resolveInner, empty)
+        CosmosStoreCategory(name, resolveInner, empty)
 
 namespace Equinox.CosmosStore.Core
 
