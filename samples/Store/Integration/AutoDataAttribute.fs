@@ -2,6 +2,22 @@
 
 open System
 
+open Domain
+open FsCheck.FSharp
+open FSharp.UMX
+
+module Arb =
+    let generate<'t> = ArbMap.defaults |> ArbMap.generate<'t>
+
+type FsCheckGenerators =
+    static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen
+    static member ContactPreferencesId =
+        Arb.generate<Guid>
+        |> Gen.map (fun x -> sprintf "%s@test.com" (x.ToString("N")))
+        |> Gen.map ContactPreferences.ClientId
+        |> Arb.fromGen
+    static member RequestId = Arb.generate<Guid> |> Gen.map (fun x -> RequestId.parse %x) |> Arb.fromGen
+
 type AutoDataAttribute() =
     inherit FsCheck.Xunit.PropertyAttribute(Arbitrary = [|typeof<FsCheckGenerators>|], MaxTest = 1, QuietOnSuccess = true)
 

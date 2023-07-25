@@ -1,76 +1,23 @@
-﻿module Equinox.Store.Integration.StoreIntegration
+module Equinox.MessageDb.Integration.MessageDbIntegration
 
-open Domain
-open FSharp.UMX
-open Serilog
-open Swensen.Unquote
 open System.Threading
+open Domain
+open Equinox.Core.Tracing
+open FSharp.UMX
+open Swensen.Unquote
+open System.Diagnostics
 open System
 
 let defaultBatchSize = 500
 
-#if STORE_POSTGRES
-open Equinox.SqlStreamStore
-open Equinox.SqlStreamStore.Postgres
+open Equinox.MessageDb
 
-let connectToLocalStore (_: ILogger) =
-    Connector("Host=localhost;Username=postgres;password=postgres;database=postgres",autoCreate=true).Establish()
-
-type Context = SqlStreamStoreContext
-type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
-#endif
-#if STORE_MSSQL
-open Equinox.SqlStreamStore
-open Equinox.SqlStreamStore.MsSql
-
-let connectToLocalStore (_: ILogger) =
-    Connector("Server=localhost,1433;User=sa;Password=mssql1Ipw;Database=EQUINOX_TEST_DB", autoCreate = true).Establish()
-
-(* WORKAROUND FOR https://github.com/microsoft/mssql-docker/issues/2#issuecomment-1059819719
-AFTER `docker compose up`, run `bash docker-compose-mssql.sh` *)
-
-type Context = SqlStreamStoreContext
-type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
-#endif
-#if STORE_MYSQL
-open Equinox.SqlStreamStore
-open Equinox.SqlStreamStore.MySql
-
-let connectToLocalStore (_: ILogger) =
-    Connector(sprintf "Server=localhost;User=root;Database=EQUINOX_TEST_DB",autoCreate=true).Establish()
-
-type Context = SqlStreamStoreContext
-type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
-#endif
-#if STORE_EVENTSTOREDB
-open Equinox.EventStoreDb
-
-/// Connect directly to a locally running EventStoreDB Node using gRPC, without using Gossip-driven discovery
-let connectToLocalStore (_log: ILogger) = async {
-    let c = EventStoreConnector(reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, (*, log=Logger.SerilogVerbose log,*) tags=["I",Guid.NewGuid() |> string])
-    let conn = c.Establish("Equinox-integration", Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false", ConnectionStrategy.ClusterSingle EventStore.Client.NodePreference.Leader)
-    return conn }
-#endif
-#if STORE_EVENTSTORE_LEGACY
-open Equinox.EventStore
-
-// NOTE: use `docker compose up` to establish the standard 3 node config at ports 1113/2113
-let connectToLocalStore log =
-    // NOTE: disable cert validation for this test suite. ABSOLUTELY DO NOT DO THIS FOR ANY CODE THAT WILL EVER HIT A STAGING OR PROD SERVER
-    EventStoreConnector("admin", "changeit", custom = (fun c -> c.DisableServerCertificateValidation()),
-    reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log, tags=["I",Guid.NewGuid() |> string]
-#if EVENTSTORE_NO_CLUSTER
-    // Connect directly to the locally running EventStore Node without using Gossip-driven discovery
-    ).Establish("Equinox-integration", Discovery.Uri(Uri "tcp://localhost:1113"), ConnectionStrategy.ClusterSingle NodePreference.Master)
-#else
-    // Connect directly to the locally running EventStore Node using Gossip-driven discovery
-    ).Establish("Equinox-integration", Discovery.GossipDns "localhost", ConnectionStrategy.ClusterTwinPreferSlaveReads)
-#endif
-#endif
-#if STORE_EVENTSTORE_LEGACY || STORE_EVENTSTOREDB
-type Context = EventStoreContext
-type Category<'event, 'state, 'context> = EventStoreCategory<'event, 'state, 'context>
-#endif
+let connectToLocalStore () = async {
+  let connectionString = "Host=localhost; Username=message_store; Password=; Database=message_store; Port=5432; Maximum Pool Size=10"
+  return MessageDbClient(connectionString)
+}
+type Context = MessageDbContext
+type Category<'event, 'state, 'context> = MessageDbCategory<'event, 'state, 'context>
 
 let createContext connection batchSize = Context(connection, batchSize = batchSize)
 
@@ -80,7 +27,7 @@ module SimplestThing =
         interface TypeShape.UnionContract.IUnionContract
     let codec = EventCodec.gen<Event>
 
-    let evolve (state: Event) (event: Event) = event
+    let evolve (_state: Event) (event: Event) = event
     let fold = Seq.fold evolve
     let initial = StuffHappened
     let resolve log context =
@@ -96,9 +43,9 @@ module Cart =
         |> Equinox.Decider.resolve log
         |> Cart.create
 
-    let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
-    let createServiceWithCompaction log context =
-        Category(context, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot)
+    let snapshot = Cart.Fold.snapshotEventCaseName, Cart.Fold.snapshot
+    let createServiceWithAdjacentSnapshotting log context =
+        Category(context, codec, fold, initial, access = AccessStrategy.AdjacentSnapshots snapshot)
         |> Equinox.Decider.resolve log
         |> Cart.create
 
@@ -108,9 +55,9 @@ module Cart =
         |> Equinox.Decider.resolve log
         |> Cart.create
 
-    let createServiceWithCompactionAndCaching log context cache =
+    let createServiceWithSnapshottingAndCaching log context cache =
         let sliding20m = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Category(context, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot)
+        Category(context, codec, fold, initial, sliding20m, AccessStrategy.AdjacentSnapshots snapshot)
         |> Equinox.Decider.resolve log
         |> Cart.create
 
@@ -141,21 +88,43 @@ let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service 
 let addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId service count =
     addAndThenRemoveItems true true context cartId skuId service count
 
-type GeneralTests(testOutputHelper) =
-    let output = TestContext(testOutputHelper)
+type Listener() =
+    let scope = Guid.NewGuid()
+    let v = AsyncLocal()
+    do v.Value <- scope
+    let spans = ResizeArray()
+    let listener = new ActivityListener(
+        ActivityStarted = (fun s -> if v.Value = scope then spans.Add(s)),
+        ShouldListenTo = (fun s -> s.Name = "Equinox"),
+        Sample = (fun _ -> ActivitySamplingResult.AllDataAndRecorded))
+    do ActivitySource.AddActivityListener(listener)
 
-#if STORE_EVENTSTOREDB // gRPC does not expose slice metrics
-    let sliceForward = []
-#else
-    let sliceForward = [EsAct.SliceForward]
-#endif
-    let singleBatchForward = sliceForward @ [EsAct.BatchForward]
-    let batchForwardAndAppend = singleBatchForward @ [EsAct.Append]
+    member _.Spans() = spans
+    member _.Clear() = spans.Clear()
+    member _.TestSpans(tests: _[]) =
+        let len = max tests.Length spans.Count
+        // this is funky because we want to ensure the same number of tests and spans
+        for i in 0..len - 1 do
+            tests[i] spans[i]
+        spans.Clear()
+
+    interface IDisposable with
+        member _.Dispose() = listener.Dispose()
+
+let span (m: (string * obj) list) (span: Activity) =
+    let spanDict = Map.ofList [
+        for key, _ in m do
+          key, span.GetTagItem(key)
+        "name", span.DisplayName :> obj ]
+    test <@ spanDict = Map.ofList m @>
+
+type GeneralTests() =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly batching the reads [without any optimizations]`` (ctx, skuId) = async {
-        let log, capture = output.CreateLoggerWithCapture()
-        let! connection = connectToLocalStore log
+        let log = Serilog.Log.Logger
+        use listener = new Listener()
+        let! connection = connectToLocalStore ()
 
         let batchSize = 3
         let context = createContext connection batchSize
@@ -166,10 +135,14 @@ type GeneralTests(testOutputHelper) =
         let cartId = % Guid.NewGuid()
 
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne ctx cartId skuId service addRemoveCount
-        test <@ batchForwardAndAppend = capture.ExternalCalls @>
-
-        // Restart the counting
-        capture.Clear()
+        listener.TestSpans([|
+            span([
+                "name", "Transact"
+                Tags.batches, 1
+                Tags.loaded_count, 0
+                Tags.append_count, 11
+            ])
+        |])
 
         // Validate basic operation; Key side effect: Log entries will be emitted to `capture`
         let! state = service.Read cartId
@@ -178,14 +151,17 @@ type GeneralTests(testOutputHelper) =
 
         // Need to read 4 batches to read 11 events in batches of 3
         let expectedBatches = ceil(float expectedEventCount/float batchSize) |> int
-        test <@ (List.replicate (expectedBatches-1) sliceForward |> List.concat) @ singleBatchForward = capture.ExternalCalls @>
+        listener.TestSpans([|
+            span(["name", "Query"; Tags.batches, expectedBatches; Tags.loaded_count, expectedEventCount])
+        |])
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, managing sync conflicts by retrying [without any optimizations]`` (ctx, initialState) = async {
-        let log1, capture1 = output.CreateLoggerWithCapture()
+        let log = Serilog.Log.Logger
+        use listener = new Listener()
 
-        let! connection = connectToLocalStore log1
+        let! connection = connectToLocalStore()
         // Ensure batching is included at some point in the proceedings
         let batchSize = 3
 
@@ -194,7 +170,7 @@ type GeneralTests(testOutputHelper) =
 
         // establish base stream state
         let context = createContext connection batchSize
-        let service1 = Cart.createServiceWithoutOptimization log1 context
+        let service1 = Cart.createServiceWithoutOptimization log context
         let! maybeInitialSku =
             let streamEmpty, skuId = initialState
             async {
@@ -204,7 +180,7 @@ type GeneralTests(testOutputHelper) =
                     do! addAndThenRemoveItemsManyTimesExceptTheLastOne ctx cartId skuId service1 addRemoveCount
                     return Some (skuId, addRemoveCount) }
 
-        let act prepare (service: Cart.Service) log skuId count =
+        let act prepare (service: Cart.Service) skuId count =
             service.ExecuteManyAsync(cartId, false, prepare = prepare, commands = [Cart.SyncItem (ctx, skuId, Some count, None)])
 
         let eventWaitSet () = let e = new ManualResetEvent(false) in (Async.AwaitWaitHandle e |> Async.Ignore), async { e.Set() |> ignore }
@@ -219,31 +195,31 @@ type GeneralTests(testOutputHelper) =
                 do! w0
                 do! s1
                 do! w2 }
-            do! act prepare service1 log1 sku11 11
+            do! act prepare service1 sku11 11
             // Wait for other side to load; generate conflict
             let prepare = async { do! w3 }
-            do! act prepare service1 log1 sku12 12
+            do! act prepare service1 sku12 12
             // Signal conflict generated
             do! s4 }
-        let log2, capture2 = output.CreateLoggerWithCapture()
         let context = createContext connection batchSize
-        let service2 = Cart.createServiceWithoutOptimization log2 context
+        let service2 = Cart.createServiceWithoutOptimization log context
         let t2 = async {
             // Signal we have state, wait for other to do same, engineer conflict
             let prepare = async {
                 do! s0
                 do! w1 }
-            do! act prepare service2 log2 sku21 21
+            do! act prepare service2 sku21 21
             // Signal conflict is in place
             do! s2
             // Await our conflict
             let prepare = async {
                 do! s3
                 do! w4 }
-            do! act prepare service2 log2 sku22 22 }
-        // Act: Engineer the conflicts and applications, with logging into capture1 and capture2
+            do! act prepare service2 sku22 22 }
+        // Act: Engineer the conflicts and applications
         do! Async.Parallel [t1; t2] |> Async.Ignore
 
+        let syncs = listener.Spans() |> List.ofSeq
         // Load state
         let! result = service1.Read cartId
 
@@ -252,23 +228,15 @@ type GeneralTests(testOutputHelper) =
         test <@ maybeInitialSku |> Option.forall (fun (skuId, quantity) -> has skuId quantity)
                 && has sku11 11 && has sku12 12
                 && has sku21 21 && has sku22 22 @>
-       // Intended conflicts pertained
-        let hadConflict= function EsEvent (EsAction EsAct.AppendConflict) -> Some () | _ -> None
-        test <@ [1; 1] = [for c in [capture1; capture2] -> c.ChooseCalls hadConflict |> List.length] @>
-    }
-
-#if STORE_EVENTSTOREDB // gRPC does not expose slice metrics
-    let sliceBackward = []
-#else
-    let sliceBackward = [EsAct.SliceBackward]
-#endif
-    let singleBatchBackwards = sliceBackward @ [EsAct.BatchBackward]
-    let batchBackwardsAndAppend = singleBatchBackwards @ [EsAct.Append]
+        // Intended conflicts pertained
+        let conflicts = syncs |> List.filter(fun s -> s.DisplayName = "Transact" && s.GetTagItem(Tags.conflict) = true)
+        test <@ List.length conflicts = 2 @> }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can correctly read and update against Store, with LatestKnownEvent Access Strategy`` id value = async {
-        let log, capture = output.CreateLoggerWithCapture()
-        let! client = connectToLocalStore log
+        use listener = new Listener()
+        let log = Serilog.Log.Logger
+        let! client = connectToLocalStore()
         let service = ContactPreferences.createService log client
 
         // Feed some junk into the stream
@@ -278,18 +246,28 @@ type GeneralTests(testOutputHelper) =
         // Ensure there will be something to be changed by the Update below
         do! service.Update(id, { value with quickSurveys = not value.quickSurveys })
 
-        capture.Clear()
+        listener.Clear()
         do! service.Update(id, value)
 
         let! result = service.Read id
-        test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
+        listener.TestSpans([|
+            span([ "name", "Transact"; Tags.loaded_count, 1; Tags.append_count, 1 ])
+            span([ "name", "Query"; Tags.loaded_count, 1 ])
+        |])
         test <@ value = result @>
     }
 
+    let loadCached hit batches count (span: Activity) =
+        test <@ span.DisplayName = "Load"
+                && span.GetTagItem(Tags.cache_hit) = hit
+                && span.GetTagItem(Tags.batches) = batches
+                && span.GetTagItem(Tags.loaded_count) = count @>
+
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly caching to avoid redundant reads`` (ctx, skuId) = async {
-        let log, capture = output.CreateLoggerWithCapture()
-        let! client = connectToLocalStore log
+        use listener = new Listener()
+        let log = Serilog.Log.Logger
+        let! client = connectToLocalStore ()
         let batchSize = 10
         let cache = Equinox.Cache("cart", sizeMb = 50)
         let context = createContext client batchSize
@@ -297,68 +275,79 @@ type GeneralTests(testOutputHelper) =
         let service1, service2, service3 = createServiceCached (), createServiceCached (), Cart.createServiceWithoutOptimization log context
         let cartId = % Guid.NewGuid()
 
-        // Trigger 10 events, then reload
+        // Trigger 9 events, then reload
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne ctx cartId skuId service1 5
-        test <@ batchForwardAndAppend = capture.ExternalCalls @>
+        listener.TestSpans([|
+            span ["name", "Transact"; Tags.cache_hit, false; Tags.batches, 1; Tags.loaded_count, 0; Tags.append_count, 9]
+        |])
+
         let! resStale = service2.ReadStale cartId
-        test <@ batchForwardAndAppend = capture.ExternalCalls @>
+        listener.TestSpans([|
+            span ["name", "Query"; Tags.cache_hit, true; Tags.batches, null; Tags.loaded_count, null ]
+        |])
         let! resFresh = service2.Read cartId
-        // Because we're caching writes, stale vs fresh reads are equivalent
+        // // Because we're caching writes, stale vs fresh reads are equivalent
         test <@ resStale = resFresh @>
         // ... should see a write plus a batched forward read as position is cached
-        test <@ batchForwardAndAppend @ singleBatchForward = capture.ExternalCalls @>
+        listener.TestSpans([|
+            span ["name", "Query"; Tags.cache_hit, true; Tags.batches, 1; Tags.loaded_count, 0]
+        |])
 
-        // Add two more - the roundtrip should only incur a single read
-        capture.Clear()
         let skuId2 = SkuId <| Guid.NewGuid()
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne ctx cartId skuId2 service1 1
-        test <@ batchForwardAndAppend = capture.ExternalCalls @>
+        listener.TestSpans([|
+            span ["name", "Transact"; Tags.cache_hit, true; Tags.batches, 1; Tags.loaded_count, 0; Tags.append_count, 1]
+        |])
 
         // While we now have 12 events, we should be able to read them with a single call
-        capture.Clear()
         // Do a stale read - we will see outs
         let! res = service2.ReadStale cartId
         // result after 10 should be different to result after 12
         test <@ res <> resFresh @>
         // but we don't do a roundtrip to get it
-        test <@ [] = capture.ExternalCalls @>
-        let! resDefault = service2.Read cartId
-        test <@ singleBatchForward = capture.ExternalCalls @>
-
-        // Optimistic transactions
-        capture.Clear()
+        listener.TestSpans([|
+            span ["name", "Query"; Tags.cache_hit, true; Tags.batches, null; Tags.loaded_count, null ]
+        |])
+        let! _ = service2.Read cartId
+        listener.TestSpans([|
+            span ["name", "Query"; Tags.cache_hit, true; Tags.batches, 1; Tags.loaded_count, 0 ]
+        |])
         // As the cache is up to date, we can transact against the cached value and do a null transaction without a roundtrip
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne ctx cartId skuId2 service1 1
-        test <@ [] = capture.ExternalCalls @>
+        listener.TestSpans([|
+            span ["name", "Transact"; Tags.cache_hit, true; Tags.batches, null; Tags.loaded_count, null ]
+        |])
         // As the cache is up to date, we can do an optimistic append, saving a Read roundtrip
         let skuId3 = SkuId <| Guid.NewGuid()
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne ctx cartId skuId3 service1 1
-        // this time, we did something, so we see the append call
-        test <@ [EsAct.Append] = capture.ExternalCalls @>
-
+        listener.TestSpans([|
+            span ["name", "Transact"; Tags.cache_hit, true; Tags.batches, null; Tags.loaded_count, null; Tags.append_count, 1]
+        |])
         // If we don't have a cache attached, we don't benefit from / pay the price for any optimism
-        capture.Clear()
         let skuId4 = SkuId <| Guid.NewGuid()
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne ctx cartId skuId4 service3 1
         // Need 2 batches to do the reading
-        test <@ sliceForward @ singleBatchForward @ [EsAct.Append] = capture.ExternalCalls @>
+        listener.TestSpans([|
+            // this time, we did something, so we see the append call
+            span ["name", "Transact"; Tags.cache_hit, null; Tags.batches, 2; Tags.loaded_count, 11; Tags.append_count, 1]
+        |])
         // we've engineered a clash with the cache state (service3 doest participate in caching)
         // Conflict with cached state leads to a read forward to resync; Then we'll idempotently decide not to do any append
-        capture.Clear()
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne ctx cartId skuId4 service2 1
-        test <@ [EsAct.AppendConflict; yield! sliceForward; EsAct.BatchForward] = capture.ExternalCalls @>
+        listener.TestSpans([|
+            span ["name", "Transact"; Tags.cache_hit, true; Tags.conflict, true ]
+        |])
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Version is 0-based`` () = async {
-        let log, _ = output.CreateLoggerWithCapture()
-        let! connection = connectToLocalStore log
+        let! connection = connectToLocalStore ()
 
         let batchSize = 3
         let context = createContext connection batchSize
         let id = Guid.NewGuid()
         let toStreamId (x: Guid) = x.ToString "N"
-        let decider = SimplestThing.resolve log context SimplestThing.Category (Equinox.StreamId.gen toStreamId id)
+        let decider = SimplestThing.resolve Serilog.Log.Logger context SimplestThing.Category (Equinox.StreamId.gen toStreamId id)
 
         let! before, after = decider.TransactEx(
             (fun state -> state.Version, [SimplestThing.StuffHappened]),
@@ -366,105 +355,125 @@ type GeneralTests(testOutputHelper) =
         test <@ [before; after] = [0L; 1L] @>
     }
 
-type RollingSnapshotTests(testOutputHelper) =
-    let output = TestContext(testOutputHelper)
-#if STORE_EVENTSTOREDB // gRPC does not expose slice metrics
-    let sliceForward = []
-#else
-    let sliceForward = [EsAct.SliceForward]
-#endif
-    let singleBatchForward = sliceForward @ [EsAct.BatchForward]
-
-#if STORE_EVENTSTOREDB // gRPC does not expose slice metrics
-    let sliceBackward = []
-#else
-    let sliceBackward = [EsAct.SliceBackward]
-#endif
-    let singleBatchBackwards = sliceBackward @ [EsAct.BatchBackward]
-    let batchBackwardsAndAppend = singleBatchBackwards @ [EsAct.Append]
+type AdjacentSnapshotTests() =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can roundtrip against Store, correctly compacting to avoid redundant reads`` (ctx, skuId) = async {
-        let log, capture = output.CreateLoggerWithCapture()
-        let! client = connectToLocalStore log
+    let ``Can roundtrip against Store, correctly snapshotting to avoid redundant reads`` (ctx, skuId) = async {
+        use listener = new Listener()
+        let log = Serilog.Log.Logger
+        let! client = connectToLocalStore ()
         let batchSize = 10
         let context = createContext client batchSize
-        let service = Cart.createServiceWithCompaction log context
+        let service = Cart.createServiceWithAdjacentSnapshotting  log context
 
-        // Trigger 10 events, then reload
+        // Trigger 8 events, then reload
         let cartId = % Guid.NewGuid()
-        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 5
-        let! _ = service.Read cartId
-
-        // ... should see a single read as we are inside the batch threshold
-        test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
-
-        // Add two more, which should push it over the threshold and hence trigger inclusion of a snapshot event (but not incurr extra roundtrips)
-        capture.Clear()
-        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 1
-        test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
-
-        // While we now have 13 events, we should be able to read them with a single call
-        capture.Clear()
-        let! _ = service.Read cartId
-        test <@ singleBatchBackwards = capture.ExternalCalls @>
-
-        // Add 8 more; total of 21 should not trigger snapshotting as Event Number 12 (the 13th one) is a shapshot
-        capture.Clear()
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 4
-        test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
+        let! _ = service.Read cartId
+        listener.TestSpans([|
+            span ["name", "Transact"; Tags.batches, 1; Tags.loaded_count, 0; Tags.append_count, 8; Tags.snapshot_version, -1L]
+            span ["name", "Query"; Tags.batches, 1; Tags.loaded_count, 8; Tags.snapshot_version, -1L]
+        |])
 
-        // While we now have 21 events, we should be able to read them with a single call
-        capture.Clear()
-        let! _ = service.Read cartId
-        // ... and trigger a second snapshotting (inducing a single additional read + write)
+        // Add two more, which should push it over the threshold and hence trigger an append of a snapshot event
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 1
-        // and reload the 24 events with a single read
+        listener.TestSpans([|
+            span ["name", "Transact"; Tags.batches, 1; Tags.loaded_count, 8; Tags.append_count, 2; Tags.snapshot_version, -1L
+                  Tags.snapshot_written, true]
+        |])
+        // We now have 10 events and should be able to read them with a single call
         let! _ = service.Read cartId
-        test <@ singleBatchBackwards @ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
+        listener.TestSpans([|
+            span ["name", "Query"; Tags.batches, 1; Tags.loaded_count, 0; Tags.snapshot_version, 10L]
+        |])
+
+        // Add 8 more; total of 18 should not trigger snapshotting as we snapshotted at Event Number 10
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 4
+        listener.TestSpans([|
+            span ["name", "Transact"; Tags.batches, 1; Tags.loaded_count, 0
+                  Tags.snapshot_version, 10L; Tags.append_count, 8]
+        |])
+
+        // While we now have 18 events, we should be able to read them with a single call
+        let! _ = service.Read cartId
+        listener.TestSpans([|
+            span ["name", "Query"; Tags.batches, 1; Tags.loaded_count, 8
+                  Tags.snapshot_version, 10L]
+        |])
+
+        // add two more events, triggering a snapshot, then read it in a single snapshotted read
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 1
+        // and reload the 20 events with a single read
+        let! _ = service.Read cartId
+        listener.TestSpans([|
+            span ["name", "Transact"; Tags.batches, 1; Tags.loaded_count, 8; Tags.snapshot_version, 10L
+                  Tags.append_count, 2; Tags.snapshot_written, true]
+            span ["name", "Query"; Tags.batches, 1; Tags.loaded_count, 0
+                  Tags.snapshot_version, 20L]
+        |])
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can combine compaction with caching against Store`` (ctx, skuId) = async {
-        let log, capture = output.CreateLoggerWithCapture()
-        let! client = connectToLocalStore log
+    let ``Can combine snapshotting with caching against Store`` (ctx, skuId) = async {
+        let log = Serilog.Log.Logger
+        use listener = new Listener()
+        let! client = connectToLocalStore()
         let batchSize = 10
         let context = createContext client batchSize
-        let service1 = Cart.createServiceWithCompaction log context
+        let service1 = Cart.createServiceWithAdjacentSnapshotting log context
         let cache = Equinox.Cache("cart", sizeMb = 50)
         let context = createContext client batchSize
-        let service2 = Cart.createServiceWithCompactionAndCaching log context cache
+        let service2 = Cart.createServiceWithSnapshottingAndCaching log context cache
 
-        // Trigger 10 events, then reload
+        // Trigger 8 events, then reload
         let cartId = % Guid.NewGuid()
-        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 5
-        let! _ = service2.Read cartId
-
-        // ... should see a single read as we are inside the batch threshold
-        test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
-
-        // Add two more, which should push it over the threshold and hence trigger inclusion of a snapshot event (but not incur extra roundtrips)
-        capture.Clear()
-        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 1
-        test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
-
-        // While we now have 13 events, we should be able to read them backwards with a single call
-        capture.Clear()
-        let! _ = service1.Read cartId
-        test <@ singleBatchBackwards = capture.ExternalCalls @>
-
-        // Add 8 more; total of 21 should not trigger snapshotting as Event Number 12 (the 13th one) is a snapshot
-        capture.Clear()
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 4
-        test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
-
-        // While we now have 21 events, we should be able to read them with a single call
-        capture.Clear()
-        let! _ = service1.Read cartId
-        // ... and trigger a second snapshotting (inducing a single additional read + write)
-        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 1
-        // and we _could_ reload the 24 events with a single read if reading backwards. However we are using the cache, which last saw it with 10 events, which necessitates two reads
         let! _ = service2.Read cartId
-        let suboptimalExtraSlice: EsAct list = sliceForward
-        test <@ singleBatchBackwards @ batchBackwardsAndAppend @ suboptimalExtraSlice @ singleBatchForward = capture.ExternalCalls @>
+
+        // ... should not see a snapshot write as we are inside the batch threshold
+        listener.TestSpans([|
+            span ["name", "Transact"; Tags.batches, 1; Tags.loaded_count, 0; Tags.snapshot_version, -1L
+                  Tags.cache_hit, null; Tags.append_count, 8; Tags.snapshot_written, null]
+            span ["name", "Query"; Tags.batches, 1; Tags.loaded_count, 8; Tags.snapshot_version, -1L
+                  Tags.cache_hit, false]
+
+        |])
+
+        // Add two more, which should push it over the threshold and hence trigger generation of a snapshot event
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 1
+        listener.TestSpans([|
+            span ["name", "Transact"; Tags.batches, 1; Tags.loaded_count, 8; Tags.snapshot_version, -1L
+                  Tags.cache_hit, null; Tags.append_count, 2; Tags.snapshot_written, true]
+        |])
+        // We now have 10 events, we should be able to read them with a single snapshotted read
+        let! _ = service1.Read cartId
+        listener.TestSpans([|
+            span ["name", "Query"; Tags.batches, 1; Tags.loaded_count, 0; Tags.snapshot_version, 10L
+                  Tags.cache_hit, null]
+        |])
+
+        // Add 8 more; total of 18 should not trigger snapshotting as the snapshot is at version 10
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 4
+        listener.TestSpans([|
+            span ["name", "Transact"; Tags.batches, 1; Tags.loaded_count, 0; Tags.snapshot_version, 10L
+                  Tags.cache_hit, null; Tags.append_count, 8; Tags.snapshot_written, null]
+        |])
+
+        // While we now have 18 events, we should be able to read them with a single snapshotted read
+        let! _ = service1.Read cartId
+        listener.TestSpans([|
+            span ["name", "Query"; Tags.batches, 1; Tags.loaded_count, 8; Tags.snapshot_version, 10L
+                  Tags.cache_hit, null]
+        |])
+
+        // ... trigger a second snapshotting
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 1
+        // and we _could_ reload the 20 events with a single read. However we are using the cache, which last saw it with 10 events, which necessitates two reads
+        let! _ = service2.Read cartId
+        listener.TestSpans([|
+            span ["name", "Transact"; Tags.batches, 1; Tags.loaded_count, 8; Tags.snapshot_version, 10L
+                  Tags.cache_hit, null; Tags.append_count, 2; Tags.snapshot_written, true]
+            span ["name", "Query"; Tags.batches, 2; Tags.loaded_count, 12; Tags.snapshot_version, null
+                  Tags.cache_hit, true]
+        |])
     }

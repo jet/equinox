@@ -293,7 +293,7 @@ let dumpStats log = function
     | Store.Context.Dynamo _ -> Equinox.DynamoStore.Core.Log.InternalMetrics.dump log
     | Store.Context.Es _ ->     Equinox.EventStoreDb.Log.InternalMetrics.dump log
     | Store.Context.Sql _ ->    Equinox.SqlStreamStore.Log.InternalMetrics.dump log
-    | Store.Context.Mdb _ ->    Equinox.MessageDb.Log.InternalMetrics.dump log
+    | Store.Context.Mdb _ ->    () // MessageDB does not expose InternalMetrics. Use an ActivityListener instead
     | Store.Context.Memory _ -> ()
 
 module LoadTest =

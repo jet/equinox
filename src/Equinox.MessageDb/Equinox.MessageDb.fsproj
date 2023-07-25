@@ -8,11 +8,7 @@
         <Compile Include="..\Equinox.Core\Infrastructure.fs">
             <Link>Infrastructure.fs</Link>
         </Compile>
-        <Compile Include="..\Equinox.Core\Internal.fs">
-            <Link>Internal.fs</Link>
-        </Compile>
         <Compile Include="MessageDbClient.fs" />
-        <Compile Include="Tracing.fs" />
         <Compile Include="MessageDb.fs" />
     </ItemGroup>
 
