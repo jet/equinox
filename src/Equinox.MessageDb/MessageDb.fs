@@ -48,6 +48,7 @@ module private Write =
         return! Retry.withSpanTag retryPolicy call ct }
 
 module Read =
+
     module LoadMethod =
         [<Literal>]
         let last = "Last"
