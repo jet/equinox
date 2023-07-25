@@ -44,15 +44,15 @@ module Fold =
     let isOrigin = function Events.Snapshotted _ -> true | _ -> false
     let snapshot state = Events.Snapshotted { net = state }
 
-let doesntHave skuId (state: Fold.State) = state |> Array.exists (fun x -> x.skuId = skuId) |> not
+let has skuId (state: Fold.State) = state |> Array.exists (fun x -> x.skuId = skuId)
 
 let decideFavorite date skuIds state = [|
     for skuId in Seq.distinct skuIds do
-        if state |> doesntHave skuId then
+        if state |> has skuId |> not then
             Events.Favorited { date = date; skuId = skuId } |]
 
 let decideUnfavorite skuId state = [|
-    if state |> doesntHave skuId then
+    if state |> has skuId then
         Events.Unfavorited { skuId = skuId } |]
 
 type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =

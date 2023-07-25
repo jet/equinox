@@ -13,7 +13,7 @@ let defaultBatchSize = 500
 open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.Postgres
 
-let connectToLocalStore (_: ILogger) =
+let connectToLocalStore (_: Serilog.ILogger) =
     Connector("Host=localhost;Username=postgres;password=postgres;database=postgres",autoCreate=true).Establish()
 
 type Context = SqlStreamStoreContext
@@ -23,7 +23,7 @@ type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state,
 open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.MsSql
 
-let connectToLocalStore (_: ILogger) =
+let connectToLocalStore (_: Serilog.ILogger) =
     Connector("Server=localhost,1433;User=sa;Password=mssql1Ipw;Database=EQUINOX_TEST_DB", autoCreate = true).Establish()
 
 (* WORKAROUND FOR https://github.com/microsoft/mssql-docker/issues/2#issuecomment-1059819719
@@ -36,7 +36,7 @@ type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state,
 open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.MySql
 
-let connectToLocalStore (_: ILogger) =
+let connectToLocalStore (_: Serilog.ILogger) =
     Connector("Server=localhost;User=root;Database=EQUINOX_TEST_DB", autoCreate = true).Establish()
 
 type Context = SqlStreamStoreContext
