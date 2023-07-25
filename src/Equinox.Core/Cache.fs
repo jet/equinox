@@ -35,20 +35,21 @@ type private CacheEntry<'state>(initialToken: StreamToken, initialState: 'state,
     // Follows high level flow of AsyncCacheCell.Await - read the comments there, and the AsyncCacheCell tests first!
     member x.ReadThrough(maxAge: TimeSpan, isStale, load: Func<_, _>) = task {
         let act = System.Diagnostics.Activity.Current
+        let setCacheHit hit = if act <> null then act.SetTag(Tags.cache_hit, hit) |> ignore
         let cacheEntryValidityCheckTimestamp = System.Diagnostics.Stopwatch.GetTimestamp()
-        let isWithinMaxAge cachedValueTimestamp = Stopwatch.TicksToSeconds(cacheEntryValidityCheckTimestamp - cachedValueTimestamp) <= maxAge.TotalSeconds
+        let age timestamp = Stopwatch.TicksToSeconds(cacheEntryValidityCheckTimestamp - timestamp)
+        if act <> null then act.SetTag(Tags.cache_age, 1000. * age verifiedTimestamp) |> ignore
+        let isWithinMaxAge cachedValueTimestamp = age cachedValueTimestamp <= maxAge.TotalSeconds
         let fetchStateConsistently () = struct (cell, tryGet (), isWithinMaxAge verifiedTimestamp)
         match lock x fetchStateConsistently with
-        | _, ValueSome cachedValue, true ->
-            if act <> null then act.AddCacheHit(true)
-            return cachedValue
+        | _, ValueSome cachedValue, true -> setCacheHit true; return cachedValue
         | ourInitialCellState, maybeBaseState, _ -> // If it's not good enough for us, trigger a request (though someone may have beaten us to that)
 
+        setCacheHit false
         // Inspect/await any concurrent attempt to see if it is sufficient for our needs
         match! ourInitialCellState.TryAwaitValid() with
         | ValueSome (fetchCommencedTimestamp, res) when isWithinMaxAge fetchCommencedTimestamp -> return res
         | _ ->
-
         // .. it wasn't; join the race to dispatch a request (others following us will share our fate via the TryAwaitValid)
         let newInstance = AsyncLazy(fun () -> load.Invoke maybeBaseState)
         let _ = Interlocked.CompareExchange(&cell, newInstance, ourInitialCellState)
@@ -83,13 +84,12 @@ type Cache private (inner: System.Runtime.Caching.MemoryCache) =
     // if there's a non-zero maxAge, concurrent read attempts share the roundtrip (and its fate, if it throws)
     member internal _.Load(key, maxAge, isStale, policy, loadOrReload, ct) = task {
         let loadOrReload maybeBaseState = task {
-            let act = System.Diagnostics.Activity.Current
-            if act <> null then act.AddCacheHit(ValueOption.isSome maybeBaseState) |> ignore
             let ts = System.Diagnostics.Stopwatch.GetTimestamp()
             let! res = loadOrReload ct maybeBaseState
             return struct (ts, res) }
         if maxAge = TimeSpan.Zero then // Boring algorithm that has each caller independently load/reload the data and then cache it
             let maybeBaseState = tryLoad key
+            let act = System.Diagnostics.Activity.Current in act.SetTag(Tags.cache_hit, ValueOption.isSome maybeBaseState) |> ignore
             let! timestamp, res = loadOrReload maybeBaseState
             addOrMergeCacheEntry isStale key policy timestamp res
             return res

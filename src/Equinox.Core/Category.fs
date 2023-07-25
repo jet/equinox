@@ -24,7 +24,6 @@ type ICategory<'event, 'state, 'context> =
 // Low level stream impl, used by Store-specific Category types that layer policies such as Caching in
 namespace Equinox
 
-open Equinox.Core.Tracing
 open System.Threading
 open System.Threading.Tasks
 
@@ -41,12 +40,10 @@ type Category<'event, 'state, 'context>
             member _.LoadEmpty() =
                 empty
             member _.Load(maxAge, requireLeader, ct) = task {
-                use act = System.Diagnostics.Activity.Current
-                if act <> null then act.AddStream(categoryName, streamId, streamName).AddLeader(requireLeader).AddStale(maxAge) |> ignore
+                Equinox.Core.Tracing.Load.setTags(categoryName, streamId, streamName, requireLeader, maxAge)
                 return! inner.Load(log, categoryName, streamId, streamName, maxAge, requireLeader, ct) }
             member _.TrySync(attempt, (token, originState), events, ct) = task {
-                use act = System.Diagnostics.Activity.Current
-                if act <> null then act.AddStream(categoryName, streamId, streamName).AddSyncAttempt(attempt).AddAppendCount(events.Length) |> ignore
+                Equinox.Core.Tracing.TrySync.setTags(attempt, events)
                 let log = if attempt = 1 then log else log.ForContext("attempts", attempt)
                 return! inner.TrySync(log, categoryName, streamId, streamName, context, init, token, originState, events, ct) } }
 

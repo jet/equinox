@@ -5,125 +5,110 @@ open Equinox.Core.Tracing
 open Equinox.MessageDb.Core
 open FsCodec
 open System
-open System.Diagnostics
 open System.Text.Json
 open System.Threading
 open System.Threading.Tasks
 
 type EventBody = ReadOnlyMemory<byte>
 
+module Activity =
+    let setTags (tags: (string * obj)[]) =
+        let act = System.Diagnostics.Activity.Current
+        if act <> null then for k,v in tags do act.SetTag(k, v) |> ignore
+
 module Retry =
     let withSpanTag<'t> retryPolicy (f: CancellationToken -> Task<'t>) ct: Task<'t> =
         match retryPolicy with
         | None -> f ct
         | Some retryPolicy ->
-            let withLoggingContextWrapping count =
-                let act = Activity.Current in if act <> null then act.AddRetryAttempt(count) |> ignore
+            let withRetryTag count =
+                Activity.setTags [|Tags.retries, count|]
                 f
-            retryPolicy withLoggingContextWrapping
+            retryPolicy withRetryTag
 
 module private Write =
 
-    let private writeEventsAsync (writer: MessageDbWriter) streamName version events ct: Task<MdbSyncResult> =
-        writer.WriteMessages(streamName, events, version, ct)
     let inline len (bytes: EventBody) = bytes.Length
     let private eventDataLen (x: IEventData<EventBody>) = len x.Data + len x.Meta
     let private eventDataBytes events = events |> Array.sumBy eventDataLen
-    let private writeEventsLogged writer streamName version events ct: Task<MdbSyncResult> = task {
-        let act = Activity.Current
-        let bytes = eventDataBytes events
-        if act <> null then act.AddExpectedVersion(version).AddAppendBytes(bytes) |> ignore
-        let! result = writeEventsAsync writer streamName version events ct
+    let private writeEventsLogged (writer: MessageDbWriter) streamName version events ct: Task<MdbSyncResult> = task {
+        Activity.setTags [|Tags.append_bytes, eventDataBytes events|]
+        let! result = writer.WriteMessages(streamName, events, version, ct)
         match result with
-        | MdbSyncResult.Written x ->
-            if act <> null then
-                act.SetStatus(ActivityStatusCode.Ok).SetTag("eqx.new_version", x) |> ignore
+        | MdbSyncResult.Written x -> Activity.setTags [|Tags.new_version, x|]
         | MdbSyncResult.ConflictUnknown ->
-            let eventTypes = [| for x in events -> x.EventType |]
-            if act <> null then act.RecordConflict().SetTag("eqx.event_types", eventTypes) |> ignore
+            let eventTypes =
+                if events.Length <= 3
+                then [| for x in events -> x.EventType |]
+                else [| for x in Seq.take 3 events -> x.EventType |]
+            Activity.setTags [|Tags.conflict, true; Tags.append_types, eventTypes|]
         return result }
     let writeEvents retryPolicy writer streamName version events ct: Task<MdbSyncResult> = task {
         let call = writeEventsLogged writer streamName version events
         return! Retry.withSpanTag retryPolicy call ct }
 
 module Read =
+    module LoadMethod =
+        [<Literal>]
+        let last = "Last"
+        [<Literal>]
+        let batchForward = "BatchForward"
 
     [<NoComparison;NoEquality>]
     type StreamEventsSlice = { Messages: ITimelineEvent<EventBody>[]; IsEnd: bool; LastVersion: int64 }
 
-    let private toSlice (events: ITimelineEvent<EventBody>[]) isLast: StreamEventsSlice=
+    let private toSlice (events: ITimelineEvent<EventBody>[]) isLast: StreamEventsSlice =
         let lastVersion = match Array.tryLast events with Some ev -> ev.Index | None -> -1L
         { Messages = events; IsEnd = isLast; LastVersion = lastVersion }
 
-    let private readSliceAsync (reader: MessageDbReader) (streamName: string) (batchSize: int64) (startPos: int64) (requiresLeader: bool) ct = task {
-        let! page = reader.ReadStream(streamName, startPos, batchSize, requiresLeader, ct)
+    let private readSliceAsync (reader: MessageDbReader) (streamName: string) (batchSize: int64) (requiresLeader: bool) (fromVersion: int64) ct = task {
+        let! page = reader.ReadStream(streamName, fromVersion, batchSize, requiresLeader, ct)
         let isLast = int64 page.Length < batchSize
         return toSlice page isLast }
 
     let private readLastEventAsync (reader: MessageDbReader) (streamName: string) (requiresLeader: bool) (eventType: string option) ct = task {
         let! events = reader.ReadLastEvent(streamName, requiresLeader, ct, ?eventType = eventType)
-        return toSlice events false }
+        return toSlice events true }
 
     let inline len (bytes: EventBody) = bytes.Length
     let private resolvedEventLen (x: ITimelineEvent<EventBody>) = len x.Data + len x.Meta
     let private resolvedEventBytes events = events |> Array.sumBy resolvedEventLen
-    let private loggedReadSlice reader streamName batchSize requiresLeader startPos batchIndex ct: Task<_> = task {
-        let act = Activity.Current
-        let! t, slice = readSliceAsync reader streamName batchSize startPos requiresLeader |> Stopwatch.time ct
-        let bytes, count = slice.Messages |> resolvedEventBytes, slice.Messages.Length
-        if act <> null then act.IncMetric(count, bytes).AddLastVersion(slice.LastVersion) |> ignore
-        return slice }
-
-    let private readBatches fold originState tryDecode batchSize (readSlice: int64 -> int -> CancellationToken -> Task<StreamEventsSlice>)
-            (maxPermittedBatchReads: int option) (startPosition: int64) ct
-        : Task<int64 * 'state * int * int> =
-        let mutable batchCount, eventCount, pos = 0, 0, startPosition
+    let private readBatches fold originState tryDecode (readSlice: int64 -> CancellationToken -> Task<StreamEventsSlice>)
+            (maxPermittedBatchReads: int option) (fromVersion: int64) ct
+        : Task<int64 * 'state> =
+        let mutable batchCount, eventCount, pos = 0, 0, fromVersion
         let mutable version = -1L
         let mutable state = originState
         let rec loop () : Task<unit> = task {
-            match maxPermittedBatchReads with
-            | Some mpbr when batchCount >= mpbr -> invalidOp "batch Limit exceeded"
-            | _ -> ()
-
-            let! slice = readSlice pos batchCount ct
+            let! slice = readSlice pos ct
             version <- max version slice.LastVersion
             state <- slice.Messages |> Seq.chooseV tryDecode |> fold state
             batchCount <- batchCount + 1
             eventCount <- eventCount + slice.Messages.Length
             pos <- slice.LastVersion  + 1L
             if not slice.IsEnd then
+                match maxPermittedBatchReads with
+                | Some mpbr when batchCount >= mpbr -> invalidOp "batch Limit exceeded"
+                | _ -> ()
                 return! loop () }
         task {
             do! loop ()
-            let act = Activity.Current
-            if act <> null then act.AddBatches(batchCount).AddLastVersion(version) |> ignore
-            return version, state, batchCount, eventCount }
-
-    let private logLastEventRead streamName t events (version: int64) =
-        let bytes = resolvedEventBytes events
-        let count = events.Length
-        let act = Activity.Current
-        if act <> null then act.IncMetric(count, bytes).AddLastVersion(version) |> ignore
+            Activity.setTags [|Tags.batches, batchCount; Tags.loaded_count, eventCount; Tags.read_version, version|]
+            return version, state }
 
     let internal loadLastEvent retryPolicy (reader: MessageDbReader) requiresLeader streamName eventType ct
         : Task<int64 * ITimelineEvent<EventBody>[]> = task {
-        let act = Activity.Current
-        if act <> null then act.AddLoadMethod("Last") |> ignore
         let read = readLastEventAsync reader streamName requiresLeader eventType
-
-        let! t, page = Retry.withSpanTag retryPolicy read |> Stopwatch.time ct
-
-        logLastEventRead streamName t page.Messages page.LastVersion
+        let! page = Retry.withSpanTag retryPolicy read ct
+        Activity.setTags [|Tags.load_method, LoadMethod.last; Tags.loaded_count, page.Messages.Length; Tags.loaded_bytes, resolvedEventBytes page.Messages|]
         return page.LastVersion, page.Messages }
 
-    let internal loadForwardsFrom fold initial tryDecode retryPolicy reader batchSize maxPermittedBatchReads streamName startPosition requiresLeader ct
+    let internal loadForwardsFrom fold initial tryDecode retryPolicy reader batchSize maxPermittedBatchReads streamName (fromVersion: int64) requiresLeader ct
         : Task<int64 * 'state> = task {
-        let act = Activity.Current
-        if act <> null then act.AddBatchSize(batchSize).AddStartPosition(startPosition).AddLoadMethod("BatchForward") |> ignore
-        let call = loggedReadSlice reader streamName batchSize requiresLeader
-        let retryingLoggingReadSlice pos batchIndex = Retry.withSpanTag retryPolicy (call pos batchIndex)
-        let! t, (version, state, batchCount, eventCount) = readBatches fold initial tryDecode batchSize retryingLoggingReadSlice maxPermittedBatchReads startPosition |> Stopwatch.time ct
-        return version, state }
+        let call = readSliceAsync reader streamName batchSize requiresLeader
+        let retryingReadSlice version = Retry.withSpanTag retryPolicy (call version)
+        Activity.setTags [|Tags.batch_size, batchSize; Tags.loaded_from_version, fromVersion; Tags.load_method, LoadMethod.batchForward|]
+        return! readBatches fold initial tryDecode retryingReadSlice maxPermittedBatchReads fromVersion ct }
 
 module private Token =
 
@@ -199,16 +184,14 @@ type MessageDbContext(client: MessageDbClient, batchOptions: BatchOptions) =
         let snapshotStream = Snapshot.streamName category streamId
         let! _, events = Read.loadLastEvent client.ReadRetryPolicy client.Reader requireLeader snapshotStream (Some eventType) ct
         let decoded = Snapshot.decode tryDecode events
-        let act = Activity.Current
-        if act <> null then
-          let version = match decoded with ValueNone -> -1L | ValueSome (t, _) -> t.version
-          act.SetTag("eqx.snapshot_version", version) |> ignore
+        let version = match decoded with ValueNone -> -1L | ValueSome (t, _) -> t.version
+        Activity.setTags [|Tags.snapshot_version, version|]
         return decoded }
 
     member _.Reload(streamName, requireLeader, token, tryDecode, fold, initial, ct): Task<struct(StreamToken * 'state)> = task {
         let streamVersion = Token.streamVersion token
-        let startPos = streamVersion + 1L // Reading a stream uses {inclusive} positions, but the streamVersion is `-1`-based
-        let! version, state = Read.loadForwardsFrom fold initial tryDecode client.ReadRetryPolicy client.Reader batchOptions.BatchSize batchOptions.MaxBatches streamName startPos requireLeader ct
+        let fromVersion = streamVersion + 1L // Reading a stream uses {inclusive} positions, but the streamVersion is `-1`-based
+        let! version, state = Read.loadForwardsFrom fold initial tryDecode client.ReadRetryPolicy client.Reader batchOptions.BatchSize batchOptions.MaxBatches streamName fromVersion requireLeader ct
         return struct(Token.create (max streamVersion version), state) }
 
     member internal _.TrySync(_category, _streamId, streamName, token, encodedEvents: IEventData<EventBody>[], ct): Task<GatewaySyncResult> = task {
@@ -222,8 +205,7 @@ type MessageDbContext(client: MessageDbClient, batchOptions: BatchOptions) =
 
     member _.StoreSnapshot(category, streamId, event, ct) = task {
         let snapshotStream = Snapshot.streamName category streamId
-        let act = Activity.Current
-        if act <> null then act.SetTag("eqx.snapshot_written", true) |> ignore
+        Activity.setTags [|Tags.snapshot_written, true|]
         do! Write.writeEvents None client.Writer snapshotStream Any [| event |] ct :> Task }
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]

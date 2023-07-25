@@ -2,6 +2,7 @@ module Equinox.MessageDb.Integration.MessageDbIntegration
 
 open System.Threading
 open Domain
+open Equinox.Core.Tracing
 open FSharp.UMX
 open Serilog
 open Swensen.Unquote
@@ -138,9 +139,9 @@ type GeneralTests() =
         listener.TestSpans([|
             span([
                 "name", "Transact"
-                "eqx.batches", 1
-                "eqx.count", 0
-                "eqx.append_count", 11
+                Tags.batches, 1
+                Tags.loaded_count, 0
+                Tags.append_count, 11
             ])
         |])
 
@@ -152,7 +153,7 @@ type GeneralTests() =
         // Need to read 4 batches to read 11 events in batches of 3
         let expectedBatches = ceil(float expectedEventCount/float batchSize) |> int
         listener.TestSpans([|
-            span(["name", "Query"; "eqx.batches", expectedBatches; "eqx.count", expectedEventCount])
+            span(["name", "Query"; Tags.batches, expectedBatches; Tags.loaded_count, expectedEventCount])
         |])
     }
 
@@ -229,7 +230,7 @@ type GeneralTests() =
                 && has sku11 11 && has sku12 12
                 && has sku21 21 && has sku22 22 @>
         // Intended conflicts pertained
-        let conflicts = syncs |> List.filter(fun s -> s.DisplayName = "Transact" && s.GetTagItem("eqx.conflict") = true)
+        let conflicts = syncs |> List.filter(fun s -> s.DisplayName = "Transact" && s.GetTagItem(Tags.conflict) = true)
         test <@ List.length conflicts = 2 @> }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
@@ -251,17 +252,17 @@ type GeneralTests() =
 
         let! result = service.Read id
         listener.TestSpans([|
-            span([ "name", "Transact"; "eqx.count", 1; "eqx.append_count", 1 ])
-            span([ "name", "Query"; "eqx.count", 1 ])
+            span([ "name", "Transact"; Tags.loaded_count, 1; Tags.append_count, 1 ])
+            span([ "name", "Query"; Tags.loaded_count, 1 ])
         |])
         test <@ value = result @>
     }
 
     let loadCached hit batches count (span: Activity) =
         test <@ span.DisplayName = "Load"
-                && span.GetTagItem("eqx.cache_hit") = hit
-                && span.GetTagItem("eqx.batches") = batches
-                && span.GetTagItem("eqx.count") = count @>
+                && span.GetTagItem(Tags.cache_hit) = hit
+                && span.GetTagItem(Tags.batches) = batches
+                && span.GetTagItem(Tags.loaded_count) = count @>
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly caching to avoid redundant reads`` (ctx, skuId) = async {
@@ -278,25 +279,25 @@ type GeneralTests() =
         // Trigger 9 events, then reload
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne ctx cartId skuId service1 5
         listener.TestSpans([|
-            span ["name", "Transact"; "eqx.cache_hit", false; "eqx.batches", 1; "eqx.count", 0; "eqx.append_count", 9]
+            span ["name", "Transact"; Tags.cache_hit, false; Tags.batches, 1; Tags.loaded_count, 0; Tags.append_count, 9]
         |])
 
         let! resStale = service2.ReadStale cartId
         listener.TestSpans([|
-            span ["name", "Query"; "eqx.cache_hit", true; "eqx.batches", null; "eqx.count", null ]
+            span ["name", "Query"; Tags.cache_hit, true; Tags.batches, null; Tags.loaded_count, null ]
         |])
         let! resFresh = service2.Read cartId
         // // Because we're caching writes, stale vs fresh reads are equivalent
         test <@ resStale = resFresh @>
         // ... should see a write plus a batched forward read as position is cached
         listener.TestSpans([|
-            span ["name", "Query"; "eqx.cache_hit", true; "eqx.batches", 1; "eqx.count", 0]
+            span ["name", "Query"; Tags.cache_hit, true; Tags.batches, 1; Tags.loaded_count, 0]
         |])
 
         let skuId2 = SkuId <| Guid.NewGuid()
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne ctx cartId skuId2 service1 1
         listener.TestSpans([|
-            span ["name", "Transact"; "eqx.cache_hit", true; "eqx.batches", 1; "eqx.count", 0; "eqx.append_count", 1]
+            span ["name", "Transact"; Tags.cache_hit, true; Tags.batches, 1; Tags.loaded_count, 0; Tags.append_count, 1]
         |])
 
         // While we now have 12 events, we should be able to read them with a single call
@@ -306,22 +307,22 @@ type GeneralTests() =
         test <@ res <> resFresh @>
         // but we don't do a roundtrip to get it
         listener.TestSpans([|
-            span ["name", "Query"; "eqx.cache_hit", true; "eqx.batches", null; "eqx.count", null ]
+            span ["name", "Query"; Tags.cache_hit, true; Tags.batches, null; Tags.loaded_count, null ]
         |])
         let! _ = service2.Read cartId
         listener.TestSpans([|
-            span ["name", "Query"; "eqx.cache_hit", true; "eqx.batches", 1; "eqx.count", 0 ]
+            span ["name", "Query"; Tags.cache_hit, true; Tags.batches, 1; Tags.loaded_count, 0 ]
         |])
         // As the cache is up to date, we can transact against the cached value and do a null transaction without a roundtrip
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne ctx cartId skuId2 service1 1
         listener.TestSpans([|
-            span ["name", "Transact"; "eqx.cache_hit", true; "eqx.batches", null; "eqx.count", null ]
+            span ["name", "Transact"; Tags.cache_hit, true; Tags.batches, null; Tags.loaded_count, null ]
         |])
         // As the cache is up to date, we can do an optimistic append, saving a Read roundtrip
         let skuId3 = SkuId <| Guid.NewGuid()
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne ctx cartId skuId3 service1 1
         listener.TestSpans([|
-            span ["name", "Transact"; "eqx.cache_hit", true; "eqx.batches", null; "eqx.count", null; "eqx.append_count", 1]
+            span ["name", "Transact"; Tags.cache_hit, true; Tags.batches, null; Tags.loaded_count, null; Tags.append_count, 1]
         |])
         // If we don't have a cache attached, we don't benefit from / pay the price for any optimism
         let skuId4 = SkuId <| Guid.NewGuid()
@@ -329,13 +330,13 @@ type GeneralTests() =
         // Need 2 batches to do the reading
         listener.TestSpans([|
             // this time, we did something, so we see the append call
-            span ["name", "Transact"; "eqx.cache_hit", null; "eqx.batches", 2; "eqx.count", 11; "eqx.append_count", 1]
+            span ["name", "Transact"; Tags.cache_hit, null; Tags.batches, 2; Tags.loaded_count, 11; Tags.append_count, 1]
         |])
         // we've engineered a clash with the cache state (service3 doest participate in caching)
         // Conflict with cached state leads to a read forward to resync; Then we'll idempotently decide not to do any append
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne ctx cartId skuId4 service2 1
         listener.TestSpans([|
-            span ["name", "Transact"; "eqx.cache_hit", true; "eqx.conflict", true ]
+            span ["name", "Transact"; Tags.cache_hit, true; Tags.conflict, true ]
         |])
     }
 
@@ -371,34 +372,34 @@ type AdjacentSnapshotTests() =
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 4
         let! _ = service.Read cartId
         listener.TestSpans([|
-            span ["name", "Transact"; "eqx.batches", 1; "eqx.count", 0; "eqx.append_count", 8; "eqx.snapshot_version", -1L]
-            span ["name", "Query"; "eqx.batches", 1; "eqx.count", 8; "eqx.snapshot_version", -1L]
+            span ["name", "Transact"; Tags.batches, 1; Tags.loaded_count, 0; Tags.append_count, 8; Tags.snapshot_version, -1L]
+            span ["name", "Query"; Tags.batches, 1; Tags.loaded_count, 8; Tags.snapshot_version, -1L]
         |])
 
         // Add two more, which should push it over the threshold and hence trigger an append of a snapshot event
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 1
         listener.TestSpans([|
-            span ["name", "Transact"; "eqx.batches", 1; "eqx.count", 8; "eqx.append_count", 2; "eqx.snapshot_version", -1L
-                  "eqx.snapshot_written", true]
+            span ["name", "Transact"; Tags.batches, 1; Tags.loaded_count, 8; Tags.append_count, 2; Tags.snapshot_version, -1L
+                  Tags.snapshot_written, true]
         |])
         // We now have 10 events and should be able to read them with a single call
         let! _ = service.Read cartId
         listener.TestSpans([|
-            span ["name", "Query"; "eqx.batches", 1; "eqx.count", 1; "eqx.snapshot_version", 10L]
+            span ["name", "Query"; Tags.batches, 1; Tags.loaded_count, 0; Tags.snapshot_version, 10L]
         |])
 
         // Add 8 more; total of 18 should not trigger snapshotting as we snapshotted at Event Number 10
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 4
         listener.TestSpans([|
-            span ["name", "Transact"; "eqx.batches", 1; "eqx.count", 1
-                  "eqx.snapshot_version", 10L; "eqx.append_count", 8]
+            span ["name", "Transact"; Tags.batches, 1; Tags.loaded_count, 0
+                  Tags.snapshot_version, 10L; Tags.append_count, 8]
         |])
 
         // While we now have 18 events, we should be able to read them with a single call
         let! _ = service.Read cartId
         listener.TestSpans([|
-            span ["name", "Query"; "eqx.batches", 1; "eqx.count", 9
-                  "eqx.snapshot_version", 10L]
+            span ["name", "Query"; Tags.batches, 1; Tags.loaded_count, 8
+                  Tags.snapshot_version, 10L]
         |])
 
         // add two more events, triggering a snapshot, then read it in a single snapshotted read
@@ -406,10 +407,10 @@ type AdjacentSnapshotTests() =
         // and reload the 20 events with a single read
         let! _ = service.Read cartId
         listener.TestSpans([|
-            span ["name", "Transact"; "eqx.batches", 1; "eqx.count", 9; "eqx.snapshot_version", 10L
-                  "eqx.append_count", 2; "eqx.snapshot_written", true]
-            span ["name", "Query"; "eqx.batches", 1; "eqx.count", 1
-                  "eqx.snapshot_version", 20L]
+            span ["name", "Transact"; Tags.batches, 1; Tags.loaded_count, 8; Tags.snapshot_version, 10L
+                  Tags.append_count, 2; Tags.snapshot_written, true]
+            span ["name", "Query"; Tags.batches, 1; Tags.loaded_count, 0
+                  Tags.snapshot_version, 20L]
         |])
     }
 
@@ -432,38 +433,38 @@ type AdjacentSnapshotTests() =
 
         // ... should not see a snapshot write as we are inside the batch threshold
         listener.TestSpans([|
-            span ["name", "Transact"; "eqx.batches", 1; "eqx.count", 0; "eqx.snapshot_version", -1L
-                  "eqx.cache_hit", null; "eqx.append_count", 8; "eqx.snapshot_written", null]
-            span ["name", "Query"; "eqx.batches", 1; "eqx.count", 8; "eqx.snapshot_version", -1L
-                  "eqx.cache_hit", false]
+            span ["name", "Transact"; Tags.batches, 1; Tags.loaded_count, 0; Tags.snapshot_version, -1L
+                  Tags.cache_hit, null; Tags.append_count, 8; Tags.snapshot_written, null]
+            span ["name", "Query"; Tags.batches, 1; Tags.loaded_count, 8; Tags.snapshot_version, -1L
+                  Tags.cache_hit, false]
 
         |])
 
         // Add two more, which should push it over the threshold and hence trigger generation of a snapshot event
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 1
         listener.TestSpans([|
-            span ["name", "Transact"; "eqx.batches", 1; "eqx.count", 8; "eqx.snapshot_version", -1L
-                  "eqx.cache_hit", null; "eqx.append_count", 2; "eqx.snapshot_written", true]
+            span ["name", "Transact"; Tags.batches, 1; Tags.loaded_count, 8; Tags.snapshot_version, -1L
+                  Tags.cache_hit, null; Tags.append_count, 2; Tags.snapshot_written, true]
         |])
         // We now have 10 events, we should be able to read them with a single snapshotted read
         let! _ = service1.Read cartId
         listener.TestSpans([|
-            span ["name", "Query"; "eqx.batches", 1; "eqx.count", 1; "eqx.snapshot_version", 10L
-                  "eqx.cache_hit", null]
+            span ["name", "Query"; Tags.batches, 1; Tags.loaded_count, 0; Tags.snapshot_version, 10L
+                  Tags.cache_hit, null]
         |])
 
         // Add 8 more; total of 18 should not trigger snapshotting as the snapshot is at version 10
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 4
         listener.TestSpans([|
-            span ["name", "Transact"; "eqx.batches", 1; "eqx.count", 1; "eqx.snapshot_version", 10L
-                  "eqx.cache_hit", null; "eqx.append_count", 8; "eqx.snapshot_written", null]
+            span ["name", "Transact"; Tags.batches, 1; Tags.loaded_count, 0; Tags.snapshot_version, 10L
+                  Tags.cache_hit, null; Tags.append_count, 8; Tags.snapshot_written, null]
         |])
 
         // While we now have 18 events, we should be able to read them with a single snapshotted read
         let! _ = service1.Read cartId
         listener.TestSpans([|
-            span ["name", "Query"; "eqx.batches", 1; "eqx.count", 9; "eqx.snapshot_version", 10L
-                  "eqx.cache_hit", null]
+            span ["name", "Query"; Tags.batches, 1; Tags.loaded_count, 8; Tags.snapshot_version, 10L
+                  Tags.cache_hit, null]
         |])
 
         // ... trigger a second snapshotting
@@ -471,10 +472,10 @@ type AdjacentSnapshotTests() =
         // and we _could_ reload the 20 events with a single read. However we are using the cache, which last saw it with 10 events, which necessitates two reads
         let! _ = service2.Read cartId
         listener.TestSpans([|
-            span ["name", "Transact"; "eqx.batches", 1; "eqx.count", 9; "eqx.snapshot_version", 10L
-                  "eqx.cache_hit", null; "eqx.append_count", 2; "eqx.snapshot_written", true]
-            span ["name", "Query"; "eqx.batches", 2; "eqx.count", 12; "eqx.snapshot_version", null
-                  "eqx.cache_hit", true]
+            span ["name", "Transact"; Tags.batches, 1; Tags.loaded_count, 8; Tags.snapshot_version, 10L
+                  Tags.cache_hit, null; Tags.append_count, 2; Tags.snapshot_written, true]
+            span ["name", "Query"; Tags.batches, 2; Tags.loaded_count, 12; Tags.snapshot_version, null
+                  Tags.cache_hit, true]
         |])
     }
 
