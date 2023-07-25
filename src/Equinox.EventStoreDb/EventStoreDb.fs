@@ -131,7 +131,7 @@ module private Write =
     let private writeEventsAsync (log: ILogger) (conn: EventStoreClient) (streamName: string) version (events: EventData[]) ct: Task<EsSyncResult> = task {
         let! wr = conn.ConditionalAppendToStreamAsync(streamName, StreamRevision.FromInt64 version, events, cancellationToken = ct)
         if wr.Status = ConditionalWriteStatus.VersionMismatch then
-            log.Information("Esdb TrySync VersionMismatch writing {EventTypes}, actual {ActualVersion}",
+            log.Information("Esdb Sync VersionMismatch writing {EventTypes}, actual {ActualVersion}",
                 [| for x in events -> x.Type |], wr.NextExpectedVersion)
             return EsSyncResult.Conflict wr.NextExpectedVersion
         elif wr.Status = ConditionalWriteStatus.StreamDeleted then return failwithf "Unexpected write to deleted stream %s" streamName
@@ -257,13 +257,13 @@ module Token =
         create None None streamVersion
 
     // headroom before compaction is necessary given the stated knowledge of the last (if known) `compactionEventNumberOption`
-    let private batchCapacityLimit compactedEventNumberOption unstoredEventsPending (batchSize: int) (streamVersion: int64): int =
+    let private batchCapacityLimit compactedEventNumberOption eventsPending (batchSize: int) (streamVersion: int64): int =
         match compactedEventNumberOption with
-        | Some (compactionEventNumber: int64) -> (batchSize - unstoredEventsPending) - int (streamVersion - compactionEventNumber + 1L) |> max 0
-        | None -> (batchSize - unstoredEventsPending) - (int streamVersion + 1) - 1 |> max 0
+        | Some (compactionEventNumber: int64) -> (batchSize - eventsPending) - int (streamVersion - compactionEventNumber + 1L) |> max 0
+        | None -> (batchSize - eventsPending) - (int streamVersion + 1) - 1 |> max 0
 
-    let (*private*) ofCompactionEventNumber compactedEventNumberOption unstoredEventsPending batchSize streamVersion: StreamToken =
-        let batchCapacityLimit = batchCapacityLimit compactedEventNumberOption unstoredEventsPending batchSize streamVersion
+    let (*private*) ofCompactionEventNumber compactedEventNumberOption eventsPending batchSize streamVersion: StreamToken =
+        let batchCapacityLimit = batchCapacityLimit compactedEventNumberOption eventsPending batchSize streamVersion
         create compactedEventNumberOption (Some batchCapacityLimit) streamVersion
 
     /// Assume we have not seen any compaction events; use the batchSize and version to infer headroom
@@ -336,7 +336,7 @@ type EventStoreContext(connection: EventStoreConnection, batchOptions: BatchOpti
             | None -> return Token.ofPreviousTokenAndEventsLength streamToken events.Length batchOptions.BatchSize version, Array.chooseV tryDecode events
             | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batchOptions.BatchSize version, Array.chooseV tryDecode events }
 
-    member internal _.TrySync(log, streamName, streamToken, events, encodedEvents: EventData[], isCompactionEventType, ct): Task<GatewaySyncResult> = task {
+    member internal _.Sync(log, streamName, streamToken, events, encodedEvents: EventData[], isCompactionEventType, ct): Task<GatewaySyncResult> = task {
         let streamVersion = let (Token.Unpack token) = streamToken in token.streamVersion
         let! wr = Write.writeEvents log connection.WriteRetryPolicy connection.WriteConnection streamName streamVersion encodedEvents ct
         match wr with
@@ -403,7 +403,7 @@ type private Category<'event, 'state, 'context>(context: EventStoreContext, code
     interface ICategory<'event, 'state, 'context> with
         member _.Load(log, _categoryName, _streamId, streamName, _maxAge, requireLeader, ct) =
             fetch initial (loadAlgorithm log streamName requireLeader ct)
-        member _.TrySync(log, _categoryName, _streamId, streamName, ctx, _maybeInit, (Token.Unpack token as streamToken), state, events, ct) = task {
+        member _.Sync(log, _categoryName, _streamId, streamName, ctx, _maybeInit, (Token.Unpack token as streamToken), state, events, ct) = task {
             let events =
                 match access with
                 | None | Some AccessStrategy.LatestKnownEvent -> events
@@ -412,7 +412,7 @@ type private Category<'event, 'state, 'context>(context: EventStoreContext, code
                     if cc.IsCompactionDue then Array.append events (fold state events |> compact |> Array.singleton) else events
             let encode e = codec.Encode(ctx, e)
             let encodedEvents: EventData[] = events |> Array.map (encode >> ClientCodec.eventData)
-            match! context.TrySync(log, streamName, streamToken, events, encodedEvents, compactionPredicate, ct) with
+            match! context.Sync(log, streamName, streamToken, events, encodedEvents, compactionPredicate, ct) with
             | GatewaySyncResult.Written token' ->    return SyncResult.Written  (token', fold state events)
             | GatewaySyncResult.ConflictUnknown _ -> return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, streamToken, state)) }
 
@@ -448,7 +448,7 @@ type ConnectionStrategy =
     | ClusterSingle of NodePreference
 
 type EventStoreConnector
-    (   reqTimeout: TimeSpan, reqRetries: int,
+    (   reqTimeout: TimeSpan,
         [<O; D null>] ?readRetryPolicy, [<O; D null>] ?writeRetryPolicy, [<O; D null>] ?tags,
         [<O; D null>] ?customize: EventStoreClientSettings -> unit) =
 

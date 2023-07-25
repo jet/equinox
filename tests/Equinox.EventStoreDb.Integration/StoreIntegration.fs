@@ -38,7 +38,7 @@ open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.MySql
 
 let connectToLocalStore (_: ILogger) =
-    Connector(sprintf "Server=localhost;User=root;Database=EQUINOX_TEST_DB",autoCreate=true).Establish()
+    Connector("Server=localhost;User=root;Database=EQUINOX_TEST_DB", autoCreate = true).Establish()
 
 type Context = SqlStreamStoreContext
 type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
@@ -61,7 +61,7 @@ open Equinox.EventStoreDb
 
 /// Connect directly to a locally running EventStoreDB Node using gRPC, without using Gossip-driven discovery
 let connectToLocalStore (_log: ILogger) = async {
-    let c = EventStoreConnector(reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, (*, log=Logger.SerilogVerbose log,*) tags=["I",Guid.NewGuid() |> string])
+    let c = EventStoreConnector(reqTimeout = TimeSpan.FromSeconds 3., (*, log = Logger.SerilogVerbose log,*) tags = ["I",Guid.NewGuid() |> string])
     let conn = c.Establish("Equinox-integration", Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false", ConnectionStrategy.ClusterSingle EventStore.Client.NodePreference.Leader)
     return conn }
 #endif
@@ -98,7 +98,7 @@ module SimplestThing =
         interface TypeShape.UnionContract.IUnionContract
     let codec = EventCodec.gen<Event>
 
-    let evolve (state: Event) (event: Event) = event
+    let evolve (_state: Event) (event: Event) = event
     let fold = Seq.fold evolve
     let initial = StuffHappened
     let resolve log context =

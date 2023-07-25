@@ -33,7 +33,7 @@ type SpyCategory() =
             do! Task.Delay(x.Delay, ct)
             return struct (mkToken(), Interlocked.Increment &state)
         }
-        member _.TrySync(_log, _cat, _sid, _sn, _ctx, _maybeInit, _originToken, originState, events, _ct) = task {
+        member _.Sync(_log, _cat, _sid, _sn, _ctx, _maybeInit, _originToken, originState, events, _ct) = task {
             return Equinox.Core.SyncResult.Written (mkToken(), originState + events.Length)
         }
 
@@ -51,10 +51,9 @@ let writeOriginState = 99
 let expectedWriteState = 99 + 2 // events written
 
 let write sn (sut: Equinox.Core.ICategory<_, _, _>) = task {
-    let! wr = sut.TrySync(Serilog.Log.Logger, null, null, sn, (), ValueNone, Unchecked.defaultof<_>, writeOriginState, Array.replicate 2 (), CancellationToken.None)
+    let! wr = sut.Sync(Serilog.Log.Logger, null, null, sn, (), ValueNone, Unchecked.defaultof<_>, writeOriginState, Array.replicate 2 (), CancellationToken.None)
     let wState' = trap <@ match wr with Equinox.Core.SyncResult.Written (_token, state') -> state' | _ -> failwith "unexpected" @>
-    test <@ expectedWriteState = wState' @>
-}
+    test <@ expectedWriteState = wState' @> }
 
 // Pinning the fact that the algorithm is not sensitive to the reuse of the initial value of a cache entry
 let [<Fact>] ``AsyncLazy.Empty is a true singleton, does not allocate`` () =

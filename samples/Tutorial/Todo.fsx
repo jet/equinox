@@ -1,4 +1,4 @@
-﻿#if LOCAL
+﻿#if !LOCAL
 // Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
 #if VISUALSTUDIO

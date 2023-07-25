@@ -1078,7 +1078,7 @@ type internal Category<'event, 'state, 'context>
         member _.Load(log, _categoryName, _streamId, stream, _maxAge, _requireLeader, ct): Task<struct (StreamToken * 'state)> = task {
             let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds, ct)
             return struct (token, fold initial events) }
-        member _.TrySync(log, _categoryName, _streamId, streamName, ctx, maybeInit, (Token.Unpack pos as streamToken), state, events, ct) = task {
+        member _.Sync(log, _categoryName, _streamId, streamName, ctx, maybeInit, (Token.Unpack pos as streamToken), state, events, ct) = task {
             let state' = fold state events
             let exp, events, eventsEncoded, projectionsEncoded =
                 let encode e = codec.Encode(ctx, e)
@@ -1400,7 +1400,6 @@ type CosmosStoreCategory<'event, 'state, 'context> internal (resolveInner, empty
 namespace Equinox.CosmosStore.Core
 
 open System.Collections.Generic
-open System.Threading
 open System.Threading.Tasks
 open Equinox.Core
 open FsCodec

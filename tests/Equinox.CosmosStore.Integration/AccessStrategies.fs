@@ -95,7 +95,7 @@ module Props =
     let [<Literal>] maxTest = 5
     #endif
     type FsCheckAttribute() =
-        inherit AutoDataAttribute(MaxTest = maxTest, Arbitrary=[|typeof<GapGen>|])
+        inherit AutoDataAttribute(MaxTest = maxTest, Arbitrary = [| typeof<GapGen> |])
 
 [<Collection "DocStore">]
 type UnoptimizedTipReadingCorrectness(testOutputHelper) =

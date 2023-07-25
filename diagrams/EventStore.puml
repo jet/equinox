@@ -58,7 +58,7 @@ apps       <-R-> aggregate   : transact\nagainst
 apps       <.L.  caches      : reference\neventually\nconsistent
 
 aggregate  <-R-> stream      : Transact/\nQuery
-stream      -R-> IStream     : Load/\nTrySync
+stream      -R-> IStream     : Load/\nSync
 
 eqxes       .U.> IStream     : implements
 eqxes      <-R-> memorycache : TryGet/\nUpdate

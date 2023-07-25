@@ -93,7 +93,7 @@ apps      <->   aggregate   : transact\nagainst
 apps      <.    caches      : reference\neventually\nconsistent
 
 aggregate <-L-> stream      : Transact/\nQuery
-stream     -L-> eqxcosmos   : Load/\nTrySync
+stream     -L-> eqxcosmos   : Load/\nSync
 
 eqxcosmos <-L-> memorycache : TryGet/\nUpdate
 eqxcosmos <->   sync0       : ExecuteStoredProc\n[Azure.Cosmos TCP]

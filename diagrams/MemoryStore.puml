@@ -63,7 +63,7 @@ tests         -> eqxms       : may validate\nby probing
 
 aggregate  <-R-> stream      : Transact
 aggregate2 <-R-> stream      : Transact/\nQuery
-stream      -R-> IStream     : Load/\nTrySync
+stream      -R-> IStream     : Load/\nSync
 
 eqxms         -> IStream     : implements
 eqxms         .> eqxmsdict   : has a\nvolatile

@@ -463,13 +463,13 @@ module CosmosStats =
             let client = sa.Connector.CreateClient()
             let! t = Equinox.DynamoStore.Core.Initialization.describe client sa.Table
             match t.BillingModeSummary, t.ProvisionedThroughput, Equinox.DynamoStore.Core.Initialization.tryGetActiveStreamsArn t with
-            | null, p, sarn when p <> null ->
+            | null, p, streamsArn when p <> null ->
                 log.Information("DynamoStore Table {table} Provisioned with {read}R/{write}WCU Provisioned capacity; Streams ARN {streaming}",
-                                sa.Table, p.ReadCapacityUnits, p.WriteCapacityUnits, sarn)
-            | bms, _, sarn when bms.BillingMode = Amazon.DynamoDBv2.BillingMode.PAY_PER_REQUEST ->
-                log.Information("DynamoStore Table {table} Provisioned with On-Demand capacity management; Streams ARN {streaming}", sa.Table, sarn)
-            | _, _, sarn ->
-                log.Information("DynamoStore Table {table} Provisioning Unknown; Streams ARN {streaming}", sa.Table, sarn) }
+                                sa.Table, p.ReadCapacityUnits, p.WriteCapacityUnits, streamsArn)
+            | bms, _, streamsArn when bms.BillingMode = Amazon.DynamoDBv2.BillingMode.PAY_PER_REQUEST ->
+                log.Information("DynamoStore Table {table} Provisioned with On-Demand capacity management; Streams ARN {streaming}", sa.Table, streamsArn)
+            | _, _, streamsArn ->
+                log.Information("DynamoStore Table {table} Provisioning Unknown; Streams ARN {streaming}", sa.Table, streamsArn) }
         | x -> Store.missingArg $"unexpected subcommand %A{x}"
 
 module Dump =

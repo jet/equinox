@@ -87,7 +87,7 @@ Aggregate --> IStream: state
 loop Optimistic Concurrency Control loop driven by consistency check on etag, attempts times; INPUT: state
 Decider -> Aggregate: interpret state
 Aggregate --> Decider: { result = proposedResult\n  events proposedEvents }
-Decider -> IStream: TrySync token state proposedEvents
+Decider -> IStream: Sync token state proposedEvents
 IStream -> Aggregate: fold state proposedEvents
 Aggregate --> IStream: state'
 IStream -> Aggregate: snapshot state'

@@ -248,16 +248,16 @@ module EventStore =
         member _.Retries =              a.GetResult(Retries, 1)
         member _.BatchSize =            a.GetResult(BatchSize, 500)
 
-    let private connect connectionString credentialsString (operationTimeout, operationRetries) =
+    let private connect connectionString credentialsString operationTimeout =
         let cs = match credentialsString with null -> connectionString | x -> String.Join(";", connectionString, x)
         let tags = ["M", Environment.MachineName; "I", Guid.NewGuid() |> string]
-        EventStoreConnector(reqTimeout = operationTimeout, reqRetries = operationRetries, tags = tags)
+        EventStoreConnector(reqTimeout = operationTimeout, tags = tags)
             .Establish(appName, Discovery.ConnectionString cs, ConnectionStrategy.ClusterTwinPreferSlaveReads)
     let config (log : ILogger) (cache, unfolds) (p : ParseResults<Parameters>) =
         let a = Arguments(p)
-        let timeout, retries as operationThrottling = a.Timeout, a.Retries
-        log.Information("EventStoreDB {connectionString} {timeout}s retries {retries}", a.ConnectionString, timeout.TotalSeconds, retries)
-        let connection = connect a.ConnectionString a.Credentials operationThrottling
+        let timeout = a.Timeout
+        log.Information("EventStoreDB {connectionString} {timeout}s", a.ConnectionString, timeout.TotalSeconds)
+        let connection = connect a.ConnectionString a.Credentials timeout
         let cacheStrategy = cache |> Option.map (fun c -> Equinox.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.))
         Context.Es (EventStoreContext(connection, batchSize = a.BatchSize), cacheStrategy, unfolds)
 

@@ -1,4 +1,4 @@
-#if LOCAL
+#if !LOCAL
 // Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
 #I "bin/Debug/net6.0/"
@@ -80,10 +80,10 @@ let _removeBAgainEffect = interpret (Remove "b") favesCa
     b) a maximum number of attempts to make if we clash with a conflicting write *)
 
 // Example of wrapping Decider to encapsulate stream access patterns (see DOCUMENTATION.md for reasons why this is not advised in real apps)
-type Handler(decider : Equinox.Decider<Event, State>) =
-    member _.Execute command : Async<unit> =
+type Handler(decider: Equinox.Decider<Event, State>) =
+    member _.Execute command: Async<unit> =
         decider.Transact(interpret command)
-    member _.Read : Async<string list> =
+    member _.Read: Async<string list> =
         decider.Query id
 
 (* When we Execute a command, Equinox.Decider will use `fold` and `interpret` to Decide whether Events need to be written
@@ -160,12 +160,12 @@ type Service(deciderFor : string -> Handler) =
         decider.Read
 
 (* See Counter.fsx and Cosmos.fsx for a more compact representation which makes the Handler wiring less obtrusive *)
-let streamFor (clientId: string) =
+let handlerFor (clientId: string) =
     let streamId = Equinox.StreamId.gen id clientId
-    let decider = Equinox.Decider.resolve log cat Category streamId 
+    let decider = Equinox.Decider.forStream log cat streamId 
     Handler(decider)
 
-let service = Service(streamFor)
+let service = Service(handlerFor)
 
 let client = "ClientB"
 service.Favorite(client, "a") |> Async.RunSynchronously

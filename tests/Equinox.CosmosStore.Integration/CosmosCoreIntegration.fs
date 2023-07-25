@@ -143,7 +143,7 @@ type Tests(testOutputHelper) =
         pos =! res
 
         // Demonstrate benefit/mechanism for using the Position-based API to avail of the etag tracking
-        let stream  = ctx.StreamId streamName
+        let stream = ctx.StreamId streamName
 
         let extrasCount = match extras with x when x > 50 -> 5000 | x when x < 1 -> 1 | x -> x*100
         let! _pos = Async.call (fun ct -> ctx.NonIdempotentAppend(stream, TestEvents.Create (int pos,extrasCount), ct))

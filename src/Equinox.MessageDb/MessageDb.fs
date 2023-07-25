@@ -200,7 +200,7 @@ module Read =
         let mutable state = originState
         let rec loop () : Task<unit> = task {
             match maxPermittedBatchReads with
-            | Some mpbr when batchCount >= mpbr -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
+            | Some limit when batchCount >= limit -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
             | _ -> ()
 
             let batchLog = log |> Log.prop "batchIndex" batchCount
@@ -389,7 +389,7 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
     interface ICategory<'event, 'state, 'context> with
         member _.Load(log, categoryName, streamId, streamName, _maxAge, requireLeader, ct) =
             loadAlgorithm log categoryName streamId streamName requireLeader ct
-        member x.TrySync(log, categoryName, streamId, streamName, ctx, _maybeInit, token, state, events, ct) = task {
+        member x.Sync(log, categoryName, streamId, streamName, ctx, _maybeInit, token, state, events, ct) = task {
             let encode e = codec.Encode(ctx, e)
             let encodedEvents: IEventData<EventBody>[] = events |> Array.map encode
             match! context.TrySync(log, categoryName, streamId, streamName, token, encodedEvents, ct) with

@@ -38,7 +38,7 @@ let interpret add remove (state : Fold.State) =
         [   if adds.Length <> 0 then yield Events.Added { items = adds }
             if removes.Length <> 0 then yield Events.Deleted { items = removes } ]
 
-type Service internal (decider : Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (decider: Equinox.Decider<Events.Event, Fold.State>) =
 
     member _.Add(add : string seq, remove : string seq) : Async<int*int> =
         decider.Transact(interpret add remove)

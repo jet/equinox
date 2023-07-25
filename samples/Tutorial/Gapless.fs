@@ -54,7 +54,7 @@ let decideConfirm item (state : Fold.State) : Events.Event list =
 let decideRelease item (state : Fold.State) : Events.Event list =
     failwith "TODO"
 
-type Service internal (resolve : SequenceId -> Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (resolve: SequenceId -> Equinox.Decider<Events.Event, Fold.State>) =
 
     member _.ReserveMany(series,count) : Async<int64 list> =
         let decider = resolve series
@@ -74,22 +74,22 @@ type Service internal (resolve : SequenceId -> Equinox.Decider<Events.Event, Fol
 
 let [<Literal>] appName = "equinox-tutorial-gapless"
 
+let create cat = Service(streamId >> Equinox.Decider.resolve Serilog.Log.Logger cat Category)
+
 module Cosmos =
 
     open Equinox.CosmosStore
     let private create (context, cache, accessStrategy) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        let cat = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-        Service(streamId >> Equinox.Decider.resolve Serilog.Log.Logger cat Category)
+        CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+        |> create
 
     module Snapshot =
 
         let create (context, cache) =
-            let accessStrategy = AccessStrategy.Snapshot (Fold.isOrigin,Fold.snapshot)
-            create (context, cache, accessStrategy)
+            create (context, cache, AccessStrategy.Snapshot (Fold.isOrigin, Fold.snapshot))
 
     module RollingUnfolds =
 
         let create (context, cache) =
-            let accessStrategy = AccessStrategy.RollingState Fold.snapshot
-            create (context, cache, accessStrategy)
+            create (context, cache, AccessStrategy.RollingState Fold.snapshot)

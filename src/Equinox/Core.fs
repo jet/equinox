@@ -9,6 +9,9 @@ open System.Threading.Tasks
 /// Store-agnostic interface representing interactions a Flow can have with the state of a given event stream. Not intended for direct use by consumer code.
 type IStream<'event, 'state> =
 
+    /// The StreamName, derived from the Name of the Category, and the StreamId supplied to Category.Stream
+    abstract Name: string
+
     /// Generate a stream token that represents a stream one believes to be empty to use as a Null Object when optimizing out the initial load roundtrip
     abstract LoadEmpty: unit -> struct (StreamToken * 'state)
 
@@ -18,13 +21,13 @@ type IStream<'event, 'state> =
     /// Given the supplied `token` [and related `originState`], attempt to move to state `state'` by appending the supplied `events` to the underlying stream
     /// SyncResult.Written: implies the state is now the value represented by the Result's value
     /// SyncResult.Conflict: implies the `events` were not synced; if desired the consumer can use the included resync workflow in order to retry
-    abstract TrySync: attempt: int * originTokenAndState: struct (StreamToken * 'state) * events: 'event[] * CancellationToken -> Task<SyncResult<'state>>
+    abstract Sync: attempt: int * token: StreamToken * state: 'state * events: 'event[] * CancellationToken -> Task<SyncResult<'state>>
 
-/// Internal type used to represent the outcome of a TrySync operation
+/// Internal type used to represent the outcome of a Sync
 and [<NoEquality; NoComparison; RequireQualifiedAccess>] SyncResult<'state> =
     /// The write succeeded (the supplied token and state can be used to efficiently continue the processing if, and only if, desired)
     | Written of struct (StreamToken * 'state)
-    /// The set of changes supplied to TrySync conflict with the present state of the underlying stream based on the configured policy for that store
+    /// The set of changes supplied Sync conflict with the present state of the underlying stream based on the configured policy for that store
     /// The inner is Async as some stores (and/or states) are such that determining the conflicting state (if, and only if, required) needs an extra trip to obtain
     | Conflict of (CancellationToken -> Task<struct (StreamToken * 'state)>)
 
@@ -38,12 +41,12 @@ type internal Impl() =
             (validateResync: int -> unit)
             (mapResult: Func<'r, struct (StreamToken * 's), 'v>)
             originTokenAndState ct: Task<'v> =
-        let rec loop attempt tokenAndState: Task<'v> = task {
+        let rec loop attempt (struct (token, state) as tokenAndState): Task<'v> = task {
             let! result, events = decide.Invoke(tokenAndState, ct)
             match Array.ofSeq events with
             | [||] -> return mapResult.Invoke(result, tokenAndState)
             | events ->
-                match! stream.TrySync(attempt, tokenAndState, events, ct) with
+                match! stream.Sync(attempt, token, state, events, ct) with
                 | SyncResult.Written tokenAndState' ->
                     return mapResult.Invoke(result, tokenAndState')
                 | SyncResult.Conflict resync ->

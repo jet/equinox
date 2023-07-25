@@ -243,7 +243,7 @@ and internal LoadPolicy() =
         | Some AssumeEmpty ->                        fun stream _ct ->  Task.FromResult(stream.LoadEmpty())
         | Some (FromMemento (streamToken, state)) -> fun _stream _ct -> Task.FromResult(streamToken, state)
 
-(* Retry / Attempts policy used to define policy for resyncing state when there's an Append conflict (default 3 retries) *)
+(* Retry / Attempts policy used to define policy for retrying based on the conflicting state when there's an Append conflict (default 3 retries) *)
 
 and [<NoComparison; NoEquality; RequireQualifiedAccess>] Attempts =
     | Max of count: int
