@@ -4,7 +4,6 @@ open System.Threading
 open Domain
 open Equinox.Core.Tracing
 open FSharp.UMX
-open Serilog
 open Swensen.Unquote
 open System.Diagnostics
 open System
@@ -28,7 +27,7 @@ module SimplestThing =
         interface TypeShape.UnionContract.IUnionContract
     let codec = EventCodec.gen<Event>
 
-    let evolve (state: Event) (event: Event) = event
+    let evolve (_state: Event) (event: Event) = event
     let fold = Seq.fold evolve
     let initial = StuffHappened
     let resolve log context =
@@ -57,10 +56,10 @@ module Cart =
         |> Cart.create
 
     let createServiceWithSnapshottingAndCaching log context cache =
-            let sliding20m = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-            Category(context, codec, fold, initial, sliding20m, AccessStrategy.AdjacentSnapshots snapshot)
-            |> Equinox.Decider.resolve log
-            |> Cart.create
+        let sliding20m = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
+        Category(context, codec, fold, initial, sliding20m, AccessStrategy.AdjacentSnapshots snapshot)
+        |> Equinox.Decider.resolve log
+        |> Cart.create
 
 module ContactPreferences =
     let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
@@ -102,7 +101,7 @@ type Listener() =
 
     member _.Spans() = spans
     member _.Clear() = spans.Clear()
-    member this.TestSpans(tests: _ array) =
+    member _.TestSpans(tests: _[]) =
         let len = max tests.Length spans.Count
         // this is funky because we want to ensure the same number of tests and spans
         for i in 0..len - 1 do
@@ -113,17 +112,17 @@ type Listener() =
         member _.Dispose() = listener.Dispose()
 
 let span (m: (string * obj) list) (span: Activity) =
-        let spanDict = Map.ofList [
-            for key, _ in m do
-              key, span.GetTagItem(key)
-            "name", span.DisplayName :> obj ]
-        test <@ spanDict = Map.ofList m @>
+    let spanDict = Map.ofList [
+        for key, _ in m do
+          key, span.GetTagItem(key)
+        "name", span.DisplayName :> obj ]
+    test <@ spanDict = Map.ofList m @>
 
 type GeneralTests() =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly batching the reads [without any optimizations]`` (ctx, skuId) = async {
-        let log = Log.Logger
+        let log = Serilog.Log.Logger
         use listener = new Listener()
         let! connection = connectToLocalStore ()
 
@@ -159,7 +158,7 @@ type GeneralTests() =
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, managing sync conflicts by retrying [without any optimizations]`` (ctx, initialState) = async {
-        let log = Log.Logger
+        let log = Serilog.Log.Logger
         use listener = new Listener()
 
         let! connection = connectToLocalStore()
@@ -236,7 +235,7 @@ type GeneralTests() =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can correctly read and update against Store, with LatestKnownEvent Access Strategy`` id value = async {
         use listener = new Listener()
-        let log = Log.Logger
+        let log = Serilog.Log.Logger
         let! client = connectToLocalStore()
         let service = ContactPreferences.createService log client
 
@@ -267,7 +266,7 @@ type GeneralTests() =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly caching to avoid redundant reads`` (ctx, skuId) = async {
         use listener = new Listener()
-        let log = Log.Logger
+        let log = Serilog.Log.Logger
         let! client = connectToLocalStore ()
         let batchSize = 10
         let cache = Equinox.Cache("cart", sizeMb = 50)
@@ -348,7 +347,7 @@ type GeneralTests() =
         let context = createContext connection batchSize
         let id = Guid.NewGuid()
         let toStreamId (x: Guid) = x.ToString "N"
-        let decider = SimplestThing.resolve Log.Logger context SimplestThing.Category (Equinox.StreamId.gen toStreamId id)
+        let decider = SimplestThing.resolve Serilog.Log.Logger context SimplestThing.Category (Equinox.StreamId.gen toStreamId id)
 
         let! before, after = decider.TransactEx(
             (fun state -> state.Version, [SimplestThing.StuffHappened]),
@@ -361,7 +360,7 @@ type AdjacentSnapshotTests() =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly snapshotting to avoid redundant reads`` (ctx, skuId) = async {
         use listener = new Listener()
-        let log = Log.Logger
+        let log = Serilog.Log.Logger
         let! client = connectToLocalStore ()
         let batchSize = 10
         let context = createContext client batchSize
@@ -478,5 +477,3 @@ type AdjacentSnapshotTests() =
                   Tags.cache_hit, true]
         |])
     }
-
-
