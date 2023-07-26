@@ -8,11 +8,11 @@ open Swensen.Unquote
 open System
 open global.Xunit
 
-module Arb =
-    let generate<'t> = ArbMap.defaults |> ArbMap.generate<'t>
+module ArbMap =
+    let defGen<'t> = ArbMap.defaults |> ArbMap.generate<'t>
 
 type FsCheckGenerators =
-    static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen
+    static member SkuId = ArbMap.defGen |> Gen.map SkuId |> Arb.fromGen
 
 type DomainPropertyAttribute() =
     inherit FsCheck.Xunit.PropertyAttribute(QuietOnSuccess = true, Arbitrary=[| typeof<FsCheckGenerators> |])

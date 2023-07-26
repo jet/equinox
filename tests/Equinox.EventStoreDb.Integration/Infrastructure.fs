@@ -5,16 +5,17 @@ open FsCheck.FSharp
 open System
 open FSharp.UMX
 
-module Arb =
-    let generate<'t> = ArbMap.defaults |> ArbMap.generate<'t>
+module ArbMap =
+    let defGen<'t> = ArbMap.defaults |> ArbMap.generate<'t>
+
 type FsCheckGenerators =
-    static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen
+    static member SkuId = ArbMap.defGen |> Gen.map SkuId |> Arb.fromGen
     static member ContactPreferencesId =
-        Arb.generate<Guid>
+        ArbMap.defGen<Guid>
         |> Gen.map (fun x -> sprintf "%s@test.com" (x.ToString("N")))
         |> Gen.map ContactPreferences.ClientId
         |> Arb.fromGen
-    static member RequestId = Arb.generate<Guid> |> Gen.map (fun x -> RequestId.parse %x) |> Arb.fromGen
+    static member RequestId = ArbMap.defGen<Guid> |> Gen.map (fun x -> RequestId.parse %x) |> Arb.fromGen
 
 #if STORE_POSTGRES || STORE_MSSQL || STORE_MYSQL
 open Equinox.SqlStreamStore
