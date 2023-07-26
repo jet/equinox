@@ -76,7 +76,7 @@ type Decider<'event, 'state>(inner: DeciderCore<'event, 'state>) =
     /// 3. Yields a final 'view produced by <c>mapResult</c> from the <c>'result</c> and/or the final persisted <c>ISyncContext</c>
     member _.TransactEx(decide: ISyncContext<'state> -> 'result * 'event[], mapResult: 'result -> ISyncContext<'state> -> 'view,
                         ?load, ?attempts): Async<'view> = Async.call <| fun ct ->
-        inner.TransactEx(decide = (decide >> ValueTuple.Create), mapResult = mapResult, ?load = load, ?attempts = attempts, ct = ct)
+        inner.TransactEx(decide >> ValueTuple.Create, mapResult, ?load = load, ?attempts = attempts, ct = ct)
 
     /// Project from the folded <c>'state</c>, but without executing a decision flow as <c>Transact</c> does
     member _.Query(render: 'state -> 'view, ?load): Async<'view> = Async.call <| fun ct ->
@@ -99,7 +99,7 @@ type Decider<'event, 'state>(inner: DeciderCore<'event, 'state>) =
     /// 3. Yield result
     member _.TransactAsync(decide: 'state -> Async<'result * 'event[]>, ?load, ?attempts): Async<'result> = Async.call <| fun ct ->
         let inline decide' s ct = task { let! r, es = Async.StartImmediateAsTask(decide s, ct) in return struct (r, es) }
-        inner.TransactAsync(decide = decide', ?load = load, ?attempts = attempts, ct = ct)
+        inner.TransactAsync(decide', ?load = load, ?attempts = attempts, ct = ct)
 
     /// 1. Invoke the supplied <c>Async</c> <c>decide</c> function with the current complete context, holding the <c>'result</c>
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
@@ -107,7 +107,7 @@ type Decider<'event, 'state>(inner: DeciderCore<'event, 'state>) =
     /// 3. Yield result
     member _.TransactExAsync(decide: ISyncContext<'state> -> Async<'result * 'event[]>, ?load, ?attempts): Async<'result> = Async.call <| fun ct ->
         let decide' c ct = task { let! r, es = Async.StartImmediateAsTask(decide c, ct) in return struct (r, es) }
-        inner.TransactExAsync(decide = decide', ?load = load, ?attempts = attempts, ct = ct)
+        inner.TransactExAsync(decide', ?load = load, ?attempts = attempts, ct = ct)
 
     /// 1. Invoke the supplied <c>Async</c> <c>decide</c> function with the current complete context, holding the <c>'result</c>
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
@@ -116,7 +116,7 @@ type Decider<'event, 'state>(inner: DeciderCore<'event, 'state>) =
     member _.TransactExAsync(decide: ISyncContext<'state> -> Async<'result * 'event[]>, mapResult: 'result -> ISyncContext<'state> -> 'view,
                              ?load, ?attempts): Async<'view> = Async.call <| fun ct ->
         let inline decide' c ct = task { let! r, es = Async.StartImmediateAsTask(decide c, ct) in return struct (r, es) }
-        inner.TransactExAsync(decide = decide', mapResult = mapResult, ?load = load, ?attempts = attempts, ct = ct)
+        inner.TransactExAsync(decide', mapResult, ?load = load, ?attempts = attempts, ct = ct)
 
 /// Central Application-facing API. Wraps the handling of decision or query flows in a manner that is store agnostic
 /// For F#, the async and FSharpFunc signatures in Decider tend to work better, but the API set is equivalent
