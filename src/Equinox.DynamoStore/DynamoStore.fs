@@ -1113,8 +1113,8 @@ type internal StoreClient(container: Container, fallback: Container option, quer
         Prune.until log (container, stream) query.MaxItems index ct
 
 type internal Category<'event, 'state, 'context>
-    (   store: StoreClient, codec: IEventCodec<'event, EncodedBody, 'context>,
-        fold: 'state -> 'event[] -> 'state, initial: 'state, isOrigin: 'event -> bool,
+    (   store: StoreClient,
+        codec: IEventCodec<'event, EncodedBody, 'context>, fold: 'state -> 'event[] -> 'state, initial: 'state, isOrigin: 'event -> bool,
         checkUnfolds, mapUnfolds: Choice<unit, 'event[] -> 'state -> 'event[], 'event[] -> 'state -> 'event[] * 'event[]>) =
     let fetch state f = task { let! token', events = f in return struct (token', fold state events) }
     let reload (log, streamNam, requireLeader, (Token.Unpack pos as streamToken), state) ct: Task<struct (StreamToken * 'state)> = task {

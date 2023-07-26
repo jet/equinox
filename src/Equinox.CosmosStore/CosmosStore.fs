@@ -1066,8 +1066,8 @@ type StoreClient(container: Container, archive: Container option, query: QueryOp
         Prune.until log (container, stream) query.MaxItems index ct
 
 type internal Category<'event, 'state, 'context>
-    (   store: StoreClient, initialize: CancellationToken -> System.Threading.Tasks.ValueTask, codec: IEventCodec<'event, EventBody, 'context>,
-        fold: 'state -> 'event[] -> 'state, initial: 'state, isOrigin: 'event -> bool,
+    (   store: StoreClient, createStoredProcIfNotExistsExactlyOnce: CancellationToken -> System.Threading.Tasks.ValueTask,
+        codec: IEventCodec<'event, EventBody, 'context>, fold: 'state -> 'event[] -> 'state, initial: 'state, isOrigin: 'event -> bool,
         checkUnfolds, compressUnfolds, mapUnfolds: Choice<unit, 'event[] -> 'state -> 'event[], 'event[] -> 'state -> 'event[] * 'event[]>) =
 
     let reload (log, streamName, (Token.Unpack pos as streamToken), state) preloaded ct: Task<struct (StreamToken * 'state)> = task {
@@ -1092,7 +1092,7 @@ type internal Category<'event, 'state, 'context>
             let renderElement = if compressUnfolds then JsonElement.undefinedToNull >> JsonElement.deflate else JsonElement.undefinedToNull
             let projections = projectionsEncoded |> Seq.map (Sync.mkUnfold renderElement baseIndex)
             let batch = Sync.mkBatch streamName eventsEncoded projections
-            do! initialize ct
+            do! createStoredProcIfNotExistsExactlyOnce ct
             match! store.Sync(log, streamName, exp, batch, ct) with
             | InternalSyncResult.Written token' -> return SyncResult.Written (token', state')
             | InternalSyncResult.ConflictUnknown _token' -> return SyncResult.Conflict (reload (log, streamName, streamToken, state) None)
@@ -1305,7 +1305,7 @@ type CosmosStoreContext(storeClient: CosmosStoreClient, tipOptions, queryOptions
     member val StoreClient = storeClient
     member val QueryOptions = queryOptions
     member val TipOptions = tipOptions
-    member internal x.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId) =
+    member internal x.ResolveStoreClientAndStreamNameAndInit(categoryName, streamId) =
         let struct (cg, streamName) = storeClient.ResolveContainerGuardAndStreamName(categoryName, streamId)
         let store = StoreClient(cg.Container, cg.Fallback, x.QueryOptions, x.TipOptions)
         struct (store, streamName, cg.Initialize)
@@ -1387,14 +1387,14 @@ type CosmosStoreCategory<'event, 'state, 'context> internal (name, resolveStream
             | CachingStrategy.SlidingWindow (cache, window) -> Some (Equinox.CachingStrategy.SlidingWindow (cache, window))
             | CachingStrategy.FixedTimeSpan (cache, period) -> Some (Equinox.CachingStrategy.FixedTimeSpan (cache, period))
         let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<'event, 'state, 'context>>()
-        let resolveInner (categoryName, container, initialize) =
+        let resolveInner struct (container, categoryName, init) =
             let createCategory _name: ICategory<_, _, 'context> =
-                Category<'event, 'state, 'context>(container, initialize, codec, fold, initial, isOrigin, checkUnfolds, compressUnfolds, mapUnfolds)
+                Category<'event, 'state, 'context>(container, init, codec, fold, initial, isOrigin, checkUnfolds, compressUnfolds, mapUnfolds)
                 |> Caching.apply Token.isStale caching
             categories.GetOrAdd(categoryName, createCategory)
         let resolveStream streamId =
-            let struct (container, streamName, initialize) = context.ResolveContainerClientAndStreamIdAndInit(name, streamId)
-            struct (resolveInner (name, container, initialize), streamName)
+            let struct (_, streamName, _) as args = context.ResolveStoreClientAndStreamNameAndInit(name, streamId)
+            struct (resolveInner args, streamName)
         CosmosStoreCategory(name, resolveStream)
 
 namespace Equinox.CosmosStore.Core
@@ -1435,11 +1435,11 @@ type EventsContext internal
         | Direction.Backward -> None, startPos
 
     new (context: Equinox.CosmosStore.CosmosStoreContext, log) =
-        let struct (store, _streamId, _init) = context.ResolveContainerClientAndStreamIdAndInit(null, null)
+        let struct (store, _streamId, _init) = context.ResolveStoreClientAndStreamNameAndInit(null, null)
         EventsContext(context, store, log)
 
     member _.ResolveStream(streamName) =
-        let struct (_cc, streamName, init) = context.ResolveContainerClientAndStreamIdAndInit(null, streamName)
+        let struct (_cc, streamName, init) = context.ResolveStoreClientAndStreamNameAndInit(null, streamName)
         struct (streamName, init)
     member x.StreamId(streamName): string = x.ResolveStream streamName |> ValueTuple.fst
 
@@ -1482,10 +1482,9 @@ type EventsContext internal
     /// Callers should implement appropriate idempotent handling, or use Equinox.Decider for that purpose
     member x.Sync(stream, position, events: IEventData<_>[], ct): Task<AppendResult<Position>> = task {
         // Writes go through the stored proc, which we need to provision per container
-        // Having to do this here in this way is far from ideal, but work on caching, external snapshots and caching is likely
-        //   to move this about before we reach a final destination in any case
-        let struct(_, init) = x.ResolveStream(stream)
-        do! init ct
+        // The way this is routed is definitely hacky, but the entire existence of this API is pretty questionable, so ugliness is apppropiate
+        let struct (_, createStoredProcIfNotExistsExactlyOnce) = x.ResolveStream(stream)
+        do! createStoredProcIfNotExistsExactlyOnce ct
         let batch = Sync.mkBatch stream events Seq.empty
         match! store.Sync(log, stream, SyncExp.Version position.index, batch, ct) with
         | InternalSyncResult.Written (Token.Unpack pos) -> return AppendResult.Ok pos
