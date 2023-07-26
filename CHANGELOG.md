@@ -27,8 +27,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Changed
 
 - Performance: Switch surface APIs to `struct` Tuples and Options where relevant, some due to `struct` changes in [`FsCodec` #82](https://github.com/jet/FsCodec/pull/82), and use `task` in hot paths [#337](https://github.com/jet/equinox/pull/337)
-- `Equinox`: Merge `ResolveOption` and `XXXStoreCategory.FromMemento` as `LoadOption` [#308](https://github.com/jet/equinox/pull/308)
-- `Equinox`: Merge `XXXStoreCategory.Resolve(sn, ?ResolveOption)` and `XXXStoreCategory.FromMemento` as option `LoadOption` parameter on all `Transact` and `Query` methods [#308](https://github.com/jet/equinox/pull/308)
+- `Equinox`: Rename `ResolveOption` to `LoadOption` [#308](https://github.com/jet/equinox/pull/308) [#413](https://github.com/jet/equinox/pull/413)
+- `Equinox`: Replace `XXXStoreCategory.Resolve(sn, ?ResolveOption)` with `?load = LoadOption` parameter on all `Transact` and `Query` methods [#308](https://github.com/jet/equinox/pull/308)
 - `Equinox.*.*Category`: Added mandatory `name` argument, and `Name` property [#410](https://github.com/jet/equinox/pull/410)
 - `Equinox.*.*Category`: Changed caching to be last argument, to reflect that it is applied over the top [#410](https://github.com/jet/equinox/pull/410)
 - `Equinox.LoadOption`: Rename `AllowStale` to `AnyCachedValue` [#386](https://github.com/jet/equinox/pull/386)
@@ -51,7 +51,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `CosmosStore.Core.Initialization.initAux`: Replace hard-coded manual 400 RU with `mode` parameter [#328](https://github.com/jet/equinox/pull/328) :pray: [@brihadish](https://github.com/brihadish)
 
 ### Removed
- 
+
+- `Equinox.ISyncContext.CreateMemento` [#413](https://github.com/jet/equinox/pull/413)
+- Stores: `*StoreCategory.FromMemento` [#413](https://github.com/jet/equinox/pull/413)
 - Remove explicit `net461` handling; minimum target now `net6.0` / `FSharp.Core` v `6.0.0` [#310](https://github.com/jet/equinox/pull/310) [#323](https://github.com/jet/equinox/pull/323) [#354](https://github.com/jet/equinox/pull/354)
 - Remove `Equinox.Core.ICache` (there is/was only one impl, and the interface has changed as part of [#386](https://github.com/jet/equinox/pull/386)) [#389](https://github.com/jet/equinox/pull/389)
 

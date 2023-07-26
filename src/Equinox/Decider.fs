@@ -230,8 +230,6 @@ and [<NoComparison; NoEquality>] LoadOption<'state> =
     | AllowStale of maxAge: TimeSpan
     /// Inhibit load from database based on the fact that the stream is likely not to have been initialized yet, and we will be generating events
     | AssumeEmpty
-    /// <summary>Instead of loading from database, seed the loading process with the supplied memento, obtained via <c>ISyncContext.CreateMemento()</c></summary>
-    | FromMemento of memento: struct (StreamToken * 'state)
 and internal LoadPolicy() =
     static member Fetch<'state, 'event>(x: LoadOption<'state> option)
         : IStream<'event, 'state> -> CancellationToken -> Task<struct (StreamToken * 'state)> =
@@ -241,7 +239,6 @@ and internal LoadPolicy() =
         | Some AnyCachedValue ->                     fun stream ct ->   stream.Load(maxAge = TimeSpan.MaxValue, requireLeader = false, ct = ct)
         | Some (AllowStale maxAge) ->                fun stream ct ->   stream.Load(maxAge = maxAge,            requireLeader = false, ct = ct)
         | Some AssumeEmpty ->                        fun stream _ct ->  Task.FromResult(stream.LoadEmpty())
-        | Some (FromMemento (streamToken, state)) -> fun _stream _ct -> Task.FromResult(streamToken, state)
 
 (* Retry / Attempts policy used to define policy for retrying based on the conflicting state when there's an Append conflict (default 3 retries) *)
 
@@ -274,14 +271,10 @@ and [<NoComparison; NoEquality>]
     /// The present State of the stream within the context of this Flow
     abstract member State: 'state
 
-    /// Represents a Checkpoint position on a Stream's timeline; Can be used to manage continuations via LoadOption.FromMemento
-    abstract member CreateMemento: unit -> struct (StreamToken * 'state)
-
 and internal SyncContext<'state> =
 
     static member Map(struct (token: StreamToken, state: 'state)) =
         { new ISyncContext<'state> with
             member _.State = state
             member _.Version = token.version
-            member _.StreamEventBytes = match token.streamBytes with -1L -> ValueNone | b -> ValueSome b
-            member _.CreateMemento() = token, state }
+            member _.StreamEventBytes = match token.streamBytes with -1L -> ValueNone | b -> ValueSome b }
