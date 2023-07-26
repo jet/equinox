@@ -5,10 +5,11 @@ open Equinox.MemoryStore
 open FsCheck.FSharp
 open Swensen.Unquote
 
-let genDefault<'t> = ArbMap.defaults |> ArbMap.generate<'t>
+module ArbMap =
+    let defGen<'t> = ArbMap.defaults |> ArbMap.generate<'t>
 
 type FsCheckGenerators =
-    static member SkuId = genDefault |> Gen.map SkuId |> Arb.fromGen
+    static member SkuId = ArbMap.defGen |> Gen.map SkuId |> Arb.fromGen
 
 type AutoDataAttribute() =
     inherit FsCheck.Xunit.PropertyAttribute(Arbitrary = [| typeof<FsCheckGenerators> |], MaxTest = 1, QuietOnSuccess = true)
