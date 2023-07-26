@@ -23,7 +23,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FSharp.Core" Version="6.0.7" />
+    <PackageReference Include="FSharp.Core" Version="6.0.7" ExcludeAssets="contentfiles" />
     
     <PackageReference Include="Argu" Version="6.1.1" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="6.0.0" />

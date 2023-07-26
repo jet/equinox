@@ -23,12 +23,8 @@
   <ItemGroup>
     <PackageReference Include="MinVer" Version="4.2.0" PrivateAssets="All" />
 
-    <PackageReference Include="FSharp.Core" Version="6.0.7">
-      <!-- Workaround for malformed FSharp.Core packages https://github.com/dotnet/fsharp/issues/12706 via https://github.com/fsprojects/Paket/issues/4149-->
-      <!-- Removal triggers issues in dotnet publish, e.g. for Lambda projects -->
-      <ExcludeAssets>contentFiles</ExcludeAssets>
-    </PackageReference>
-
+    <PackageReference Include="FSharp.Core" Version="6.0.7" ExcludeAssets="contentfiles" />
+    
     <PackageReference Include="Serilog" Version="2.12.0" />
     <PackageReference Include="System.Runtime.Caching" Version="6.0.0" />
   </ItemGroup>

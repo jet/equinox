@@ -14,11 +14,7 @@
 #if !LOCAL
 // Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
-#if VISUALSTUDIO
-#r "netstandard"
-#endif
 #I "bin/Debug/net6.0/"
-#r "System.Configuration.ConfigurationManager.dll"
 #r "System.Runtime.Caching.dll"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
@@ -62,7 +58,7 @@ module Events =
     type Event = int64 * Contract
 
     // our upconversion function doesn't actually fit the term - it just tuples the underlying event
-    let up (evt : FsCodec.ITimelineEvent<_>) e : Event =
+    let up (evt: FsCodec.ITimelineEvent<_>) e : Event =
         evt.Index, e
     // as per the `up`, the downConverter needs to drop the index (which is only there for symmetry), add null metadata
     let down (_index, e) : struct (Contract * _ voption * DateTimeOffset voption) =
@@ -80,37 +76,37 @@ module Fold =
     let initial : State = [||]
     // Rather than composing a `fold` from an `evolve` function as one normally does, it makes sense for us to do it as
     // a loop as we are appending each time but can't mutate the incoming state
-    let fold state (xs : Events.Event seq) =
+    let fold state (xs : Events.Event[]) =
         let mutable bal = state |> Array.tryLast |> Option.defaultValue 0
-        let bals = ResizeArray(state)
+        let balances = ResizeArray(state)
         let record ver delta =
             let ver = int ver
             // If we're ignoring some events, the balance should remain the same, but we need indexes to be correct
-            while bals.Count < ver do
-                bals.Add bal
+            while balances.Count < ver do
+                balances.Add bal
             bal <- bal + delta
-            bals.Add bal
+            balances.Add bal
         for x in xs do
             match x with
-            | ver,Events.Added e -> record ver +e.count
-            | ver,Events.Removed e -> record ver -e.count
-            | _ver,Events.Snapshot e -> bals.Clear(); bals.AddRange e.balanceLog
-        bals.ToArray()
+            | ver, Events.Added e -> record ver +e.count
+            | ver, Events.Removed e -> record ver -e.count
+            | _ver, Events.Snapshot e -> balances.Clear(); balances.AddRange e.balanceLog
+        balances.ToArray()
     // generate a snapshot when requested
-    let snapshot state : Events.Event = -1L,Events.Snapshot { balanceLog = state }
+    let snapshot state : Events.Event = -1L, Events.Snapshot { balanceLog = state }
     // Recognize a relevant snapshot when we meet one in the chain
     let isValid : Events.Event -> bool = function _, Events.Snapshot _ -> true | _ -> false
 
 type Command =
     | Add of int
     | Remove of int
-let interpret command state =
+let interpret command state = [|
     match command with
-    | Add delta -> [-1L,Events.Added { count = delta}]
+    | Add delta -> -1L, Events.Added { count = delta }
     | Remove delta ->
         let bal = state |> Fold.State.balance
         if bal < delta then invalidArg "delta" $"delta %d{delta} exceeds balance %d{bal}"
-        else [-1L,Events.Removed {count = delta}]
+        else -1L, Events.Removed { count = delta } |]
 
 type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
 
@@ -152,7 +148,7 @@ module EventStore =
 
     let snapshotWindow = 500
     // NOTE: use `docker compose up` to establish the standard 3 node config at ports 1113/2113
-    let connector = EventStoreConnector(reqTimeout = TimeSpan.FromSeconds 5., reqRetries = 3)
+    let connector = EventStoreConnector(reqTimeout = TimeSpan.FromSeconds 5.)
     let esc = connector.Connect(AppName, Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false")
     let connection = EventStoreConnection(esc)
     let context = EventStoreContext(connection, batchSize = snapshotWindow)
@@ -160,7 +156,7 @@ module EventStore =
     let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     // rig snapshots to be injected as events into the stream every `snapshotWindow` events
     let accessStrategy = AccessStrategy.RollingSnapshots (Fold.isValid,Fold.snapshot)
-    let cat = EventStoreCategory(context, Category, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+    let cat = EventStoreCategory(context, Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
     let resolve = Equinox.Decider.forStream Log.log cat
 
 module Cosmos =
@@ -174,7 +170,7 @@ module Cosmos =
     let context = CosmosStoreContext(storeClient, tipMaxEvents = 10)
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     let accessStrategy = AccessStrategy.Snapshot (Fold.isValid,Fold.snapshot)
-    let cat = CosmosStoreCategory(context, Category, Events.codecJe, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+    let cat = CosmosStoreCategory(context, Category, Events.codecJe, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
     let resolve = Equinox.Decider.forStream Log.log cat
 
 let service = Service(streamId >> EventStore.resolve)

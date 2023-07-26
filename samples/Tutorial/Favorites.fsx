@@ -54,10 +54,10 @@ let favesCba = fold initialState [| Added "a"; Added "b"; Added "c" |]
 type Command =
     | Add of string
     | Remove of string
-let interpret command state =
+let interpret command state = [|
     match command with
-    | Add sku -> if state |> List.contains sku then [] else [Added sku]
-    | Remove sku -> if state |> List.contains sku |> not then [] else [Removed sku]
+    | Add sku -> if state |> List.contains sku |> not then Added sku
+    | Remove sku -> if state |> List.contains sku then Removed sku |]
 
 (* Note we don't yield events if they won't have a relevant effect - the interpret function makes the processing idempotent
     if a retry of a command happens, it should not make a difference *)
@@ -122,7 +122,7 @@ let cat = Equinox.MemoryStore.MemoryStoreCategory(store, Category, codec, fold, 
 let decider = Equinox.Decider.forStream log cat
 
 // We get a Decider instance for the streamId
-let clientADecider = decider Category clientAFavoritesStreamId
+let clientADecider = decider clientAFavoritesStreamId
 // ... and wrap that in a Handler
 let handler = Handler(clientADecider)
 

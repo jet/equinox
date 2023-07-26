@@ -1,9 +1,6 @@
 ﻿#if !LOCAL
 // Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
-#if VISUALSTUDIO
-#r "netstandard"
-#endif
 #I "bin/Debug/net6.0/"
 #r "System.Runtime.Caching.dll"
 #r "Serilog.dll"
@@ -59,15 +56,15 @@ let isOrigin = function Cleared | Snapshotted _ -> true | _ -> false
 let snapshot state = Snapshotted { items = Array.ofList state.items }
 
 type Command = Add of Todo | Update of Todo | Delete of id: int | Clear
-let interpret c (state : State) =
+let interpret c (state : State) = [|
     match c with
-    | Add value -> [Added { value with id = state.nextId }]
+    | Add value -> Added { value with id = state.nextId }
     | Update value ->
         match state.items |> List.tryFind (function { id = id } -> id = value.id) with
-        | Some current when current <> value -> [Updated value]
-        | _ -> []
-    | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Deleted { id=id }] else []
-    | Clear -> if state.items |> List.isEmpty then [] else [Cleared]
+        | Some current when current <> value -> Updated value
+        | _ -> ()
+    | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then Deleted { id = id }
+    | Clear -> if state.items |> List.isEmpty |> not then Cleared |]
 
 type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
 
@@ -107,14 +104,14 @@ let initialState = initial
 //val initialState : State = {items = [];
 //                            nextId = 0;}
 
-let oneItem = fold initialState [Added { id = 0; order = 0; title = "Feed cat"; completed = false }]
+let oneItem = fold initialState [| Added { id = 0; order = 0; title = "Feed cat"; completed = false } |]
 //val oneItem : State = {items = [{id = 0;
 //                                 order = 0;
 //                                 title = "Feed cat";
 //                                 completed = false;}];
 //                       nextId = 1;}
 
-fold oneItem [Cleared]
+fold oneItem [| Cleared |]
 //val it : State = {items = [];
 //                  nextId = 1;}
 
@@ -136,7 +133,7 @@ module Store =
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
 
     let access = AccessStrategy.Snapshot (isOrigin,snapshot)
-    let category = CosmosStoreCategory(context, Category, codec, fold, initial, cacheStrategy, access=access)
+    let category = CosmosStoreCategory(context, Category, codec, fold, initial, access, cacheStrategy)
 
 let service = Service(streamId >> Equinox.Decider.forStream log Store.category)
 
