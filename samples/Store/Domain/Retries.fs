@@ -48,7 +48,7 @@ module Backoff =
   /// Randomizes the output produced by a back-off strategy:
   /// randomizedInterval = retryInterval * (random in range [1 - randomizationFactor, 1 + randomizationFactor])
   let rand (randomizationFactor:float) =
-    let rand = new System.Random()
+    let rand = System.Random()
     let maxRand,minRand = (1.0 + randomizationFactor), (1.0 - randomizationFactor)
     map (fun x -> (float x) * (rand.NextDouble() * (maxRand - minRand) + minRand) |> int)
 

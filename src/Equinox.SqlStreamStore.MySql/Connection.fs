@@ -6,7 +6,7 @@ open SqlStreamStore
 type Connector
     (    connectionString: string,
          [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy,
-         /// <c>true</c> to auto-create the schema upon connection
+         // <c>true</c> to auto-create the schema upon connection
          [<O; D(null)>]?autoCreate) =
     inherit Equinox.SqlStreamStore.ConnectorBase(?readRetryPolicy=readRetryPolicy,?writeRetryPolicy=writeRetryPolicy)
 

@@ -2,14 +2,14 @@ namespace Equinox.Core
 
 /// Exception yielded by after `count` attempts to complete an operation have taken place
 type OperationRetriesExceededException(count: int, innerException: exn) =
-   inherit exn(sprintf "Retries failed; aborting after %i attempts." count, innerException)
+   inherit exn($"Retries failed; aborting after %i{count} attempts.", innerException)
 
 /// Helper for defining backoffs within the definition of a retry policy for a store.
 module Retry =
     /// Wraps an async computation in a retry loop, passing the (1-based) count into the computation and,
     ///   (until `attempts` exhausted) on an exception matching the `filter`, waiting for the timespan chosen by `backoff` before retrying
     let withBackoff (maxAttempts: int) (backoff: int -> System.TimeSpan option) (f: int -> Async<'a>): Async<'a> =
-        if maxAttempts < 1 then raise (invalidArg "maxAttempts" "Should be >= 1")
+        if maxAttempts < 1 then invalidArg "maxAttempts" "Should be >= 1"
 
         let rec go attempt = async {
             try

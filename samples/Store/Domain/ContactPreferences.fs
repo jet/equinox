@@ -35,11 +35,11 @@ module Fold =
 type Command =
     | Update of Events.Value
 
-let interpret command (state: Fold.State) =
+let interpret command (state: Fold.State) = [|
     match command with
     | Update ({ preferences = preferences } as value) ->
-        if state = preferences then [] else
-        [ Events.Updated value ]
+        if state <> preferences then
+            Events.Updated value |]
 
 type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 

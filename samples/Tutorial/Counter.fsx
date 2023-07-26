@@ -50,7 +50,7 @@ let evolve state event =
 
 (* Fold is folding the evolve function over all events to get the current state
    It's equivalent to LINQ's Aggregate function *)
-let fold state events = Seq.fold evolve state events
+let fold state events = Array.fold evolve state events
 
 (* Commands are the things we intend to happen, though they may not*)
 type Command =
@@ -61,14 +61,14 @@ type Command =
 (* Decide consumes a command and the current state to decide what events actually happened.
    This particular counter allows numbers from 0 to 100. *)
 
-let decide command (State state) =
+let decide command (State state) = [|
     match command with
     | Increment ->
-        if state > 100 then [] else [Incremented]
+        if state < 100 then Incremented
     | Decrement ->
-        if state <= 0 then [] else [Decremented]
+        if state > 0 then Decremented
     | Clear i ->
-        if state = i then [] else [Cleared {value = i}]
+        if state <> i then Cleared {value = i } |]
 
 type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
 

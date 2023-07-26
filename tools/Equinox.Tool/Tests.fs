@@ -1,7 +1,6 @@
 ﻿module Equinox.Tool.Tests
 
 open Domain
-open FSharp.UMX
 open Infrastructure
 open Microsoft.Extensions.DependencyInjection
 open System

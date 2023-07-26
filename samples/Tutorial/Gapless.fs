@@ -38,31 +38,31 @@ module Fold =
                 ofInternal x.next x.reserved x.confirmed x.released
         let toInternal (state : State) : InternalState =
             { reserved = state.reserved; confirmed = Set.empty; released = Set.empty; next = state.next }
-    let fold (state : State) (xs : Events.Event seq) : State =
+    let fold (state: State) (xs: Events.Event[]): State =
         let s = State.toInternal state
-        let state' = (s,xs) ||> Seq.fold (fun s -> s.Evolve)
+        let state' = (s, xs) ||> Array.fold (fun s -> s.Evolve)
         state'.ToState()
     let isOrigin = function Events.Snapshotted _ -> true | _ -> false
     let snapshot state = Events.Snapshotted { reservations = Array.ofSeq state.reserved; nextId = state.next }
 
-let decideReserve count (state : Fold.State) : int64 list*Events.Event list =
+let decideReserve count (state : Fold.State) : int64[] * Events.Event[] =
     failwith "TODO"
 
-let decideConfirm item (state : Fold.State) : Events.Event list =
+let decideConfirm item (state : Fold.State) : Events.Event[] =
     failwith "TODO"
 
-let decideRelease item (state : Fold.State) : Events.Event list =
+let decideRelease item (state : Fold.State) : Events.Event[] =
     failwith "TODO"
 
 type Service internal (resolve: SequenceId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    member _.ReserveMany(series,count) : Async<int64 list> =
+    member _.ReserveMany(series, count) : Async<int64[]> =
         let decider = resolve series
         decider.Transact(decideReserve count)
 
     member x.Reserve(series) : Async<int64> = async {
         let! res = x.ReserveMany(series, 1)
-        return List.head res }
+        return Array.head res }
 
     member _.Confirm(series,item) : Async<unit> =
         let decider = resolve series

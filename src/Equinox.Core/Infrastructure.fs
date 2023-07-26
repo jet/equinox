@@ -2,9 +2,13 @@
 [<AutoOpen>]
 module internal Equinox.Core.Infrastructure
 
-open FSharp.Control
 open System.Diagnostics
-open System.Threading.Tasks
+
+type internal CancellationToken = System.Threading.CancellationToken
+type internal Task<'t> = System.Threading.Tasks.Task<'t>
+type internal Task = System.Threading.Tasks.Task
+type internal TaskCanceledException = System.Threading.Tasks.TaskCanceledException
+type internal Interlocked = System.Threading.Interlocked
 
 type OAttribute = System.Runtime.InteropServices.OptionalAttribute
 type DAttribute = System.Runtime.InteropServices.DefaultParameterValueAttribute
@@ -61,10 +65,6 @@ module ValueTuple =
 
     let inline fst struct (f, _s) = f
     let inline snd struct (_f, s) = s
-
-module Seq =
-
-    let inline chooseV f xs = seq { for x in xs do match f x with ValueSome v -> yield v | ValueNone -> () }
 
 module Array =
 

@@ -78,7 +78,7 @@ module FulfilmentCenter =
             | Events.FcAddressChanged x -> { state with address = Some x.address }
             | Events.FcContactChanged x -> { state with contact = Some x.contact }
             | Events.FcDetailsChanged x -> { state with details = Some x.details }
-        let fold : State -> Events.Event seq -> State = Seq.fold evolve
+        let fold = Array.fold evolve
 
     type Command =
         | Register of FcName
@@ -86,16 +86,16 @@ module FulfilmentCenter =
         | UpdateContact of ContactInformation
         | UpdateDetails of FcDetails
 
-    let interpret command state =
+    let interpret command state = [|
         match command with
-        | Register c when state.name = Some c -> []
-        | Register c -> [Events.FcCreated c]
-        | UpdateAddress c when state.address = Some c -> []
-        | UpdateAddress c -> [Events.FcAddressChanged { address = c }]
-        | UpdateContact c when state.contact = Some c -> []
-        | UpdateContact c -> [Events.FcContactChanged { contact = c }]
-        | UpdateDetails c when state.details = Some c -> []
-        | UpdateDetails c -> [Events.FcDetailsChanged { details = c }]
+        | Register c when state.name = Some c -> ()
+        | Register c -> Events.FcCreated c
+        | UpdateAddress c when state.address = Some c -> ()
+        | UpdateAddress c -> Events.FcAddressChanged { address = c }
+        | UpdateContact c when state.contact = Some c -> ()
+        | UpdateContact c -> Events.FcContactChanged { contact = c }
+        | UpdateDetails c when state.details = Some c -> ()
+        | UpdateDetails c -> Events.FcDetailsChanged { details = c } |]
 
     type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
 
@@ -145,7 +145,7 @@ module Store =
 open FulfilmentCenter
 
 let service =
-    let cat = CosmosStoreCategory(Store.context, Category, Events.codec, Fold.fold, Fold.initial, Store.cacheStrategy, AccessStrategy.Unoptimized)
+    let cat = CosmosStoreCategory(Store.context, Category, Events.codec, Fold.fold, Fold.initial, AccessStrategy.Unoptimized, Store.cacheStrategy)
     Service(streamId >> Equinox.Decider.forStream Log.log cat)
 
 let fc = "fc0"
@@ -172,20 +172,20 @@ module FulfilmentCenterSummary =
     let initial = None
     let evolve _state = function
         | Events.Updated v -> Some v
-    let fold s xs = Seq.fold evolve s xs
+    let fold = Array.fold evolve
 
     type Command =
         | Update of version : int64 * Types.Summary
-    let interpret command (state : State) =
+    let interpret command (state: State) = [|
         match command with
-        | Update (uv,_us) when state |> Option.exists (fun s -> s.version > uv) -> []
-        | Update (uv,us) -> [Events.Updated { version = uv; state = us }]
+        | Update (uv, _us) when state |> Option.exists (fun s -> s.version > uv) -> ()
+        | Update (uv, us) -> Events.Updated { version = uv; state = us } |]
 
-    type Service internal (resolve : string -> Equinox.Decider<Events.Event, State>) =
+    type Service internal (resolve: string -> Equinox.Decider<Events.Event, State>) =
 
         member _.Update(id, version, value) =
             let decider = resolve id
             decider.Transact(interpret (Update (version, value)))
-        member _.TryRead id : Async<Summary option> =
+        member _.TryRead id: Async<Summary option> =
             let decider = resolve id
             decider.Query(Option.map (fun s -> s.state))

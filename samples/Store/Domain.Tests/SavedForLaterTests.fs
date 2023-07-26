@@ -10,15 +10,18 @@ open Xunit
 
 (* Test execution helpers *)
 
-let decide cmd state: bool * Events.Event list =
+let decide cmd state: bool * Events.Event[] =
     decide Int32.MaxValue cmd state
-let interpret cmd state: Events.Event list =
+let interpret cmd state: Events.Event[] =
     decide cmd state |> snd
-let run (commands: Command list): State * Events.Event list =
-    let folder (s,eAcc) c =
-        let events = interpret c s
-        fold s events, eAcc @ events
-    List.fold folder (initial,[]) commands
+let run (commands: Command list): State * Events.Event[] =
+    let e = ResizeArray()
+    let s' =
+        (initial, commands) ||> List.fold (fun s c ->
+            let events = interpret c s
+            e.AddRange events
+            fold s events)
+    s', e.ToArray()
 
 (* State extraction helpers *)
 
@@ -30,14 +33,14 @@ let genSku () = Guid.NewGuid() |> SkuId
 [<Fact>]
 let ``Adding one item to mysaves should appear in aggregate`` () =
     let sku = genSku()
-    let state',_ = run [ Add(DateTimeOffset.Now, [|sku|]) ]
+    let state',_ = run [ Add(DateTimeOffset.Now, [| sku |]) ]
     test <@ state'.Length = 1
             && (state' |> contains sku) @>
 
 [<Fact>]
 let ``Adding two items to mysaves should appear in aggregate`` () =
     let sku1, sku2 = genSku(), genSku()
-    let state',_ = run [ Add(DateTimeOffset.Now, [|sku1; sku2|])]
+    let state',_ = run [ Add(DateTimeOffset.Now, [| sku1; sku2 |])]
     test <@ state'.Length = 2
             && (state' |> contains sku1)
             && (state' |> contains sku2) @>
@@ -88,7 +91,7 @@ let ``Event aggregation should carry set semantics`` (commands: Command list) =
         state
 
     let state',events = run commands
-    let expectedSkus = events |> List.fold evolveSet (HashSet())
+    let expectedSkus = (HashSet(), events) ||> Array.fold evolveSet
     let actualSkus = seq { for item in state' -> item.skuId }
     test <@ expectedSkus.SetEquals actualSkus @>
 
@@ -123,7 +126,7 @@ module Specification =
         let state = fold state eventsToEstablish
         let events = interpret command state
         // Assert we decided nothing needs to happen
-        test <@ List.isEmpty events @>
+        test <@ Array.isEmpty events @>
 
     let (|TakeHalf|) items = items |> Seq.mapi (fun i x -> if i % 2 = 0 then Some x else None) |> Seq.choose id |> Seq.toArray
     let mkAppend skus = mkAppendDated DateTimeOffset.Now skus
@@ -145,14 +148,14 @@ module Specification =
         let state' = fold state events
         match command, events with
         // Remove command that resulted in no action
-        | Remove requested,    [] ->
+        | Remove requested,    [||] ->
             let original, remaining = state |> asSkus |> set, state' |> asSkus |> set
             // Verify there definitely wasn't anything to do
             test <@ requested |> Seq.forall (not << original.Contains) @>
             // Verify there still isn't anything to do
             test <@ requested |> Seq.forall (not << remaining.Contains) @>
         // A removal event should be optimal, with no redundant skus
-        | Remove requested,    [ Events.Removed { skus = removed } ] ->
+        | Remove requested,    [| Events.Removed { skus = removed } |] ->
             let original, remaining = state |> asSkus |> set, state' |> asSkus
             let requested, removed = set requested, set removed
             // Verify the request maps to the event correctly
@@ -165,11 +168,11 @@ module Specification =
             let original, updated = state |> asSkus, state' |> asSkuToState
             // Verify the request maps to the event (or absence thereof) correctly
             match events with
-            | [] -> ()
-            | [Events.Added e] ->
+            | [||] -> ()
+            | [| Events.Added e|] ->
                 test <@ e.dateSaved = date
                         && e.skus |> Seq.forall updated.ContainsKey @>
-            | x -> x |> failwithf "Unexpected %A"
+            | x -> x |> failwithf "unexpected %A"
             // Verify the post state is correct and there is no remaining work
             let updatedIsSameOrNewerThan date sku = not (updated.[sku] |> Fold.isSupersededAt date)
             test <@ original |> Seq.forall updated.ContainsKey
@@ -179,8 +182,8 @@ module Specification =
             let original, updated = state |> asSkuToState, state' |> asSkuToState
             // Verify the request maps to the event (or absence thereof) correctly
             match events with
-            | [] -> ()
-            | [Events.Merged e] ->
+            | [||] -> ()
+            | [| Events.Merged e |] ->
                 let originalIsSupersededByMerged (item: Events.Item) =
                     match original.TryGetValue item.skuId with
                     | true, originalItem -> originalItem |> Fold.isSupersededAt item.dateSaved
@@ -193,7 +196,7 @@ module Specification =
             let combinedSkus = combined |> asSkus |> set
             test <@ combined |> Seq.forall updatedIsSameOrNewerThan
                     && updated.Keys |> Seq.forall combinedSkus.Contains @>
-        | c,e -> failwithf "Invalid result - Command %A yielded Events %A in State %A" c e state
+        | c, e -> failwith $"Invalid result - Command %A{c} yielded Events %A{e} in State %A{state}"
 
     [<DomainProperty>]
     let ``Command -> Event -> State flows`` variant (cmd: Command) (state: State) =

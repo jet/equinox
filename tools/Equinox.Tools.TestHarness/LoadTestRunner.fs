@@ -1,9 +1,9 @@
 ﻿namespace Equinox.Tools.TestHarness
 
 open System
+open System.Collections.Concurrent
 open System.Threading
 open System.Threading.Tasks
-open System.Collections.Concurrent
 
 // Provides a load test runner implementation for executing parallelized tests in-memory.
 // Load tests are abstracted under a simple pattern that uses session factories and load tests

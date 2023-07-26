@@ -53,11 +53,11 @@ module SequenceCheck =
         let initial : State = [||]
         let evolve state = function
             | Events.Add e -> Array.append state [| e.value |]
-        let fold state = Seq.fold evolve state
+        let fold state = Array.fold evolve state
 
-    let decide (value, count) (state : Fold.State) =
+    let decide (value, count) (state: Fold.State) =
         if (value = 0 && Array.isEmpty state) || Array.last state = (value - 1)
-        then List.init count (fun i -> Events.Add {| value = value + i |})
+        then Array.init count (fun i -> Events.Add {| value = value + i |})
         else failwith $"Invalid Add of %d{value} to list %A{state}"
 
     type Service(resolve : Guid -> Equinox.Decider<Events.Event, Fold.State>) =

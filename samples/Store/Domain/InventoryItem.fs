@@ -24,10 +24,9 @@ module Fold =
         | Events.Created name
         | Events.Renamed name -> { state with name = name }
         | Events.Deactivated -> { state with active = false }
-        | Events.Removed count -> { state with quantity = state.quantity - count}
-        | Events.CheckedIn count -> { state with quantity = state.quantity + count}
-    let fold (state: State) (events: seq<Events.Event>): State =
-        Seq.fold evolve state events
+        | Events.Removed count -> { state with quantity = state.quantity - count }
+        | Events.CheckedIn count -> { state with quantity = state.quantity + count }
+    let fold = Array.fold evolve
 
 type Command =
     | Create of name: string
@@ -37,25 +36,25 @@ type Command =
     | Deactivate
 
 // TODO make commands/event representations idempotent
-let interpret command (state: Fold.State) =
+let interpret command (state: Fold.State) = [|
     match command with
     | Create name ->
         if String.IsNullOrEmpty name then invalidArg "name" ""
-        if state.name = name then [] else
-        [ Events.Created name ]
+        if state.name <> name then
+            Events.Created name
     | ChangeName newName ->
         if String.IsNullOrEmpty newName then invalidArg "newName" ""
-        if state.name = newName then [] else
-        [ Events.Renamed newName ]
+        if state.name <> newName then
+            Events.Renamed newName
     | Remove count ->
         if count <= 0 then invalidOp "cant remove negative count from inventory"
-        [ Events.Removed count]
+        Events.Removed count
     | CheckIn count ->
         if count <= 0 then invalidOp "must have a count greater than 0 to add to inventory"
-        [ Events.CheckedIn count ]
+        Events.CheckedIn count
     | Deactivate ->
         if not state.active then invalidOp "Already deactivated"
-        [ Events.Deactivated ]
+        Events.Deactivated |]
 
 type Service internal (resolve: InventoryItemId -> Equinox.Decider<Events.Event, Fold.State>) =
 

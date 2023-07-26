@@ -41,10 +41,10 @@ module Fold =
     let fold (state: State) (events: seq<Events.Event>) : State =
         events |> Seq.tryLast |> Option.fold evolve state
 
-let decide (value : UploadId) (state : Fold.State) : Choice<UploadId,UploadId> * Events.Event list =
+let decide (value : UploadId) (state : Fold.State) : Choice<UploadId,UploadId> * Events.Event[] =
     match state with
-    | None -> Choice1Of2 value, [Events.IdAssigned { value = value}]
-    | Some value -> Choice2Of2 value, []
+    | None -> Choice1Of2 value, [| Events.IdAssigned { value = value} |]
+    | Some value -> Choice2Of2 value, [||]
 
 type Service internal (resolve : CompanyId * PurchaseOrderId -> Equinox.Decider<Events.Event, Fold.State>) =
 

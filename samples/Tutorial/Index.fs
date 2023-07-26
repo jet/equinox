@@ -21,22 +21,22 @@ module Fold =
     let initial = Map.empty
     let private evolve state = function
         | Events.Deleted { items = xs } ->
-            (state,xs) ||> Array.fold (fun state k -> Map.remove k state)
+            (state, xs) ||> Array.fold (fun state k -> Map.remove k state)
         | Events.Added { items = xs }
         | Events.Snapshotted { items = xs } ->
-            (state,xs) ||> Map.fold (fun state k v -> Map.add k v state)
-    let fold state = Seq.fold evolve state
+            (state, xs) ||> Map.fold (fun state k v -> Map.add k v state)
+    let fold state = Array.fold evolve state
     let snapshot state = Events.Snapshotted { items = state }
 
 let interpret add remove (state : Fold.State<'v>) =
     let fresh = [| for k,v in add do if not (state |> Map.containsKey k) then yield k,v |]
     let dead = [| for k in remove do if state |> Map.containsKey k then yield k |]
     match fresh,dead with
-    | [||],[||] -> (0,0),[]
+    | [||],[||] -> (0, 0), [||]
     | adds,removes ->
-        (adds.Length,removes.Length),
-        [   if adds.Length <> 0 then yield Events.Added { items = Map.ofSeq adds }
-            if removes.Length <> 0 then yield Events.Deleted { items = removes } ]
+        (adds.Length, removes.Length),
+        [|  if adds.Length <> 0 then Events.Added { items = Map.ofSeq adds }
+            if removes.Length <> 0 then Events.Deleted { items = removes } |]
 
 type Service<'t> internal (decider : Equinox.Decider<Events.Event<'t>, Fold.State<'t>>) =
 

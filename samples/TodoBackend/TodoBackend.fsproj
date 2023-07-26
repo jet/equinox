@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.1</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
@@ -9,10 +9,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FSharp.Core" Version="6.0.7" />
-  </ItemGroup>
-
-  <ItemGroup>
+    <PackageReference Include="FSharp.Core" Version="6.0.7" ExcludeAssets="contentfiles" />
+    
     <ProjectReference Include="..\Store\Domain\Domain.fsproj" />
   </ItemGroup>
 

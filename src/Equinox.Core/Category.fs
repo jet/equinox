@@ -1,8 +1,6 @@
 ﻿namespace Equinox.Core
 
 open Serilog
-open System.Threading
-open System.Threading.Tasks
 
 /// Store-agnostic interface representing interactions a Decider can have with a set of streams with a given pair of Event and State types
 type ICategory<'event, 'state, 'context> =

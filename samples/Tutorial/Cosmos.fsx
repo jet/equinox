@@ -1,9 +1,6 @@
 ﻿#if !LOCAL
 // Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
-#if VISUALSTUDIO
-#r "netstandard"
-#endif
 #I "bin/Debug/net6.0/"
 #r "System.Net.Http"
 #r "System.Runtime.Caching.dll"
@@ -59,17 +56,17 @@ module Favorites =
         type State = string list
         let initial : State = []
         let evolve state = function
-            | Events.Added {sku = sku } -> sku :: state
-            | Events.Removed {sku = sku } -> state |> List.filter (fun x -> x <> sku)
-        let fold s xs = Seq.fold evolve s xs
+            | Events.Added { sku = sku } -> sku :: state
+            | Events.Removed { sku = sku } -> state |> List.filter (fun x -> x <> sku)
+        let fold s xs = Array.fold evolve s xs
 
     type Command =
         | Add of string
         | Remove of string
-    let interpret command state =
+    let interpret command state = [|
         match command with
-        | Add sku -> if state |> List.contains sku then [] else [ Events.Added {sku = sku}]
-        | Remove sku -> if state |> List.contains sku then [ Events.Removed {sku = sku}] else []
+        | Add sku -> if state |> List.contains sku |> not then Events.Added { sku = sku }
+        | Remove sku -> if state |> List.contains sku then Events.Removed { sku = sku } |]
 
     type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
 
@@ -91,7 +88,7 @@ module Favorites =
         let accessStrategy = AccessStrategy.Unoptimized // Or Snapshot etc https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#access-strategies
         let category (context, cache) =
             let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-            CosmosStoreCategory(context, Category, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+            CosmosStoreCategory(context, Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
 
 let [<Literal>] appName = "equinox-tutorial"
 

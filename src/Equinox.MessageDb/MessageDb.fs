@@ -8,8 +8,6 @@ open Serilog
 open System
 open System.Diagnostics
 open System.Text.Json
-open System.Threading
-open System.Threading.Tasks
 
 type EventBody = ReadOnlyMemory<byte>
 
@@ -206,7 +204,7 @@ module Read =
             let batchLog = log |> Log.prop "batchIndex" batchCount
             let! slice = readSlice pos batchCount batchLog ct
             version <- max version slice.LastVersion
-            state <- slice.Messages |> Seq.chooseV tryDecode |> fold state
+            state <- slice.Messages |> Array.chooseV tryDecode |> fold state
             batchCount <- batchCount + 1
             eventCount <- eventCount + slice.Messages.Length
             pos <- slice.LastVersion  + 1L
@@ -328,7 +326,7 @@ type MessageDbContext(client: MessageDbClient, batchOptions: BatchOptions) =
         return struct(Token.create version, state) }
     member _.LoadLast(log, streamName, requireLeader, tryDecode, fold, initial, ct): Task<struct(StreamToken * 'state)> = task {
         let! version, events = Read.loadLastEvent log client.ReadRetryPolicy client.Reader requireLeader streamName None ct
-        return struct(Token.create version, events |> Seq.chooseV tryDecode |> fold initial) }
+        return struct(Token.create version, events |> Array.chooseV tryDecode |> fold initial) }
     member _.LoadSnapshot(log, category, streamId, requireLeader, tryDecode, eventType, ct) = task {
         let snapshotStream = Snapshot.streamName category streamId
         let! _, events = Read.loadLastEvent log client.ReadRetryPolicy client.Reader requireLeader snapshotStream (Some eventType) ct
@@ -395,7 +393,7 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
             let encodedEvents: IEventData<EventBody>[] = events |> Array.map encode
             match! context.TrySync(log, categoryName, streamId, streamName, token, encodedEvents, ct) with
             | GatewaySyncResult.Written token' ->
-                let state' = fold state (Seq.ofArray events)
+                let state' = fold state events
                 match access with
                 | None | Some AccessStrategy.LatestKnownEvent -> ()
                 | Some (AccessStrategy.AdjacentSnapshots(_, toSnap)) ->

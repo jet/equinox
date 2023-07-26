@@ -30,20 +30,21 @@ let verifyCanProcessInOriginState cmd (originState: State) =
     match cmd with
     | PatchItem (_, _, Some 0, _)
     | RemoveItem _ ->
-        test <@ List.isEmpty events @>
+        test <@ Array.isEmpty events @>
     | _ ->
-        test <@ (not << List.isEmpty) events @>
+        test <@ (not << Array.isEmpty) events @>
 
 /// Put the aggregate into the state where the command should trigger an event; verify correct events are yielded
 let verifyCorrectEventGenerationWhenAppropriate command (originState: State) =
-    let initialEvents = command |> function
+    let initialEvents = [|
+        match command with
         | AddItem _
-        | PatchItem (_, _, None, _) ->                  []
+        | PatchItem (_, _, None, _) ->                  ()
         | RemoveItem (_, skuId)
-        | PatchItem (_, skuId, Some 0, _) ->            [ mkAdd skuId ]
+        | PatchItem (_, skuId, Some 0, _) ->            mkAdd skuId
         | PatchItem (_, skuId, Some quantity, Some waive) ->
-                                                        [ mkAddQty skuId (quantity+1) (Some (not waive)) ]
-        | PatchItem (_, skuId, Some quantity, waive) -> [ mkAddQty skuId (quantity+1) waive]
+                                                        mkAddQty skuId (quantity+1) (Some (not waive))
+        | PatchItem (_, skuId, Some quantity, waive) -> mkAddQty skuId (quantity+1) waive |]
     let state = fold originState initialEvents
     let events = interpret command state
     let state' = fold state events
@@ -51,51 +52,50 @@ let verifyCorrectEventGenerationWhenAppropriate command (originState: State) =
     let find skuId = state'.items |> List.find (fun x -> x.skuId = skuId)
 
     match command, events with
-    | AddItem (_, csku, quantity, waive),               [ Events.ItemAdded e ] ->
-        test <@ e = { context = e.context; skuId = csku; quantity = quantity; waived = waive }
-                && quantity = (find csku).quantity @>
-    | PatchItem (_, csku, Some 0, _),                   [ Events.ItemRemoved e ]
-    | RemoveItem (_, csku),                             [ Events.ItemRemoved e ] ->
-        test <@ e = { Events.ItemRemovedInfo.context = e.context; skuId = csku }
-                && not (state'.items |> List.exists (fun x -> x.skuId = csku)) @>
-    | PatchItem (_, csku, quantity, waive),    es ->
+    | AddItem (_, cSku, quantity, waive),               [| Events.ItemAdded e |] ->
+        test <@ e = { context = e.context; skuId = cSku; quantity = quantity; waived = waive }
+                && quantity = (find cSku).quantity @>
+    | PatchItem (_, cSku, Some 0, _),                   [| Events.ItemRemoved e |]
+    | RemoveItem (_, cSku),                             [| Events.ItemRemoved e |] ->
+        test <@ e = { Events.ItemRemovedInfo.context = e.context; skuId = cSku }
+                && not (state'.items |> List.exists (fun x -> x.skuId = cSku)) @>
+    | PatchItem (_, cSku, quantity, waive),    es ->
         match quantity with
         | Some value ->
-            test <@ es
-                    |> List.exists (function
-                       | Events.ItemQuantityChanged e -> e = { context = e.context; skuId = csku; quantity = value }
-                       | _ -> false)
-                    && value = (find csku).quantity @>
+            test <@ es  |> Array.exists (function
+                        | Events.ItemQuantityChanged e -> e = { context = e.context; skuId = cSku; quantity = value }
+                        | _ -> false)
+                    && value = (find cSku).quantity @>
         | None -> ()
         match waive with
         | None -> ()
         | Some value ->
-            test <@ es
-                    |> List.exists (function
-                        | Events.ItemPropertiesChanged e -> e = { context = e.context; skuId = csku; waived = value }
+            test <@ es |> Array.exists (function
+                        | Events.ItemPropertiesChanged e -> e = { context = e.context; skuId = cSku; waived = value }
                         | _ -> false)
-                    && value = (find csku).returnsWaived.Value @>
-    | c,e -> failwithf "Invalid result - Command %A yielded Events %A in State %A" c e state
+                    && value = (find cSku).returnsWaived.Value @>
+    | c, e -> failwith $"Invalid result - Command %A{c} yielded Events %A{e} in State %A{state}"
 
 /// Processing should allow for any given Command to be retried at will, without inducing redundant
 /// (and hence potentially-conflicting) changes
 let verifyIdempotency (cmd: Command) (originState: State) =
     // Put the aggregate into the state where the command should not trigger an event
-    let establish: Events.Event list = cmd |> function
-        | AddItem (_, skuId, qty, waive) ->             [ mkAddQty skuId qty waive]
+    let establish: Events.Event[] = [|
+        match cmd with
+        | AddItem (_, skuId, qty, waive) ->             mkAddQty skuId qty waive
         | RemoveItem _
         | PatchItem (_, _, Some 0, _)
-        | PatchItem (_, _, None, _) ->                  []
-        | PatchItem (_, skuId, Some quantity, waived) ->[ mkAddQty skuId quantity waived ]
+        | PatchItem (_, _, None, _) ->                  ()
+        | PatchItem (_, skuId, Some quantity, waived) ->mkAddQty skuId quantity waived |]
     let state = fold originState establish
     let events = interpret cmd state
 
     // Assert we decided nothing needs to happen
-    test <@ List.isEmpty events @>
+    test <@ Array.isEmpty events @>
 
 /// These cases are assumed to be covered by external validation, so logic can treat them as hypotheticals rather than have to reject
 let isValid = function
-    // One can generate a null request consisting of quantity = None, waived = None, which has no concievable outcome
+    // One can generate a null request consisting of quantity = None, waived = None, which has no conceivable outcome
     // we don't guard or special case this condition
     | PatchItem (_, _, None, _) -> false
     | AddItem (_, _, quantity, _)

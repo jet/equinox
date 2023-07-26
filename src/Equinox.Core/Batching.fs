@@ -4,8 +4,6 @@ namespace Equinox.Core.Batching
 
 open Equinox.Core
 open System
-open System.Threading
-open System.Threading.Tasks
 
 /// Thread-safe coordinator that batches concurrent requests for a single <c>dispatch</> invocation such that:
 /// - requests arriving together can be coalesced into the batch during the linger period via TryAdd

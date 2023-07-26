@@ -21,13 +21,13 @@ let verifyCorrectEventGenerationWhenAppropriate variant command (originState: St
     let state' = fold state events
 
     match command, events with
-    | Update cvalue, [Updated evalue] ->
-        test <@ evalue.preferences = cvalue.preferences
-                && cvalue.preferences = state' @>
-    | Update cvalue, [] ->
-        test <@ state = cvalue.preferences
+    | Update cValue, [| Updated eValue |] ->
+        test <@ eValue.preferences = cValue.preferences
+                && cValue.preferences = state' @>
+    | Update cValue, [||] ->
+        test <@ state = cValue.preferences
                 && state' = state @>
-    | c,e -> failwithf "Invalid result - Command %A yielded Events %A in State %A" c e state
+    | c, e -> failwith $"Invalid result - Command %A{c} yielded Events %A{e} in State %A{state}"
 
 /// Processing should allow for any given Command to be retried at will
 let verifyIdempotency (cmd: Command) (originState: State) =
@@ -38,7 +38,7 @@ let verifyIdempotency (cmd: Command) (originState: State) =
     let state = fold originState establish
     let events = interpret cmd state
     // Assert we decided nothing needs to happen
-    test <@ List.isEmpty events @>
+    test <@ Array.isEmpty events @>
 
 [<DomainProperty(MaxTest = 1000)>]
 let ``interpret yields correct events, idempotently`` variant (command: Command) (originState: State) =

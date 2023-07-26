@@ -3,7 +3,6 @@ namespace Equinox
 open Equinox.Core
 open Equinox.Core.Tracing
 open System
-open System.Threading
 
 /// NOTE During a ReadThrough operation, currentToken and currentState are both invalid and cannot be used, but the presence of the null entry is critical
 ///      being able to `lock` on the CacheEntry, and do a CAS operation on the cell is central to

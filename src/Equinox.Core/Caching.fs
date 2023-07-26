@@ -1,9 +1,6 @@
 module Equinox.Core.Caching
 
 open Serilog
-open System
-open System.Threading
-open System.Threading.Tasks
 
 type IReloadable<'state> =
     abstract Reload: log: ILogger * streamName: string * requireLeader: bool * streamToken: StreamToken * state: 'state * ct: CancellationToken
@@ -36,10 +33,10 @@ type private Decorator<'event, 'state, 'context, 'cat when 'cat :> ICategory<'ev
 let private mkKey prefix streamName =
     prefix + streamName
 
-let internal policySlidingExpiration (slidingExpiration: TimeSpan) () =
+let internal policySlidingExpiration (slidingExpiration: System.TimeSpan) () =
     System.Runtime.Caching.CacheItemPolicy(SlidingExpiration = slidingExpiration)
-let internal policyFixedTimeSpan (period: TimeSpan) () =
-    let expirationPoint = let creationDate = DateTimeOffset.UtcNow in creationDate.Add period
+let internal policyFixedTimeSpan (period: System.TimeSpan) () =
+    let expirationPoint = let creationDate = System.DateTimeOffset.UtcNow in creationDate.Add period
     System.Runtime.Caching.CacheItemPolicy(AbsoluteExpiration = expirationPoint)
 let private mapStrategy = function
     | Equinox.CachingStrategy.FixedTimeSpan (cache, period) -> struct (        cache, mkKey null,   policyFixedTimeSpan period)

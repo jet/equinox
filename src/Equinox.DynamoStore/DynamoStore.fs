@@ -7,8 +7,6 @@ open FSharp.Control
 open Serilog
 open System
 open System.IO
-open System.Threading
-open System.Threading.Tasks
 
 [<Struct; NoEquality; NoComparison>]
 type InternalBody = { encoding: int; data: MemoryStream }
@@ -874,7 +872,7 @@ module internal Query =
         | _, Choice1Of2 allowMissing ->
             logMissing (minIndex, i) "Origin event not found; no Archive Table supplied"
             if allowMissing then return toPosition res, events
-            else return failwithf "Origin event not found; no Archive Table supplied"
+            else return failwith "Origin event not found; no Archive Table supplied"
         | _, Choice2Of2 fallback ->
 
         let maxIndex = match primary with Some p -> Some p.minIndex | None -> maxIndex // if no batches in primary, high water mark from tip is max
@@ -905,7 +903,7 @@ module internal Prune =
         let trimTip expectedN count = task {
             match! container.TryGetTip(stream, (*consistentRead = *)false, ct) with
             | None, _rc -> return failwith "unexpected NotFound"
-            | Some tip, _rc when tip.n <> expectedN -> return failwithf "Concurrent write detected; Expected n=%d actual=%d" expectedN tip.n
+            | Some tip, _rc when tip.n <> expectedN -> return failwith $"Concurrent write detected; Expected n=%d{expectedN} actual=%d{tip.n}"
             | Some tip, tipRc ->
 
             let tC, tE = Batch.eventsToSchema tip.e
@@ -1116,9 +1114,9 @@ type internal StoreClient(container: Container, fallback: Container option, quer
 
 type internal Category<'event, 'state, 'context>
     (   store: StoreClient, codec: IEventCodec<'event, EncodedBody, 'context>,
-        fold: 'state -> 'event seq -> 'state, initial: 'state, isOrigin: 'event -> bool,
+        fold: 'state -> 'event[] -> 'state, initial: 'state, isOrigin: 'event -> bool,
         checkUnfolds, mapUnfolds: Choice<unit, 'event[] -> 'state -> 'event[], 'event[] -> 'state -> 'event[] * 'event[]>) =
-    let fetch state f = task { let! token', events = f in return struct (token', fold state (Seq.ofArray events)) }
+    let fetch state f = task { let! token', events = f in return struct (token', fold state events) }
     let reload (log, streamNam, requireLeader, (Token.Unpack pos as streamToken), state) ct: Task<struct (StreamToken * 'state)> = task {
         match! store.Reload(log, (streamNam, pos), requireLeader, (codec.TryDecode, isOrigin), ct) with
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
@@ -1355,7 +1353,6 @@ namespace Equinox.DynamoStore.Core
 open Equinox.Core
 open FsCodec
 open FSharp.Control
-open System.Threading.Tasks
 
 /// Outcome of appending events, specifying the new and/or conflicting events, together with the updated Target write position
 [<RequireQualifiedAccess; NoComparison>]

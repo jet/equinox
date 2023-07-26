@@ -2,7 +2,6 @@
 
 open Domain
 open FSharp.UMX
-open Serilog
 open Swensen.Unquote
 open System.Diagnostics
 open System.Threading
@@ -14,7 +13,7 @@ let defaultBatchSize = 500
 open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.Postgres
 
-let connectToLocalStore (_: ILogger) =
+let connectToLocalStore (_: Serilog.ILogger) =
     Connector("Host=localhost;Username=postgres;password=postgres;database=postgres",autoCreate=true).Establish()
 
 type Context = SqlStreamStoreContext
@@ -24,7 +23,7 @@ type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state,
 open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.MsSql
 
-let connectToLocalStore (_: ILogger) =
+let connectToLocalStore (_: Serilog.ILogger) =
     Connector("Server=localhost,1433;User=sa;Password=mssql1Ipw;Database=EQUINOX_TEST_DB", autoCreate = true).Establish()
 
 (* WORKAROUND FOR https://github.com/microsoft/mssql-docker/issues/2#issuecomment-1059819719
@@ -37,7 +36,7 @@ type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state,
 open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.MySql
 
-let connectToLocalStore (_: ILogger) =
+let connectToLocalStore (_: Serilog.ILogger) =
     Connector("Server=localhost;User=root;Database=EQUINOX_TEST_DB", autoCreate = true).Establish()
 
 type Context = SqlStreamStoreContext
@@ -60,7 +59,7 @@ type Category<'event, 'state, 'context> = MessageDbCategory<'event, 'state, 'con
 open Equinox.EventStoreDb
 
 /// Connect directly to a locally running EventStoreDB Node using gRPC, without using Gossip-driven discovery
-let connectToLocalStore (_log: ILogger) = async {
+let connectToLocalStore (_log: Serilog.ILogger) = async {
     let c = EventStoreConnector(reqTimeout = TimeSpan.FromSeconds 3., (*, log = Logger.SerilogVerbose log,*) tags = ["I",Guid.NewGuid() |> string])
     let conn = c.Establish("Equinox-integration", Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false", ConnectionStrategy.ClusterSingle EventStore.Client.NodePreference.Leader)
     return conn }
@@ -99,7 +98,7 @@ module SimplestThing =
     let codec = EventCodec.gen<Event>
 
     let evolve (_state: Event) (event: Event) = event
-    let fold = Seq.fold evolve
+    let fold = Array.fold evolve
     let initial = StuffHappened
     let [<Literal>] CategoryName = "SimplestThing"
     let streamId = Equinox.StreamId.gen Guid.toStringN
@@ -257,8 +256,8 @@ type GeneralTests(testOutputHelper) =
                     do! addAndThenRemoveItemsManyTimesExceptTheLastOne ctx cartId skuId service1 addRemoveCount
                     return Some (skuId, addRemoveCount) }
 
-        let act prepare (service: Cart.Service) log skuId count =
-            service.ExecuteManyAsync(cartId, false, prepare = prepare, commands = [Cart.SyncItem (ctx, skuId, Some count, None)])
+        let act prepare (service: Cart.Service) skuId count =
+            service.ExecuteManyAsync(cartId, false, prepare = prepare, commands = [ Cart.SyncItem (ctx, skuId, Some count, None) ])
 
         let eventWaitSet () = let e = new ManualResetEvent(false) in (Async.AwaitWaitHandle e |> Async.Ignore), async { e.Set() |> ignore }
         let w0, s0 = eventWaitSet ()
@@ -275,10 +274,10 @@ type GeneralTests(testOutputHelper) =
                 do! w0
                 do! s1
                 do! w2 }
-            do! act prepare service1 log1 sku11 11
+            do! act prepare service1 sku11 11
             // Wait for other side to load; generate conflict
             let prepare = async { do! w3 }
-            do! act prepare service1 log1 sku12 12
+            do! act prepare service1 sku12 12
             // Signal conflict generated
             do! s4 }
         let log2, capture2 = output.CreateLoggerWithCapture()
@@ -292,14 +291,14 @@ type GeneralTests(testOutputHelper) =
             let prepare = async {
                 do! s0
                 do! w1 }
-            do! act prepare service2 log2 sku21 21
+            do! act prepare service2 sku21 21
             // Signal conflict is in place
             do! s2
             // Await our conflict
             let prepare = async {
                 do! s3
                 do! w4 }
-            do! act prepare service2 log2 sku22 22 }
+            do! act prepare service2 sku22 22 }
         // Act: Engineer the conflicts and applications, with logging into capture1 and capture2
         do! Async.Parallel [t1; t2] |> Async.Ignore
 
@@ -392,7 +391,7 @@ type GeneralTests(testOutputHelper) =
         test <@ res <> resFresh @>
         // but we don't do a roundtrip to get it
         test <@ [] = capture.ExternalCalls @>
-        let! resDefault = service2.Read cartId
+        let! _resDefault = service2.Read cartId
         test <@ singleBatchForward = capture.ExternalCalls @>
 
         // Optimistic transactions
@@ -433,7 +432,7 @@ type GeneralTests(testOutputHelper) =
         let decider = SimplestThing.decider log context id
 
         let! before, after = decider.TransactEx(
-            (fun state -> state.Version, [SimplestThing.StuffHappened]),
+            (fun state -> state.Version, [| SimplestThing.StuffHappened |]),
             mapResult = (fun result ctx-> result, ctx.Version))
         test <@ [before; after] = [0L; 1L] @>
     }
@@ -481,7 +480,7 @@ type RollingSnapshotTests(testOutputHelper) =
         // ... should see a single read as we are inside the batch threshold
         test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
 
-        // Add two more, which should push it over the threshold and hence trigger inclusion of a snapshot event (but not incurr extra roundtrips)
+        // Add two more, which should push it over the threshold and hence trigger inclusion of a snapshot event (but not incur extra roundtrips)
         capture.Clear()
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 1
         test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
@@ -491,7 +490,7 @@ type RollingSnapshotTests(testOutputHelper) =
         let! _ = service.Read cartId
         test <@ singleBatchBackwards = capture.ExternalCalls @>
 
-        // Add 8 more; total of 21 should not trigger snapshotting as Event Number 12 (the 13th one) is a shapshot
+        // Add 8 more; total of 21 should not trigger snapshotting as Event Number 12 (the 13th one) is a snapshot
         capture.Clear()
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 4
         test <@ batchBackwardsAndAppend = capture.ExternalCalls @>

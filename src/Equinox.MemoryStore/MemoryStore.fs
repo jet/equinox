@@ -68,7 +68,7 @@ type private Category<'event, 'state, 'context, 'Format>(store: VolatileStore<'F
         member _.Load(_log, _categoryName, _streamId, streamName, _maxAge, _requireLeader, _ct) = task {
             match store.Load(streamName) with
             | null -> return (Token.ofEmpty, initial)
-            | xs -> return (Token.ofValue xs, fold initial (Seq.chooseV codec.TryDecode xs)) }
+            | xs -> return (Token.ofValue xs, fold initial (Array.chooseV codec.TryDecode xs)) }
         member _.Sync(_log, categoryName, streamId, streamName, context, _init, Token.Unpack eventCount, state, events, _ct) = task {
             let inline map i (e: FsCodec.IEventData<'Format>) = FsCodec.Core.TimelineEvent.Create(int64 i, e)
             let encoded = Array.ofSeq events |> Array.mapi (fun i e -> map (eventCount + i) (codec.Encode(context, e)))
@@ -78,7 +78,7 @@ type private Category<'event, 'state, 'context, 'Format>(store: VolatileStore<'F
             | false, conflictingEvents ->
                 let resync _ct = task {
                     let token' = Token.ofValue conflictingEvents
-                    return struct (token', fold state (conflictingEvents |> Seq.skip eventCount |> Seq.chooseV codec.TryDecode)) }
+                    return struct (token', fold state (conflictingEvents |> Seq.skip eventCount |> Array.chooseV codec.TryDecode)) }
                 return SyncResult.Conflict resync }
 
 type MemoryStoreCategory<'event, 'state, 'Format, 'context>(store: VolatileStore<'Format>, name: string, codec, fold, initial) =
