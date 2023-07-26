@@ -44,14 +44,14 @@ type Arguments =
             | Dump _ ->                     "Load and show events in a specified stream (supports all stores)."
 and [<NoComparison; NoEquality>] InitParameters =
     | [<AltCommandLine "-ru"; Unique>]      Rus of int
-    | [<AltCommandLine "-A"; Unique>]       AutoScale
+    | [<AltCommandLine "-A"; Unique>]       Autoscale
     | [<AltCommandLine "-m"; Unique>]       Mode of CosmosModeType
     | [<AltCommandLine "-P"; Unique>]       SkipStoredProc
     | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Store.Cosmos.Parameters>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Rus _ ->                      "Specify RU/s level to provision (Not applicable for Serverless Mode; Default: 400 RU/s for Container/Database; Default: Max 4000 RU/s for Container/Database when Autoscale specified)."
-            | AutoScale ->                  "Autoscale provisioned throughput. Use --rus to specify the maximum RU/s."
+            | Autoscale ->                  "Autoscale provisioned throughput. Use --rus to specify the maximum RU/s."
             | Mode _ ->                     "Configure RU mode to use Container-level RU, Database-level RU, or Serverless allocations (Default: Use Container-level allocation)."
             | SkipStoredProc ->             "Inhibit creation of stored procedure in specified Container."
             | Cosmos _ ->                   "Cosmos Connection parameters."
@@ -60,7 +60,7 @@ and CosmosInitArguments(p : ParseResults<InitParameters>) =
     let rusOrDefault value = p.GetResult(Rus, value)
     let throughput auto = if auto then CosmosInit.Throughput.Autoscale (rusOrDefault 4000) else CosmosInit.Throughput.Manual (rusOrDefault 400)
     member val ProvisioningMode =
-        match p.GetResult(Mode, CosmosModeType.Container), p.Contains AutoScale with
+        match p.GetResult(Mode, CosmosModeType.Container), p.Contains Autoscale with
         | CosmosModeType.Container, auto -> CosmosInit.Provisioning.Container (throughput auto)
         | CosmosModeType.Db, auto ->        CosmosInit.Provisioning.Database (throughput auto)
         | CosmosModeType.Serverless, auto when auto || p.Contains Rus -> Store.missingArg "Cannot specify RU/s or Autoscale in Serverless mode"
