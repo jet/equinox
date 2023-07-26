@@ -1257,7 +1257,7 @@ let validateInterpret contextAndOrArgsAndOrCommand state =
 let validateIdempotent contextAndOrArgsAndOrCommand state' =
     let events' = interpret contextAndOrArgsAndOrCommand state'
     match events' with
-    | [] -> ()
+    | [|] -> ()
     // TODO add clauses to validate edge cases that should still generate events on a re-run
     | xs -> failwithf "Not idempotent; Generated %A in response to %A" xs contextAndOrArgsAndOrCommand
 ```
@@ -1853,7 +1853,7 @@ let! res =
         eventData
 match res with
 | AppendResult.Ok -> ()
-| c -> failwithf "conflict %A" c
+| c -> c |> failwithf "conflict %A"
 ```
 # Access Strategies
 

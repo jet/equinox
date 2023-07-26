@@ -74,7 +74,7 @@ let verifyCorrectEventGenerationWhenAppropriate command (originState: State) =
                         | Events.ItemPropertiesChanged e -> e = { context = e.context; skuId = cSku; waived = value }
                         | _ -> false)
                     && value = (find cSku).returnsWaived.Value @>
-    | c,e -> failwith $"Invalid result - Command %A{c} yielded Events %A{e} in State %A{state}"
+    | c, e -> failwith $"Invalid result - Command %A{c} yielded Events %A{e} in State %A{state}"
 
 /// Processing should allow for any given Command to be retried at will, without inducing redundant
 /// (and hence potentially-conflicting) changes

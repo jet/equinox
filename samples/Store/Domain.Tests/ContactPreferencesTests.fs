@@ -27,7 +27,7 @@ let verifyCorrectEventGenerationWhenAppropriate variant command (originState: St
     | Update cValue, [||] ->
         test <@ state = cValue.preferences
                 && state' = state @>
-    | c,e -> failwith $"Invalid result - Command %A{c} yielded Events %A{e} in State %A{state}"
+    | c, e -> failwith $"Invalid result - Command %A{c} yielded Events %A{e} in State %A{state}"
 
 /// Processing should allow for any given Command to be retried at will
 let verifyIdempotency (cmd: Command) (originState: State) =

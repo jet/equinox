@@ -41,7 +41,7 @@ let verifyCorrectEventGenerationWhenAppropriate command (originState: State) =
             | _ -> false
         test <@ skuIds |> List.forall (fun skuId -> hadSkuId skuId || events |> Array.exists (isFavoritingEventFor skuId))
                 && skuIds |> List.forall hasSkuId @>
-    | c,e -> failwith $"Invalid result - Command %A{c} yielded Events %A{e} in State %A{state}"
+    | c, e -> failwith $"Invalid result - Command %A{c} yielded Events %A{e} in State %A{state}"
 
 /// Processing should allow for any given Command to be retried at will
 let verifyIdempotency (command: Command) (originState: State) =
