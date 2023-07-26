@@ -83,17 +83,15 @@ module Favorites =
             let decider = resolve clientId
             decider.Query id
 
-    let create resolve = Service(streamId >> resolve Category)
+    let create cat = Service(streamId >> Equinox.Decider.forStream Log.log cat)
 
     module Cosmos =
 
         open Equinox.CosmosStore // Everything outside of this module is completely storage agnostic so can be unit tested simply and/or bound to any store
         let accessStrategy = AccessStrategy.Unoptimized // Or Snapshot etc https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#access-strategies
-        let create (context, cache) =
+        let category (context, cache) =
             let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-            CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-            |> Equinox.Decider.resolve Log.log
-            |> create
+            CosmosStoreCategory(context, Category, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
 
 let [<Literal>] appName = "equinox-tutorial"
 
@@ -110,7 +108,7 @@ module Store =
     let context = CosmosStoreContext(storeClient, tipMaxEvents = 10)
     let cache = Equinox.Cache(appName, 20)
 
-let service = Favorites.Cosmos.create (Store.context, Store.cache)
+let service = Favorites.Cosmos.category (Store.context, Store.cache) |> Favorites.create
 
 let client = "ClientJ"
 

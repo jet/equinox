@@ -506,8 +506,9 @@ module Dump =
                      else $"(%d{s.Length} chars)"
                  with e -> log.Warning(e, "UTF-8 Parse failure - use --Blobs option to inhibit"); reraise()
         let dumpEvents (streamName : FsCodec.StreamName) = async {
-            let resolve = store.Category(idCodec, fold, initial, isOriginAndSnapshot) |> Equinox.Decider.resolve storeLog
-            let decider = let struct (cat, sid) = FsCodec.StreamName.splitCategoryAndStreamId streamName in resolve cat (UMX.tag sid)
+            let struct (categoryName, sid) = FsCodec.StreamName.splitCategoryAndStreamId streamName
+            let cat = store.Category(categoryName, idCodec, fold, initial, isOriginAndSnapshot)
+            let decider = Equinox.Decider.forStream storeLog cat (UMX.tag sid)
             let! streamBytes, events = decider.QueryEx(fun c -> c.StreamEventBytes, c.State)
             let mutable prevTs = None
             for x in events |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do

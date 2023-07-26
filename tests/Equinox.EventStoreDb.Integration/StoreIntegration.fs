@@ -101,50 +101,51 @@ module SimplestThing =
     let evolve (_state: Event) (event: Event) = event
     let fold = Seq.fold evolve
     let initial = StuffHappened
-    let resolve log context =
-        Category(context, codec, fold, initial)
-        |> Equinox.Decider.resolve log
-    let [<Literal>] Category = "SimplestThing"
+    let [<Literal>] CategoryName = "SimplestThing"
+    let streamId = Equinox.StreamId.gen Guid.toStringN
+    let decider log context id =
+        let cat = Category(context, CategoryName, codec, fold, initial)
+        Equinox.Decider.forStream log cat (streamId id)
 
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
     let codec = Cart.Events.codec
     let createServiceWithoutOptimization log context =
-        Category(context, codec, fold, initial)
-        |> Equinox.Decider.resolve log
+        Category(context, Cart.Category, codec, fold, initial)
+        |> Equinox.Decider.forStream log
         |> Cart.create
 
     #if STORE_MESSAGEDB
     let snapshot = Cart.Fold.snapshotEventCaseName, Cart.Fold.snapshot
     let createServiceWithAdjacentSnapshotting log context =
-        Category(context, codec, fold, initial, access = AccessStrategy.AdjacentSnapshots snapshot)
-        |> Equinox.Decider.resolve log
+        Category(context, Cart.Category, codec, fold, initial, access = AccessStrategy.AdjacentSnapshots snapshot)
+        |> Equinox.Decider.forStream log
         |> Cart.create
     #else
     let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
     let createServiceWithCompaction log context =
-        Category(context, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot)
-        |> Equinox.Decider.resolve log
+        Category(context, Cart.Category, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot)
+        |> Equinox.Decider.forStream log
         |> Cart.create
     #endif
 
     let createServiceWithCaching log context cache =
         let sliding20m = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Category(context, codec, fold, initial, sliding20m)
-        |> Equinox.Decider.resolve log
+        Category(context, Cart.Category, codec, fold, initial, caching = sliding20m)
+        |> Equinox.Decider.forStream log
         |> Cart.create
 
     #if STORE_MESSAGEDB
     let createServiceWithSnapshottingAndCaching log context cache =
             let sliding20m = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-            Category(context, codec, fold, initial, sliding20m, AccessStrategy.AdjacentSnapshots snapshot)
-            |> Equinox.Decider.resolve log
+            Category(context, Cart.Category, codec, fold, initial, AccessStrategy.AdjacentSnapshots snapshot, sliding20m)
+            |> Equinox.Decider.forStream log
             |> Cart.create
     #else
     let createServiceWithCompactionAndCaching log context cache =
         let sliding20m = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Category(context, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot)
-        |> Equinox.Decider.resolve log
+        Category(context, Cart.Category, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot, sliding20m)
+        |> Equinox.Decider.forStream log
         |> Cart.create
     #endif
 
@@ -153,13 +154,13 @@ module ContactPreferences =
     let codec = ContactPreferences.Events.codec
     let createServiceWithoutOptimization log connection =
         let context = createContext connection defaultBatchSize
-        Category(context, codec, fold, initial)
-        |> Equinox.Decider.resolve log
+        Category(context, ContactPreferences.Category, codec, fold, initial)
+        |> Equinox.Decider.forStream log
         |> ContactPreferences.create
 
     let createService log connection =
-        Category(createContext connection 1, codec, fold, initial, access = AccessStrategy.LatestKnownEvent)
-        |> Equinox.Decider.resolve log
+        Category(createContext connection 1, ContactPreferences.Category, codec, fold, initial, access = AccessStrategy.LatestKnownEvent)
+        |> Equinox.Decider.forStream log
         |> ContactPreferences.create
 
 let addAndThenRemoveItems optimistic exceptTheLastOne context cartId skuId (service: Cart.Service) count =
@@ -429,8 +430,7 @@ type GeneralTests(testOutputHelper) =
         let batchSize = 3
         let context = createContext connection batchSize
         let id = Guid.NewGuid()
-        let toStreamId (x: Guid) = x.ToString "N"
-        let decider = SimplestThing.resolve log context SimplestThing.Category (Equinox.StreamId.gen toStreamId id)
+        let decider = SimplestThing.decider log context id
 
         let! before, after = decider.TransactEx(
             (fun state -> state.Version, [SimplestThing.StuffHappened]),

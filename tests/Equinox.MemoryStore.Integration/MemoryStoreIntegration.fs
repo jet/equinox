@@ -17,8 +17,8 @@ type AutoDataAttribute() =
 let createMemoryStore () = VolatileStore<_>()
 
 let createServiceMemory log store =
-    let cat = MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), Cart.Fold.fold, Cart.Fold.initial)
-    cat |> Equinox.Decider.resolve log |> Cart.create
+    let cat = MemoryStoreCategory(store, Cart.Category, FsCodec.Box.Codec.Create(), Cart.Fold.fold, Cart.Fold.initial)
+    cat |> Equinox.Decider.forStream log |> Cart.create
 
 type Tests(testOutputHelper) =
     let log = TestOutput(testOutputHelper).CreateLogger()
@@ -58,8 +58,8 @@ type Tests(testOutputHelper) =
     }
 
 let createFavoritesServiceMemory store log : Favorites.Service =
-    let cat = MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), Favorites.Fold.fold, Favorites.Fold.initial)
-    cat |> Equinox.Decider.resolve log |> Favorites.create
+    let cat = MemoryStoreCategory(store, Favorites.Category, FsCodec.Box.Codec.Create(), Favorites.Fold.fold, Favorites.Fold.initial)
+    cat |> Equinox.Decider.forStream log |> Favorites.create
 
 type ChangeFeed(testOutputHelper) =
     let log = TestOutput(testOutputHelper).CreateLogger()

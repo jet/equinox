@@ -169,4 +169,4 @@ type Service internal (resolve: CartId -> Equinox.Decider<Events.Event, Fold.Sta
         decider.Query(id, Equinox.LoadOption.AnyCachedValue)
 
 let create resolve =
-    Service(streamId >> resolve Category)
+    Service(streamId >> resolve)

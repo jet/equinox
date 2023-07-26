@@ -144,4 +144,4 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
         return! execute targetId (Merge state) }
 
 let create maxSavedItems resolve =
-    Service(streamId >> resolve Category, maxSavedItems)
+    Service(streamId >> resolve, maxSavedItems)

@@ -118,13 +118,13 @@ let codec =
     FsCodec.Codec.Create(encode, tryDecode)
 // Each store has a <Store>Category that is used to resolve IStream instances binding to a specific stream in a specific store
 // ... because the nature of the contract with the handler is such that the store hands over State, we also pass the `initial` and `fold` as we used above
-let cat = Equinox.MemoryStore.MemoryStoreCategory(store, codec, fold, initial)
-let resolve = Equinox.Decider.resolve log cat
+let cat = Equinox.MemoryStore.MemoryStoreCategory(store, Category, codec, fold, initial)
+let decider = Equinox.Decider.forStream log cat
 
-// We hand the streamId to the resolver
-let clientAStream = resolve Category clientAFavoritesStreamId
-// ... and pass the stream to the Handler
-let handler = Handler(clientAStream)
+// We get a Decider instance for the streamId
+let clientADecider = decider Category clientAFavoritesStreamId
+// ... and wrap that in a Handler
+let handler = Handler(clientADecider)
 
 (* Run some commands *)
 

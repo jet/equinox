@@ -135,13 +135,10 @@ module Store =
     let context = CosmosStoreContext(storeClient, tipMaxEvents = 100) // Keep up to 100 events in tip before moving events to a new document
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
 
-module TodosCategory =
-
     let access = AccessStrategy.Snapshot (isOrigin,snapshot)
-    let resolve = CosmosStoreCategory(Store.context, codec, fold, initial, Store.cacheStrategy, access=access)
-                  |> Equinox.Decider.resolve log
+    let category = CosmosStoreCategory(context, Category, codec, fold, initial, cacheStrategy, access=access)
 
-let service = Service(streamId >> TodosCategory.resolve Category)
+let service = Service(streamId >> Equinox.Decider.forStream log Store.category)
 
 let client = "ClientJ"
 let item = { id = 0; order = 0; title = "Feed cat"; completed = false }

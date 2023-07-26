@@ -99,10 +99,8 @@ let logEvents sn (events : FsCodec.ITimelineEvent<_>[]) =
 let store = Equinox.MemoryStore.VolatileStore()
 let _ = store.Committed.Subscribe(fun struct (sn, xs) -> logEvents sn xs)
 let codec = FsCodec.Box.Codec.Create()
-let resolve =
-    Equinox.MemoryStore.MemoryStoreCategory(store, codec, fold, initial)
-    |> Equinox.Decider.resolve log
-let service = Service(streamId >> resolve Category)
+let cat = Equinox.MemoryStore.MemoryStoreCategory(store, Category, codec, fold, initial)
+let service = Service(streamId >> Equinox.Decider.forStream log cat)
 
 let clientId = "ClientA"
 service.Read(clientId) |> Async.RunSynchronously

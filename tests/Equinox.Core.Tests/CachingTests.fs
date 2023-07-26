@@ -28,21 +28,19 @@ type SpyCategory() =
     member val Delay : TimeSpan = TimeSpan.Zero with get, set
 
     interface Equinox.Core.ICategory<Event, State, unit> with
+        member _.Empty = NotImplementedException() |> raise
         member x.Load(_log, _cat, _sid, _sn, _maxAge, _requireLeader, ct) = task {
             Interlocked.Increment &loads |> ignore
             do! Task.Delay(x.Delay, ct)
-            return struct (mkToken(), Interlocked.Increment &state)
-        }
+            return struct (mkToken(), Interlocked.Increment &state) }
         member _.Sync(_log, _cat, _sid, _sn, _ctx, _maybeInit, _originToken, originState, events, _ct) = task {
-            return Equinox.Core.SyncResult.Written (mkToken(), originState + events.Length)
-        }
+            return Equinox.Core.SyncResult.Written (mkToken(), originState + events.Length) }
 
     interface Equinox.Core.Caching.IReloadable<State> with
         member x.Reload(_log, _sn, _requireLeader, _streamToken, _baseState, ct) = task {
             Interlocked.Increment &reloads |> ignore
             do! Task.Delay(x.Delay, ct)
-            return struct (mkToken(), Interlocked.Increment &state)
-        }
+            return struct (mkToken(), Interlocked.Increment &state) }
 
 let load sn maxAge (sut: Equinox.Core.ICategory<_, _, _>) =
     sut.Load(Serilog.Log.Logger, null, null, sn, maxAge, false, CancellationToken.None)

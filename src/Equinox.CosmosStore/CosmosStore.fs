@@ -1075,6 +1075,7 @@ type internal Category<'event, 'state, 'context>
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
     interface ICategory<'event, 'state, 'context> with
+        member _.Empty = Token.create Position.fromKnownEmpty, initial
         member _.Load(log, _categoryName, _streamId, stream, _maxAge, _requireLeader, ct): Task<struct (StreamToken * 'state)> = task {
             let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds, ct)
             return struct (token, fold initial events) }
@@ -1366,9 +1367,9 @@ type AccessStrategy<'event, 'state> =
     /// </remarks>
     | Custom of isOrigin: ('event -> bool) * transmute: ('event[] -> 'state -> 'event[] * 'event[])
 
-type CosmosStoreCategory<'event, 'state, 'context> internal (resolveInner, empty) =
-    inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
-    new(context: CosmosStoreContext, codec, fold, initial, caching, access,
+type CosmosStoreCategory<'event, 'state, 'context> internal (name, resolveStream) =
+    inherit Equinox.Category<'event, 'state, 'context>(name, resolveStream = resolveStream)
+    new(context: CosmosStoreContext, name, codec, fold, initial, access, caching,
         // Compress Unfolds in Tip. Default: <c>true</c>.
         // NOTE when set to <c>false</c>, requires Equinox.CosmosStore or Equinox.Cosmos Version >= 2.3.0 to be able to read
         [<O; D null>] ?compressUnfolds) =
@@ -1386,16 +1387,15 @@ type CosmosStoreCategory<'event, 'state, 'context> internal (resolveInner, empty
             | CachingStrategy.SlidingWindow (cache, window) -> Some (Equinox.CachingStrategy.SlidingWindow (cache, window))
             | CachingStrategy.FixedTimeSpan (cache, period) -> Some (Equinox.CachingStrategy.FixedTimeSpan (cache, period))
         let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<'event, 'state, 'context>>()
-        let resolveCategory (categoryName, container) =
+        let resolveInner (categoryName, container) =
             let createCategory _name: ICategory<_, _, 'context> =
                 Category<'event, 'state, 'context>(container, codec, fold, initial, isOrigin, checkUnfolds, compressUnfolds, mapUnfolds)
                 |> Caching.apply Token.isStale caching
             categories.GetOrAdd(categoryName, createCategory)
-        let resolveInner categoryName streamId =
-            let struct (container, streamName, maybeContainerInitializationGate) = context.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId)
-            struct (resolveCategory (categoryName, container), streamName, maybeContainerInitializationGate)
-        let empty = struct (Token.create Position.fromKnownEmpty, initial)
-        CosmosStoreCategory(resolveInner, empty)
+        let resolveStream streamId =
+            let struct (container, streamName, maybeContainerInitializationGate) = context.ResolveContainerClientAndStreamIdAndInit(name, streamId)
+            struct (resolveInner (name, container), streamName, maybeContainerInitializationGate)
+        CosmosStoreCategory(name, resolveStream)
 
 namespace Equinox.CosmosStore.Core
 

@@ -387,6 +387,7 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
             | ValueNone -> return! context.LoadBatched(log, streamName, requireLeader, codec.TryDecode, fold, initial, ct) }
     let reload (log, sn, leader, token, state) ct = context.Reload(log, sn, leader, token, codec.TryDecode, fold, state, ct)
     interface ICategory<'event, 'state, 'context> with
+        member _.Empty = context.TokenEmpty, initial
         member _.Load(log, categoryName, streamId, streamName, _maxAge, requireLeader, ct) =
             loadAlgorithm log categoryName streamId streamName requireLeader ct
         member x.Sync(log, categoryName, streamId, streamName, ctx, _maybeInit, token, state, events, ct) = task {
@@ -411,14 +412,8 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
             FsCodec.Core.EventData.Create(rawEvent.EventType, rawEvent.Data, meta = Snapshot.meta token)
         context.StoreSnapshot(log, category, streamId, encodedWithMeta, ct)
 
-type MessageDbCategory<'event, 'state, 'context> internal (resolveInner, empty) =
-    inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
-    new(context: MessageDbContext, codec: IEventCodec<_, _, 'context>, fold, initial,
+type MessageDbCategory<'event, 'state, 'context>(context: MessageDbContext, name, codec, fold, initial, [<O; D(null)>]?access,
         // For MessageDb, caching is less critical than it is for e.g. CosmosDB
         // As such, it can often be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
-        [<O; D(null)>]?caching,
-        [<O; D(null)>]?access) =
-        let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
-        let resolveInner categoryName streamId = struct (cat, StreamName.render categoryName streamId, ValueNone)
-        let empty = struct (context.TokenEmpty, initial)
-        MessageDbCategory(resolveInner, empty)
+        [<O; D(null)>]?caching) =
+    inherit Equinox.Category<'event, 'state, 'context>(name, Category(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching)

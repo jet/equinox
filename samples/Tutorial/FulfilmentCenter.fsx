@@ -145,10 +145,8 @@ module Store =
 open FulfilmentCenter
 
 let service =
-    let resolve =
-        CosmosStoreCategory(Store.context, Events.codec, Fold.fold, Fold.initial, Store.cacheStrategy, AccessStrategy.Unoptimized)
-        |> Equinox.Decider.resolve Log.log
-    Service(streamId >> resolve Category)
+    let cat = CosmosStoreCategory(Store.context, Category, Events.codec, Fold.fold, Fold.initial, Store.cacheStrategy, AccessStrategy.Unoptimized)
+    Service(streamId >> Equinox.Decider.forStream Log.log cat)
 
 let fc = "fc0"
 service.UpdateName(fc, { code="FC000"; name="Head" }) |> Async.RunSynchronously
