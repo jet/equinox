@@ -69,7 +69,7 @@ type private Category<'event, 'state, 'context, 'Format>(store: VolatileStore<'F
             match store.Load(streamName) with
             | null -> return (Token.ofEmpty, initial)
             | xs -> return (Token.ofValue xs, fold initial (Array.chooseV codec.TryDecode xs)) }
-        member _.Sync(_log, categoryName, streamId, streamName, context, _init, Token.Unpack eventCount, state, events, _ct) = task {
+        member _.Sync(_log, categoryName, streamId, streamName, context, Token.Unpack eventCount, state, events, _ct) = task {
             let inline map i (e: FsCodec.IEventData<'Format>) = FsCodec.Core.TimelineEvent.Create(int64 i, e)
             let encoded = Array.ofSeq events |> Array.mapi (fun i e -> map (eventCount + i) (codec.Encode(context, e)))
             match store.TrySync(streamName, categoryName, streamId, eventCount, encoded) with

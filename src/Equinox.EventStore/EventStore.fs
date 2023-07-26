@@ -458,7 +458,7 @@ type private Category<'event, 'state, 'context>(context: EventStoreContext, code
         member _.Empty = context.TokenEmpty, initial
         member _.Load(log, _categoryName, _streamId, streamName, _maxAge, requireLeader, _ct) =
             fetch initial (loadAlgorithm log streamName requireLeader)
-        member _.Sync(log, _categoryName, _streamId, streamName, ctx, _maybeInit, (Token.Unpack token as streamToken), state, events, _ct) = task {
+        member _.Sync(log, _categoryName, _streamId, streamName, ctx, (Token.Unpack token as streamToken), state, events, _ct) = task {
             let events =
                 match access with
                 | None | Some AccessStrategy.LatestKnownEvent -> events

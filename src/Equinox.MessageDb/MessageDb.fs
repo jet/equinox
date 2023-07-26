@@ -388,7 +388,7 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
         member _.Empty = context.TokenEmpty, initial
         member _.Load(log, categoryName, streamId, streamName, _maxAge, requireLeader, ct) =
             loadAlgorithm log categoryName streamId streamName requireLeader ct
-        member x.Sync(log, categoryName, streamId, streamName, ctx, _maybeInit, token, state, events, ct) = task {
+        member x.Sync(log, categoryName, streamId, streamName, ctx, token, state, events, ct) = task {
             let encode e = codec.Encode(ctx, e)
             let encodedEvents: IEventData<EventBody>[] = events |> Array.map encode
             match! context.TrySync(log, categoryName, streamId, streamName, token, encodedEvents, ct) with
