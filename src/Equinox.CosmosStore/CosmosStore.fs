@@ -580,8 +580,10 @@ module Initialization =
         let initGuard = initContainer |> Option.map (fun init -> AsyncCacheCell<unit>(init container))
         member _.Container = container
         member _.Fallback = fallback
-        member internal _.Initialize(ct): ValueTask =
-            match initGuard with Some g when not (g.IsValid()) -> g.Await(ct) |> ValueTask.ofTask |> ValueTask.ignore | _ -> ValueTask.CompletedTask
+        member internal _.Initialize(ct): System.Threading.Tasks.ValueTask =
+            match initGuard with
+            | Some g when not (g.IsValid()) -> g.Await(ct) |> ValueTask.ofTask |> ValueTask.ignore
+            | _ -> System.Threading.Tasks.ValueTask.CompletedTask
 
 module internal Tip =
 
