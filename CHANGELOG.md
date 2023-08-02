@@ -18,6 +18,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Equinox.Batching`: `BatcherDictionary`, `BatcherCache` to host concurrent `Batchers` [#390](https://github.com/jet/equinox/pull/390)
 - `Equinox.DeciderCore`: C# friendly equivalent of `Decider` (i.e. `Func` and `Task`) [#338](https://github.com/jet/equinox/pull/338)
 - `Equinox.ISyncContext.StreamEventBytes`: Exposes stored size of events in the stream (initial impl provides it for `DynamoStore` only) [#326](https://github.com/jet/equinox/pull/326)
+- `CosmosStore.Exceptions`: Active patterns to simplify classification in the context of Propulsion handlers [#416](https://github.com/jet/equinox/pull/416)
 - `CosmosStore.Prometheus`: Add `rut` tag to enable filtering/grouping by Read vs Write activity as per `DynamoStore` [#321](https://github.com/jet/equinox/pull/321)
 - `DynamoStore`/`DynamoStore.Prometheus`: Implements the majority of the `CosmosStore` functionality via `FSharp.AWS.DynamoDB` [#321](https://github.com/jet/equinox/pull/321)
 - `EventStoreDb`: As per `EventStore` module, but using the modern `EventStore.Client.Grpc.Streams` client [#196](https://github.com/jet/equinox/pull/196)
