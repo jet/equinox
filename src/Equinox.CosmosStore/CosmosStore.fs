@@ -1397,6 +1397,16 @@ type CosmosStoreCategory<'event, 'state, 'context> internal (resolveInner, empty
         let empty = struct (Token.create Position.fromKnownEmpty, initial)
         CosmosStoreCategory(resolveInner, empty)
 
+module Exceptions =
+
+    let [<return: Struct>] (|CosmosStatus|_|) (x: exn) = match x with :? CosmosException as ce -> ValueSome ce.StatusCode | _ -> ValueNone
+    let (|RateLimited|RequestTimeout|ServiceUnavailable|CosmosStatusCode|Other|) = function
+        | CosmosStatus System.Net.HttpStatusCode.TooManyRequests ->     RateLimited
+        | CosmosStatus System.Net.HttpStatusCode.RequestTimeout ->      RequestTimeout
+        | CosmosStatus System.Net.HttpStatusCode.ServiceUnavailable ->  ServiceUnavailable
+        | CosmosStatus s -> CosmosStatusCode s
+        | _ -> Other
+
 namespace Equinox.CosmosStore.Core
 
 open System.Collections.Generic
