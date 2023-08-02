@@ -32,8 +32,8 @@ module StreamId =
         validateStreamIdFragment fragment
         ofRaw fragment
     /// Combines streamId fragments. Throws if any of the fragments embed a `_`, are `null`, or are empty
-    let ofFragments (fragments: string seq): StreamId =
-        fragments |> Seq.iter validateStreamIdFragment
+    let ofFragments (fragments: string[]): StreamId =
+        fragments |> Array.iter validateStreamIdFragment
         String.Join("_", fragments) |> ofRaw
     /// Render as a string for external use
     let toString: StreamId -> string = UMX.untag
@@ -48,11 +48,11 @@ type StreamId private () =
     /// Generate a StreamId from a single application-level id, given a rendering function that maps to a non empty fragment without embedded `_` chars
     static member Map(f: 'a -> string) = System.Func<'a, Core.StreamId>(fun id -> Core.StreamId.ofFragment (f id))
     /// Generate a StreamId from a tuple of application-level ids, given 2 rendering functions that map to a non empty fragment without embedded `_` chars
-    static member Map(f, f2) = System.Func<_, _, _>(fun id1 id2 -> Core.StreamId.ofFragments (seq { yield f id1; yield f2 id2 }))
+    static member Map(f, f2) = System.Func<_, _, _>(fun id1 id2 -> Core.StreamId.ofFragments ([| f id1; f2 id2 |]))
     /// Generate a StreamId from a triple of application-level ids, given 3 rendering functions that map to a non empty fragment without embedded `_` chars
-    static member Map(f1, f2, f3) = System.Func<_, _, _, _>(fun id1 id2 id3 -> Core.StreamId.ofFragments (seq { yield f1 id1; yield f2 id2; yield f3 id3 }))
+    static member Map(f1, f2, f3) = System.Func<_, _, _, _>(fun id1 id2 id3 -> Core.StreamId.ofFragments ([| f1 id1; f2 id2; f3 id3 |]))
     /// Generate a StreamId from a 4-tuple of application-level ids, given 4 rendering functions that map to a non empty fragment without embedded `_` chars
-    static member Map(f1, f2, f3, f4) = System.Func<_, _, _, _, _>(fun id1 id2 id3 id4 -> Core.StreamId.ofFragments (seq { yield f1 id1; yield f2 id2; yield f3 id3; yield f4 id4 }))
+    static member Map(f1, f2, f3, f4) = System.Func<_, _, _, _, _>(fun id1 id2 id3 id4 -> Core.StreamId.ofFragments ([| f1 id1; f2 id2; f3 id3; f4 id4 |]))
 
 /// Helpers for composing and rendering StreamId values
 module StreamId =
