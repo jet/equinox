@@ -1310,31 +1310,6 @@ type CosmosStoreContext(storeClient: CosmosStoreClient, tipOptions, queryOptions
         let store = StoreClient(cg.Container, cg.Fallback, x.QueryOptions, x.TipOptions)
         struct (store, streamName, cg.Initialize)
 
-/// For CosmosDB, caching is typically a central aspect of managing RU consumption to maintain performance and capacity.
-/// The cache holds the Tip document's etag, which enables use of etag-contingent Reads (which cost only 1RU in the case where the document is unchanged)
-/// Omitting can make sense in specific cases; if cache hit rates are low, or there's always a usable snapshot in a relatively small Tip document
-[<NoComparison; NoEquality; RequireQualifiedAccess>]
-type CachingStrategy =
-    /// Do not apply any caching strategy for this Stream.
-    /// NB opting not to leverage caching when using CosmosDB can have significant implications for the scalability
-    ///   of your application, both in terms of latency and running costs.
-    /// While the cost of a cache miss can be ameliorated to varying degrees by employing an appropriate `AccessStrategy`
-    ///   [that works well and has been validated for your scenario with real data], even a cache with a low Hit Rate provides
-    ///   a direct benefit in terms of the number of Request Unit (RU)s that need to be provisioned to your CosmosDB instances.
-    | NoCaching
-    /// Retain a single 'state per streamName, together with the associated etag.
-    /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
-    /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
-    /// Unless <c>LoadOption.AnyCachedValue</c> or <c>AllowStale</c> are used, cache hits still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
-    // NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
-    // track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the `u`nfolds in Tip
-    | SlidingWindow of Equinox.Cache * window: TimeSpan
-    /// Retain a single 'state per streamName, together with the associated etag.
-    /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
-    /// Typically combined with an `Equinox.LoadOption` to minimize loads.
-    /// Unless <c>LoadOption.AnyCachedValue</c> or <c>AllowStale</c> are used, cache hits still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
-    | FixedTimeSpan of Equinox.Cache * period: TimeSpan
-
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event, 'state> =
     /// Don't apply any optimized reading logic. Note this can be extremely RU cost prohibitive
@@ -1369,7 +1344,17 @@ type AccessStrategy<'event, 'state> =
 
 type CosmosStoreCategory<'event, 'state, 'context> internal (name, resolveStream) =
     inherit Equinox.Category<'event, 'state, 'context>(name, resolveStream = resolveStream)
-    new(context: CosmosStoreContext, name, codec, fold, initial, access, caching,
+    new(context: CosmosStoreContext, name, codec, fold, initial, access,
+        // For CosmosDB, caching is typically a central aspect of managing RU consumption to maintain performance and capacity.
+        // The cache holds the Tip document's etag, which enables use of etag-contingent Reads (which cost only 1RU in the case where the document is unchanged)
+        // Omitting can make sense in specific cases; if cache hit rates are low, or there's always a usable snapshot in a relatively small Tip document
+        // NOTE Using NoCaching with CosmosDB can have significant implications for the scalability of your application, both in terms of latency and running costs.
+        // While the cost of a cache miss can be ameliorated to varying degrees by employing an appropriate `AccessStrategy`
+        //   [that works well and has been validated for your scenario with real data], even a cache with a low Hit Rate provides
+        //   a direct benefit in terms of the number of Request Unit (RU)s that need to be provisioned to your CosmosDB instances.
+        // NOTE Unless <c>LoadOption.AnyCachedValue</c> or <c>AllowStale</c> are used, cache hits still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
+        // NOTE re SlidingWindowPrefixed: the recommended approach is to track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the `u`nfolds in Tip
+        caching,
         // Compress Unfolds in Tip. Default: <c>true</c>.
         // NOTE when set to <c>false</c>, requires Equinox.CosmosStore or Equinox.Cosmos Version >= 2.3.0 to be able to read
         [<O; D null>] ?compressUnfolds) =
@@ -1382,10 +1367,6 @@ type CosmosStoreCategory<'event, 'state, 'context> internal (name, resolveStream
             | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         true,  Choice2Of3 (fun _ state  -> unfold state)
             | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> Array.empty, toSnapshot state |> Array.singleton)
             | AccessStrategy.Custom (isOrigin, transmute) ->     isOrigin,         true,  Choice3Of3 transmute
-        let caching = caching |> function
-            | CachingStrategy.NoCaching -> None
-            | CachingStrategy.SlidingWindow (cache, window) -> Some (Equinox.CachingStrategy.SlidingWindow (cache, window))
-            | CachingStrategy.FixedTimeSpan (cache, period) -> Some (Equinox.CachingStrategy.FixedTimeSpan (cache, period))
         let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<'event, 'state, 'context>>()
         let resolveInner struct (container, categoryName, init) =
             let createCategory _name: ICategory<_, _, 'context> =

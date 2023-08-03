@@ -364,6 +364,8 @@ type EventStoreContext(connection: EventStoreConnection, batchOptions: BatchOpti
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event, 'state> =
+    /// Read events forward, in batches.
+    | Unoptimized
     /// Load only the single most recent event defined in <c>'event</c> and trust that doing a <c>fold</c> from any such event
     /// will yield a correct and complete state
     /// In other words, the <c>fold</c> function should not need to consider either the preceding <c>'state</state> or <c>'event</c>s.
@@ -382,19 +384,19 @@ type private Category<'event, 'state, 'context>(context: EventStoreContext, code
     let tryDecode (e: ResolvedEvent) = e.Event |> ClientCodec.timelineEvent |> codec.TryDecode
     let isOrigin =
         match access with
-        | None | Some AccessStrategy.LatestKnownEvent -> fun _ -> true
-        | Some (AccessStrategy.RollingSnapshots (isValid, _)) -> isValid
+        | AccessStrategy.Unoptimized | AccessStrategy.LatestKnownEvent -> fun _ -> true
+        | AccessStrategy.RollingSnapshots (isValid, _) -> isValid
     let loadAlgorithm log streamName requireLeader ct =
         let compacted limit = context.LoadBackwardsStoppingAtCompactionEvent(log, streamName, requireLeader, limit, tryDecode, isOrigin, ct)
         match access with
-        | None -> context.LoadBatched(log, streamName, requireLeader, tryDecode, None, ct)
-        | Some AccessStrategy.LatestKnownEvent -> compacted (Some 1)
-        | Some (AccessStrategy.RollingSnapshots _) -> compacted None
+        | AccessStrategy.Unoptimized -> context.LoadBatched(log, streamName, requireLeader, tryDecode, None, ct)
+        | AccessStrategy.LatestKnownEvent -> compacted (Some 1)
+        | AccessStrategy.RollingSnapshots _ -> compacted None
     let compactionPredicate =
         match access with
-        | None -> None
-        | Some AccessStrategy.LatestKnownEvent -> Some (fun _ -> true)
-        | Some (AccessStrategy.RollingSnapshots (isValid, _)) -> Some isValid
+        | AccessStrategy.Unoptimized -> None
+        | AccessStrategy.LatestKnownEvent -> Some (fun _ -> true)
+        | AccessStrategy.RollingSnapshots (isValid, _) -> Some isValid
     let fetch state f = task { let! struct (token', events) = f in return struct (token', fold state events) }
     let reload (log, sn, leader, token, state) ct = fetch state (context.Reload(log, sn, leader, token, tryDecode, compactionPredicate, ct))
     interface Caching.IReloadable<'state> with member _.Reload(log, sn, leader, token, state, ct) = reload (log, sn, leader, token, state) ct
@@ -405,8 +407,8 @@ type private Category<'event, 'state, 'context>(context: EventStoreContext, code
         member _.Sync(log, _categoryName, _streamId, streamName, ctx, (Token.Unpack token as streamToken), state, events, ct) = task {
             let events =
                 match access with
-                | None | Some AccessStrategy.LatestKnownEvent -> events
-                | Some (AccessStrategy.RollingSnapshots (_, compact)) ->
+                | AccessStrategy.Unoptimized | AccessStrategy.LatestKnownEvent -> events
+                | AccessStrategy.RollingSnapshots (_, compact) ->
                     let cc = CompactionContext(Array.length events, token.batchCapacityLimit.Value)
                     if cc.IsCompactionDue then Array.append events (fold state events |> compact |> Array.singleton) else events
             let encode e = codec.Encode(ctx, e)
@@ -417,16 +419,15 @@ type private Category<'event, 'state, 'context>(context: EventStoreContext, code
 
 type EventStoreCategory<'event, 'state, 'context> internal (name, inner) =
     inherit Equinox.Category<'event, 'state, 'context>(name, inner = inner)
-    new(context: EventStoreContext, name, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, [<O; D(null)>] ?access,
+    new(context: EventStoreContext, name, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, access,
         // Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
-        // e.g., A key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
-        [<O; D(null)>] ?caching) =
-        do  match access with
-            | Some AccessStrategy.LatestKnownEvent when Option.isSome caching ->
-                "Equinox.EventStoreDb does not support (and it would make things _less_ efficient even if it did)"
-                + "mixing AccessStrategy.LatestKnownEvent with Caching at present."
-                |> invalidOp
-            | _ -> ()
+        // e.g., a key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
+        caching) =
+        match access, caching with
+        | AccessStrategy.LatestKnownEvent, Equinox.CachingStrategy.NoCaching -> ()
+        | AccessStrategy.LatestKnownEvent, _ ->
+            invalidOp "Equinox.EventStoreDb does not support mixing AccessStrategy.LatestKnownEvent with Caching at present."
+        | _ -> ()
         let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
         EventStoreCategory(name, inner = cat)
 

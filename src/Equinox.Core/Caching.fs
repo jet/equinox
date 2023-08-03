@@ -38,12 +38,10 @@ let internal policySlidingExpiration (slidingExpiration: System.TimeSpan) () =
 let internal policyFixedTimeSpan (period: System.TimeSpan) () =
     let expirationPoint = let creationDate = System.DateTimeOffset.UtcNow in creationDate.Add period
     System.Runtime.Caching.CacheItemPolicy(AbsoluteExpiration = expirationPoint)
-let private mapStrategy = function
-    | Equinox.CachingStrategy.FixedTimeSpan (cache, period) -> struct (        cache, mkKey null,   policyFixedTimeSpan period)
-    | Equinox.CachingStrategy.SlidingWindow (cache, window) ->                 cache, mkKey null,   policySlidingExpiration window
-    | Equinox.CachingStrategy.SlidingWindowPrefixed (cache, window, prefix) -> cache, mkKey prefix, policySlidingExpiration window
 
-let apply isStale x (cat: 'cat when 'cat :> ICategory<'event, 'state, 'context> and 'cat :> IReloadable<'state>): ICategory<_, _, _> =
+let apply isStale x (cat: 'cat when 'cat :> ICategory<'event, 'state, 'context> and 'cat :> IReloadable<'state>) =
     match x with
-    | None -> cat
-    | Some x -> mapStrategy x |> fun struct (cache, createKey, createOptions) -> Decorator(cat, cache, isStale, createKey, createOptions)
+    | Equinox.CachingStrategy.NoCaching ->                                     (cat : ICategory<_, _, _>)
+    | Equinox.CachingStrategy.FixedTimeSpan (cache, period) ->                 Decorator(cat, cache, isStale, mkKey null, policyFixedTimeSpan period)
+    | Equinox.CachingStrategy.SlidingWindow (cache, window) ->                 Decorator(cat, cache, isStale, mkKey null, policySlidingExpiration window)
+    | Equinox.CachingStrategy.SlidingWindowPrefixed (cache, window, prefix) -> Decorator(cat, cache, isStale, mkKey prefix, policySlidingExpiration window)

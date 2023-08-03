@@ -8,11 +8,11 @@ open System
 type Context =
     // For MemoryStore, we keep the events as UTF8 arrays - we could use FsCodec.Codec.Box to remove the JSON encoding, which would improve perf but can conceal problems
     | Memory of Equinox.MemoryStore.VolatileStore<ReadOnlyMemory<byte>>
-    | Cosmos of Equinox.CosmosStore.CosmosStoreContext * Equinox.CosmosStore.CachingStrategy * unfolds: bool
-    | Dynamo of Equinox.DynamoStore.DynamoStoreContext * Equinox.DynamoStore.CachingStrategy * unfolds: bool
-    | Es     of Equinox.EventStoreDb.EventStoreContext * Equinox.CachingStrategy option * unfolds: bool
-    | Mdb    of Equinox.MessageDb.MessageDbContext * Equinox.CachingStrategy option
-    | Sql    of Equinox.SqlStreamStore.SqlStreamStoreContext * Equinox.CachingStrategy option * unfolds: bool
+    | Cosmos of Equinox.CosmosStore.CosmosStoreContext * Equinox.CachingStrategy * unfolds: bool
+    | Dynamo of Equinox.DynamoStore.DynamoStoreContext * Equinox.CachingStrategy * unfolds: bool
+    | Es     of Equinox.EventStoreDb.EventStoreContext * Equinox.CachingStrategy * unfolds: bool
+    | Mdb    of Equinox.MessageDb.MessageDbContext * Equinox.CachingStrategy
+    | Sql    of Equinox.SqlStreamStore.SqlStreamStoreContext * Equinox.CachingStrategy * unfolds: bool
 
 module MemoryStore =
     type [<NoEquality; NoComparison>] Parameters =
@@ -127,7 +127,7 @@ module Cosmos =
         log.Information("CosmosStore Max Events in Tip: {maxTipEvents}e {maxTipJsonLength}b Items in Query: {queryMaxItems}",
                         a.TipMaxEvents, a.TipMaxJsonLength, a.QueryMaxItems)
         let context = CosmosStoreContext(connection, a.TipMaxEvents, queryMaxItems = a.QueryMaxItems, tipMaxJsonLength = a.TipMaxJsonLength)
-        let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
+        let cacheStrategy = match cache with Some c -> Equinox.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> Equinox.CachingStrategy.NoCaching
         Context.Cosmos (context, cacheStrategy, unfolds)
 
 module Dynamo =
@@ -216,7 +216,7 @@ module Dynamo =
         storeClient.LogConfiguration("Main", log)
         let context = DynamoStoreContext(storeClient, maxBytes = a.TipMaxBytes, queryMaxItems = a.QueryMaxItems, ?tipMaxEvents = a.TipMaxEvents)
         context.LogConfiguration(log)
-        let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
+        let cacheStrategy = match cache with Some c -> Equinox.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> Equinox.CachingStrategy.NoCaching
         Context.Dynamo (context, cacheStrategy, unfolds)
 
 /// To establish a local node to run the tests against, follow https://developers.eventstore.com/server/v21.10/installation.html#use-docker-compose
@@ -258,7 +258,7 @@ module EventStore =
         let timeout = a.Timeout
         log.Information("EventStoreDB {connectionString} {timeout}s", a.ConnectionString, timeout.TotalSeconds)
         let connection = connect a.ConnectionString a.Credentials timeout
-        let cacheStrategy = cache |> Option.map (fun c -> Equinox.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.))
+        let cacheStrategy = match cache with Some c -> Equinox.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> Equinox.CachingStrategy.NoCaching
         Context.Es (EventStoreContext(connection, batchSize = a.BatchSize), cacheStrategy, unfolds)
 
 // see https://github.com/jet/equinox#provisioning-mssql
@@ -266,7 +266,7 @@ module Sql =
 
     open Equinox.SqlStreamStore
 
-    let cacheStrategy cache = cache |> Option.map (fun c -> Equinox.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.))
+    let cacheStrategy = function Some c -> Equinox.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> Equinox.CachingStrategy.NoCaching
     module Ms =
         type [<NoEquality; NoComparison>] Parameters =
             | [<AltCommandLine "-c"; Mandatory>] ConnectionString of string
@@ -366,5 +366,5 @@ module MessageDb =
     let config (log : ILogger) cache (p : ParseResults<Parameters>) =
         let a = Arguments(p)
         let connection = connect log a.ConnectionString
-        let cache = cache |> Option.map (fun c -> Equinox.CachingStrategy.SlidingWindow(c, TimeSpan.FromMinutes 20.))
+        let cache = match cache with Some c -> Equinox.CachingStrategy.SlidingWindow(c, TimeSpan.FromMinutes 20.) | None -> Equinox.CachingStrategy.NoCaching
         Context.Mdb (MessageDbContext(connection, batchSize = a.BatchSize), cache)

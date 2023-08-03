@@ -61,7 +61,7 @@ let [<Fact>] ``AsyncLazy.Empty is a true singleton, does not allocate`` () =
 
 let [<Fact>] ``No strategy, no wrapping`` () =
     let cat = SpyCategory()
-    let sut = Equinox.Core.Caching.apply isStale None cat
+    let sut = Equinox.Core.Caching.apply isStale Equinox.CachingStrategy.NoCaching cat
     test <@ obj.ReferenceEquals(cat, sut) @>
 
 type Tests() =
@@ -69,7 +69,7 @@ type Tests() =
     let cache = Equinox.Cache("tests", 1)
     let strategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 10)
     let cat = SpyCategory()
-    let sut = Equinox.Core.Caching.apply isStale (Some strategy) cat
+    let sut = Equinox.Core.Caching.apply isStale strategy cat
     let sn = Guid.NewGuid |> string
 
     let write () = write sn sut
