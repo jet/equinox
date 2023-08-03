@@ -35,13 +35,13 @@ let private mkKey prefix streamName =
 
 let internal policySlidingExpiration (slidingExpiration: System.TimeSpan) () =
     System.Runtime.Caching.CacheItemPolicy(SlidingExpiration = slidingExpiration)
-let internal policyFixedTimeSpan (period: System.TimeSpan) () =
+let private policyFixedTimeSpan (period: System.TimeSpan) () =
     let expirationPoint = let creationDate = System.DateTimeOffset.UtcNow in creationDate.Add period
     System.Runtime.Caching.CacheItemPolicy(AbsoluteExpiration = expirationPoint)
 
 let apply isStale x (cat: 'cat when 'cat :> ICategory<'event, 'state, 'context> and 'cat :> IReloadable<'state>) =
     match x with
     | Equinox.CachingStrategy.NoCaching ->                                     (cat : ICategory<_, _, _>)
-    | Equinox.CachingStrategy.FixedTimeSpan (cache, period) ->                 Decorator(cat, cache, isStale, mkKey null, policyFixedTimeSpan period)
-    | Equinox.CachingStrategy.SlidingWindow (cache, window) ->                 Decorator(cat, cache, isStale, mkKey null, policySlidingExpiration window)
+    | Equinox.CachingStrategy.FixedTimeSpan (cache, period) ->                 Decorator(cat, cache, isStale, mkKey null,   policyFixedTimeSpan period)
+    | Equinox.CachingStrategy.SlidingWindow (cache, window) ->                 Decorator(cat, cache, isStale, mkKey null,   policySlidingExpiration window)
     | Equinox.CachingStrategy.SlidingWindowPrefixed (cache, window, prefix) -> Decorator(cat, cache, isStale, mkKey prefix, policySlidingExpiration window)
