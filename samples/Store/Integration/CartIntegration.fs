@@ -7,7 +7,7 @@ open Swensen.Unquote
 open System
 
 let fold, initial = Cart.Fold.fold, Cart.Fold.initial
-let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
+let snapshot = Cart.Fold.Snapshot.config
 
 let createMemoryStore () = MemoryStore.VolatileStore<ReadOnlyMemory<byte>>()
 let createServiceMemory log store =

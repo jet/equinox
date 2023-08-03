@@ -18,14 +18,19 @@ module Fold =
 
     type State = Set<string>
     let initial : State = Set.empty
+
+    module Snapshot =
+
+        let generate state = Events.Snapshotted { items = Set.toArray state }
+
     let private evolve state = function
+        | Events.Snapshotted { items = xs } ->
+            (initial,xs) ||> Array.fold (fun state x -> Set.add x state)
         | Events.Deleted { items = xs } ->
             (state,xs) ||> Array.fold (fun state x -> Set.remove x state)
-        | Events.Added { items = xs }
-        | Events.Snapshotted { items = xs } ->
+        | Events.Added { items = xs } ->
             (state,xs) ||> Array.fold (fun state x -> Set.add x state)
     let fold = Array.fold evolve
-    let snapshot state = Events.Snapshotted { items = Set.toArray state }
 
 let interpret add remove (state : Fold.State) =
     // no need to deduplicate adds as we'll be folding these into the state imminently in any case
@@ -51,11 +56,10 @@ let create setId cat =
 
 module Cosmos =
 
-    open Equinox.CosmosStore
     let category (context, cache) =
         let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
-        let accessStrategy = AccessStrategy.RollingState Fold.snapshot
-        CosmosStoreCategory(context, Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
+        let accessStrategy = Equinox.CosmosStore.AccessStrategy.RollingState Fold.Snapshot.generate
+        Equinox.CosmosStore.CosmosStoreCategory(context, Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
 
 module MemoryStore =
 

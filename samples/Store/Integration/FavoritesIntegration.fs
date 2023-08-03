@@ -7,7 +7,7 @@ open Swensen.Unquote
 
 let [<Literal>] Category = Favorites.Category
 let fold, initial = Favorites.Fold.fold, Favorites.Fold.initial
-let snapshot = Favorites.Fold.isOrigin, Favorites.Fold.snapshot
+let snapshot = Favorites.Fold.Snapshot.config
 
 let createMemoryStore () = MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
@@ -28,7 +28,7 @@ let createServiceCosmosSnapshotsUncached log context =
     |> Favorites.create
 
 let createServiceCosmosRollingStateUncached log context =
-    let access = CosmosStore.AccessStrategy.RollingState Favorites.Fold.snapshot
+    let access = CosmosStore.AccessStrategy.RollingState Favorites.Fold.Snapshot.generate
     CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, access, CachingStrategy.NoCaching)
     |> Decider.forStream log
     |> Favorites.create

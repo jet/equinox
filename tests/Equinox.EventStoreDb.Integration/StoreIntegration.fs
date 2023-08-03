@@ -115,13 +115,13 @@ module Cart =
         |> Cart.create
 
     #if STORE_MESSAGEDB
-    let snapshot = Cart.Fold.snapshotEventCaseName, Cart.Fold.snapshot
+    let snapshot = Cart.Fold.Snapshot.eventCaseName, Cart.Fold.Snapshot.generate
     let createServiceWithAdjacentSnapshotting log context =
         Category(context, Cart.Category, codec, fold, initial, AccessStrategy.AdjacentSnapshots snapshot, Equinox.CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log
         |> Cart.create
     #else
-    let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
+    let snapshot = Cart.Fold.Snapshot.config
     let createServiceWithCompaction log context =
         Category(context, Cart.Category, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot, Equinox.CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log

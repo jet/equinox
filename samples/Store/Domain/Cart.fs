@@ -32,20 +32,27 @@ module Fold =
 
     type ItemInfo =                 { skuId: SkuId; quantity: int; returnsWaived: bool option }
     type State =                    { items: ItemInfo list }
-    module State =
-        let toSnapshot (s: State): Events.Compaction.State =
-            { items = [| for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } |] }
-        let ofSnapshot (s: Events.Compaction.State): State =
-            { items = [ for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } ] }
     let initial = { items = [] }
-    // NOTE Should match the event type that is stored, which does not necessarily match the case name
-    // e.g. if you override the name via [<DataMember(Name="snapshot-2")>], it needs to reflect that
-    let snapshotEventCaseName = nameof Events.Snapshotted
-    let evolve (state: State) event =
+
+    module Snapshot =
+
+        let generate (s: State) =
+            Events.Snapshotted <|
+            { items = [| for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } |] }
+        let isOrigin = function Events.Snapshotted _ -> true | _ -> false
+        let config = isOrigin, generate
+        let hydrate (s: Events.Compaction.State): State =
+            { items = [ for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } ] }
+
+        // NOTE Should match the event type that is stored, which does not necessarily match the case name
+        // e.g. if you override the name via [<DataMember(Name="snapshot-2")>], it needs to reflect that
+        let eventCaseName = nameof Events.Snapshotted
+
+    let private evolve (state: State) event =
         let updateItems f = { state with items = f state.items }
         match event with
         | Events.Snapshotted s ->
-            State.ofSnapshot s
+            Snapshot.hydrate s
         | Events.ItemAdded e ->
             updateItems (fun current ->
                 { skuId = e.skuId; quantity = e.quantity; returnsWaived = e.waived }
@@ -61,8 +68,6 @@ module Fold =
                 | i when i.skuId = e.skuId -> { i with returnsWaived = Some e.waived }
                 | i -> i))
     let fold = Array.fold evolve
-    let isOrigin = function Events.Snapshotted _ -> true | _ -> false
-    let snapshot = State.toSnapshot >> Events.Snapshotted
 
 type Context =              { time: System.DateTime; requestId: RequestId }
 type Command =

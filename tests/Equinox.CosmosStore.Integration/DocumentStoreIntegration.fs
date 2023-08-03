@@ -16,7 +16,6 @@ open Equinox.CosmosStore.Integration.CosmosFixtures
 
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
-    let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
 #if STORE_DYNAMO
     let codec = Cart.Events.codec |> FsCodec.Deflate.EncodeTryDeflate
 #else
@@ -28,21 +27,21 @@ module Cart =
         |> Cart.create
     /// Trigger looking in Tip (we want those calls to occur, but without leaning on snapshots, which would reduce the paths covered)
     let createServiceWithEmptyUnfolds log context =
-        let unfArgs = Cart.Fold.isOrigin, fun _ -> Array.empty
+        let unfArgs = Cart.Fold.Snapshot.isOrigin, fun _ -> Array.empty
         StoreCategory(context, Cart.Category, codec, fold, initial, AccessStrategy.MultiSnapshot unfArgs, Equinox.CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log
         |> Cart.create
     let createServiceWithSnapshotStrategy log context =
-        StoreCategory(context, Cart.Category, codec, fold, initial, AccessStrategy.Snapshot snapshot, Equinox.CachingStrategy.NoCaching)
+        StoreCategory(context, Cart.Category, codec, fold, initial, AccessStrategy.Snapshot Cart.Fold.Snapshot.config, Equinox.CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log
         |> Cart.create
     let createServiceWithSnapshotStrategyAndCaching log context cache =
         let sliding20m = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        StoreCategory(context, Cart.Category, codec, fold, initial, AccessStrategy.Snapshot snapshot, sliding20m)
+        StoreCategory(context, Cart.Category, codec, fold, initial, AccessStrategy.Snapshot Cart.Fold.Snapshot.config, sliding20m)
         |> Equinox.Decider.forStream log
         |> Cart.create
     let createServiceWithRollingState log context =
-        let access = AccessStrategy.RollingState Cart.Fold.snapshot
+        let access = AccessStrategy.RollingState Cart.Fold.Snapshot.generate
         StoreCategory(context, Cart.Category, codec, fold, initial, access, Equinox.CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log
         |> Cart.create

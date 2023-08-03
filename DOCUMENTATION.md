@@ -344,27 +344,31 @@ Some notes about the intents being satisfied here:
 module Fold =
 
     type State =
-    let initial : State = ...
-    let evolve state = function
+    let initial: State = ...
+
+    module Snapshot =
+        
+        let snapshot (state: State): Event =
+            Events.Snapshotted { ... }
+        let isOrigin = function
+            | Events.Snapshotted -> true
+            | _ -> false
+        let config = generate, isOrigin
+        let hydrate (e: Snapshotted): State = ...
+        
+    let private evolve state = function
+        | Events.Snapshotted e -> Snapshot.hydrate e
         | Events.X -> (state update)
         | Events.Y -> (state update)
     let fold = Array.fold evolve
 
-    (* Storage Model helpers *)
-
-    let isOrigin : Events.Event = function
-       | Events.Snapshotted -> true
-       | _ -> false
-    let snapshot (state : State) : Event =
-       Events.Snapshotted { ... }
-
-let interpretX ... (state : Fold.State) : Events list = ...
+let interpretX ... (state: Fold.State): Events list = ...
 
 type Decision =
     | Accepted
     | Failed of Reason
 
-let decideY ... (state : Fold.State) : Decision * Events list = ...
+let decideY ... (state: Fold.State): Decision * Events list = ...
 ```
 
 - `interpret`, `decide` _and related input and output types / interfaces_ are
@@ -372,13 +376,13 @@ let decideY ... (state : Fold.State) : Decision * Events list = ...
   `module Fold` to use `initial` and `fold`)
 
 ```fsharp
-type Service internal (resolve : Id -> Equinox.Decider<Events.Event, Fold.State) = ...`
+type Service internal (resolve: Id -> Equinox.Decider<Events.Event, Fold.State) = ...`
 
-    member _.Execute(id, command) : Async<unit> =
+    member _.Execute(id, command): Async<unit> =
         let decider = resolve id
         decider.Transact(interpretX command)
 
-    member _.Decide(id, inputs) : Async<Decision> =
+    member _.Decide(id, inputs): Async<Decision> =
         let decider = resolve id
         decider.Transact(decideX inputs)
 
@@ -407,26 +411,18 @@ either within the `module Aggregate`, or somewhere outside closer to the
 [_Composition Root_](https://blog.ploeh.dk/2011/07/28/CompositionRoot/).
 
 ```fsharp
+let defaultCacheDuration = System.TimeSpan.FromMinutes 20.
+let cacheStrategy = Equinox.CosmosStore.CachingStrategy.SlidingWindow (cache, defaultCacheDuration)
+
 module EventStore =
-    let accessStrategy =
-        Equinox.EventStore.AccessStrategy.RollingSnapshots (Fold.isOrigin, Fold.snapshot)
-    let create (context, cache) =
-        let cacheStrategy =
-            Equinox.EventStore.CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
-        let cat =
-            Equinox.EventStore.EventStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-        create cat
+    let accessStrategy = Equinox.EventStoreDb.AccessStrategy.RollingSnapshots (Fold.isOrigin, Fold.snapshot)
+    let category (context, cache) =
+        Equinox.EventStore.EventStoreCategory(context, Category, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
 
 module Cosmos =
-    let accessStrategy =
-        Equinox.CosmosStore.AccessStrategy.Snapshot (Fold.isOrigin, Fold.snapshot)
-    let create (context, cache) =
-        let cacheStrategy =
-            Equinox.CosmosStore.CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
-        let cat =
-            Equinox.CosmosStore.CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-        create cat
-```
+    let accessStrategy = Equinox.CosmosStore.AccessStrategy.Snapshot Fold.Snapshot.config
+    let category (context, cache) =
+        Equinox.CosmosStore.CosmosStoreCategory(context, Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
 
 ### `MemoryStore` Storage Binding Module
 
@@ -436,9 +432,8 @@ can use the `MemoryStore` in the context of your tests:
 
 ```fsharp
 module MemoryStore =
-    let create (store : Equinox.MemoryStore.VolatileStore) =
-        let cat = Equinox.MemoryStore.MemoryStoreCategory(store, Events.codec, Fold.fold, Fold.initial)
-        create cat
+    let category (store: Equinox.MemoryStore.VolatileStore) =
+        Equinox.MemoryStore.MemoryStoreCategory(store, Category, Events.codec, Fold.fold, Fold.initial)
 ```
 
 Typically that binding module can live with your test helpers rather than
@@ -472,7 +467,7 @@ events on a given category of stream:
   [Null Object Pattern](https://en.wikipedia.org/wiki/Null_object_pattern),
   [Identity element](https://en.wikipedia.org/wiki/Identity_element)
 
-- `fold : 'state -> 'event[] -> 'state`: function used to fold one or more
+- `fold: 'state -> 'event[] -> 'state`: function used to fold one or more
   loaded (or proposed) events (real ones and/or unfolded ones) into a given
   running
   [persistent data structure](https://en.wikipedia.org/wiki/Persistent_data_structure)
@@ -485,7 +480,7 @@ events on a given category of stream:
   tests and used to parameterize the Category's storage configuration._.
   Sometimes named `apply`)
 
-- `interpret: (context/command etc ->) 'state -> event' list` or `decide : (context/command etc ->) 'state -> 'result*'event list`: responsible for _Deciding_ (in an [idempotent](https://en.wikipedia.org/wiki/Idempotence) manner) how the intention represented by `context/command` should be mapped with regard to the provided `state` in terms of:
+- `interpret: (context/command etc ->) 'state -> event' list` or `decide: (context/command etc ->) 'state -> 'result*'event list`: responsible for _Deciding_ (in an [idempotent](https://en.wikipedia.org/wiki/Idempotence) manner) how the intention represented by `context/command` should be mapped with regard to the provided `state` in terms of:
   a) the `'events` that should be written to the stream to record the decision
   b) (for the `'result` in the `decide` signature) any response to be returned to the invoker (NB returning a result likely represents a violation of the [CQS](https://en.wikipedia.org/wiki/Command%E2%80%93query_separation) and/or CQRS principles, [see Synchronous Query in the Glossary](#glossary))
 
@@ -506,7 +501,7 @@ the _tip_):
   (in some cases, the store implementation will provide a custom
   `AccessStrategy` where the `unfold` function should only produce a single
   `event`; where this is the case, typically this is referred to as
-  `toSnapshot : 'state -> 'event`).
+  `toSnapshot: 'state -> 'event`).
 
 ## Decision Flow
 
@@ -589,7 +584,7 @@ let interpret command state =
  * efficiently, without having to read/fold all Events in a Stream
  *)
 
-let toSnapshot state = [Event.Snapshotted (Array.ofList state)]
+let toSnapshot state = [| Event.Snapshotted (Array.ofList state) |]
 
 (*
  * The Service defines operations in business terms, neutral to any concrete
@@ -598,13 +593,13 @@ let toSnapshot state = [Event.Snapshotted (Array.ofList state)]
  * Equinox.Decider; Typically the service should be a stateless Singleton
  *)
 
-type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    let execute clientId command : Async<unit> =
+    let execute clientId command: Async<unit> =
         let decider = resolve clientId
         decider.Transact(interpret command)
         
-    let read clientId : Async<string list> =
+    let read clientId: Async<string list> =
         let decider = resolve clientId
         decider.Query id
 
@@ -614,10 +609,10 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
         execute clientId (Command.Favorite(DateTimeOffset.Now, skus))
     member _.Unfavorite(clientId, skus) =
         execute clientId (Command.Unfavorite skus)
-    member _.List clientId : Async<Events.Favorited []> =
+    member _.List clientId: Async<Events.Favorited []> =
         read clientId
 
-let create resolve : Service =
+let create resolve: Service =
     Service(streamId >> resolve Category)
 ```
 
@@ -717,13 +712,13 @@ follow!
 type Equinox.Decider(...) =
 StoreIntegration
     // Run interpret function with present state, retrying with Optimistic Concurrency
-    member _.Transact(interpret : State -> Event list) : Async<unit>
+    member _.Transact(interpret: State -> Event list): Async<unit>
 
     // Run decide function with present state, retrying with Optimistic Concurrency, yielding Result on exit
-    member _.Transact(decide : State -> Result*Event list) : Async<Result>
+    member _.Transact(decide: State -> Result*Event list): Async<Result>
 
     // Runs a Null Flow that simply yields a `projection` of `Context.State`
-    member _.Query(projection : State -> View) : Async<View>
+    member _.Query(projection: State -> View): Async<View>
 ```
 
 ### Favorites walkthrough
@@ -836,13 +831,13 @@ context
 let [<Literal>] Category = "Favorites"
 let streamId = Equinox.StreamId.gen ClientId.toString
 
-type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    let execute clientId command : Async<unit> =
+    let execute clientId command: Async<unit> =
         let decider = resolve clientId
         decider.Transact(interpret command)
 
-    let read clientId : Async<string list> =
+    let read clientId: Async<string list> =
         let decider = resolve clientId
         decider.Query id
 
@@ -898,7 +893,7 @@ result in you ending up with a model that's potentially both:
         execute clientId (Add sku)
     member _.Unfavorite(clientId, skus) =
         execute clientId (Remove skus)
-    member _.List clientId : Async<string list> =
+    member _.List clientId: Async<string list> =
         read clientId
 ```
 
@@ -978,17 +973,23 @@ applying such a feature:
 #### `State` + `initial` + `evolve`/`fold`
 
 ```fsharp
-type State = { items : Todo list; nextId : int }
+type State = { items: Todo list; nextId: int }
 let initial = { items = []; nextId = 0 }
-let evolve s = function
+
+module Snapshot =
+
+    let private generate state = Snapshotted (Array.ofList state.items)
+    let private isOrigin = function Cleared | Snapshotted _ -> true | _ -> false
+    let config = generate, isOrigin
+    let hydrate items = { initial with items = List.ofArray items }
+    
+let private evolve s = function
+    | Snapshotted items -> Snapshot.hydrate items
     | Added item -> { s with items = item :: s.items; nextId = s.nextId + 1 }
     | Updated value -> { s with items = s.items |> List.map (function { id = id } when id = value.id -> value | item -> item) }
     | Deleted id -> { s with items = s.items |> List.filter (fun x -> x.id <> id) }
     | Cleared -> { s with items = [] }
-    | Snapshotted items -> { s with items = List.ofArray items }
 let fold = Array.fold evolve
-let isOrigin = function Cleared | Snapshotted _ -> true | _ -> false
-let snapshot state = Snapshotted (Array.ofList state.items)
 ```
 
 - for `State` we use records and `list`s as the state needs to be a Persistent
@@ -1002,7 +1003,7 @@ let snapshot state = Snapshotted (Array.ofList state.items)
 
 ```fsharp
 type Command = Add of Todo | Update of Todo | Delete of id: int | Clear
-let interpret c (state : State) =
+let interpret c (state: State) =
     match c with
     | Add value -> [Added { value with id = state.nextId }]
     | Update value ->
@@ -1029,31 +1030,31 @@ let interpret c (state : State) =
 #### `Service`
 
 ```fsharp
-type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    let execute clientId command : Async<unit> =
+    let execute clientId command: Async<unit> =
         let decider = resolve clientId
         decider.Transact(interpret command)
-    let handle clientId command : Async<Todo list> =
+    let handle clientId command: Async<Todo list> =
         let decider = resolve clientId
         decider.Transact(fun state ->
             let events = interpret command state
             let state' = fold state events
             state'.items,events)
-    let query clientId (projection : State -> T) : Async<T> =
+    let query clientId (projection: State -> T): Async<T> =
         let decider = resolve clientId
         decider.Query projection
 
-    member _.List clientId : Async<Todo seq> =
+    member _.List clientId: Async<Todo seq> =
         query clientId (fun s -> s.items |> Seq.ofList)
     member _.TryGet(clientId, id) =
         query clientId (fun x -> x.items |> List.tryFind (fun x -> x.id = id))
-    member _.Execute(clientId, command) : Async<unit> =
+    member _.Execute(clientId, command): Async<unit> =
         execute clientId command
-    member _.Create(clientId, template: Todo) : Async<Todo> = async {
+    member _.Create(clientId, template: Todo): Async<Todo> = async {
         let! updated = handle clientId (Command.Add template)
         return List.head updated }
-    member _.Patch(clientId, item: Todo) : Async<Todo> = async {
+    member _.Patch(clientId, item: Todo): Async<Todo> = async {
         let! updated = handle clientId (Command.Update item)
         return List.find (fun x -> x.id = item.id) updated }
 ```
@@ -1081,7 +1082,7 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
        and/or simplifications when compared to aspects that might present in a
        more complete implementation.
 
-- the `streamId` helper (and optional [`Match` Active Patterns](https://github.com/jet/fscodec#adding-matchers-to-the-event-contract))
+- the `streamId` helper (and optional [`Parse` Active Patterns](https://github.com/jet/fscodec#adding-matchers-to-the-event-contract))
   provide succinct ways to map an incoming `clientId` (which is not a `string`
   in the real implementation but instead an id using
   [`FSharp.UMX`](https://github.com/fsprojects/FSharp.UMX) in an unobtrusive
@@ -1128,7 +1129,7 @@ In this case, the Decision Process is `interpret`ing the _Command_ in the
 context of a `'state`.
 
 The function signature is:
-`let interpret (context, command, args) state : Events.Event list`
+`let interpret (context, command, args) state: Events.Event list`
 
 Note the `'state` is the last parameter; it's computed and supplied by the
 Equinox Flow.
@@ -1145,23 +1146,23 @@ conflicting write have taken place since the loading of the state_
 
 ```fsharp
 
-let interpret (context, command) state : Events.Event list =
+let interpret (context, command) state: Events.Event list =
     match tryCommand context command state with
     | None ->
         [] // not relevant / already in effect
     | Some eventDetails -> // accepted, mapped to event details record
         [Event.HandledCommand eventDetails]
 
-type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.State>)
+type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>)
 
     // Given the supplied context, apply the command for the specified clientId
-    member _.Execute(clientId, context, command) : Async<unit> =
+    member _.Execute(clientId, context, command): Async<unit> =
         let decider = resolve clientId
         decider.Transact(fun state -> interpretCommand (context, command) state)
 
     // Given the supplied context, apply the command for the specified clientId
     // Throws if this client's data is marked Read Only
-    member _.Execute(clientId, context, command) : Async<unit> =
+    member _.Execute(clientId, context, command): Async<unit> =
         let decider = resolve clientId
         decider.Transact(fun state ->
             if state.isReadOnly then raise AccessDeniedException() // Mapped to 403 externally
@@ -1177,7 +1178,7 @@ necessary function is a hybrid of a _projection_ and the preceding `interpret`
 signature: you're both potentially emitting events and yielding an outcome or
 projecting some of the 'state'.
 
-In this case, the signature is: `let decide (context, command, args) state :
+In this case, the signature is: `let decide (context, command, args) state:
 'result * Events.Event list`
 
 Note that the return value is a _tuple_ of `('result,Event list):
@@ -1191,17 +1192,17 @@ until either no events are emitted, or there were on further conflicting writes
 supplied by competing writers.
 
 ```fsharp
-let decide (context, command) state : int * Events.Event list =
+let decide (context, command) state: int * Events.Event list =
    // ... if `snd` contains event, they are written
    // `fst` (an `int` in this instance) is returned as the outcome to the caller
 
-type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
     // Given the supplied context, attempt to apply the command for the specified clientId
     // NOTE Try will return the `fst` of the tuple that `decide` returned
     // If >1 attempt was necessary (e.g., due to conflicting events), the `fst`
     // from the last attempt is the outcome
-    member _.Try(clientId, context, command) : Async<int> =
+    member _.Try(clientId, context, command): Async<int> =
         let decider = resolve clientId
         decider.Transact(fun state ->
             decide (context, command) state)
@@ -1313,7 +1314,7 @@ let interpretMany fold interpreters (state: 'state): 'state * 'event[] =
 
 type Service internal (resolve: CartId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    member _.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
+    member _.Run(cartId, optimistic, commands: Command seq, ?prepare): Async<Fold.State> =
         let decider = resolve cartId
         let opt = if optimistic then Equinox.AnyCachedValue else Equinox.RequireLoad
         decider.TransactAsync(fun state -> async {
@@ -1339,43 +1340,43 @@ first)
 ```fsharp
 /// Maintains a rolling folded State while Accumulating Events pended as part
 /// of a decision flow
-type Accumulator<'event, 'state>(fold : 'state -> 'event[] -> 'state, originState : 'state) =
+type Accumulator<'event, 'state>(fold: 'state -> 'event[] -> 'state, originState: 'state) =
     let accumulated = ResizeArray<'event>()
 
     /// The Events that have thus far been pended via the `decide` functions
     /// `Execute`/`Decide`d during the course of this flow
-    member _.Accumulated : 'event[] =
+    member _.Accumulated: 'event[] =
         accumulated.ToArray()
 
     /// The current folded State, based on the Stream's `originState` + any
     /// events that have been Accumulated during the the decision flow
-    member _.State : 'state =
+    member _.State: 'state =
         accumulated |> fold originState
 
     /// Invoke a decision function, gathering the events (if any) that it
     /// decides are necessary into the `Accumulated` sequence
-    member x.Transact(interpret : 'state -> 'event[]) : unit =
+    member x.Transact(interpret: 'state -> 'event[]): unit =
         interpret x.State |> accumulated.AddRange
     /// Invoke an Async decision function, gathering the events (if any) that
     /// it decides are necessary into the `Accumulated` sequence
-    member x.Transact(interpret : 'state -> Async<'event[]>) : Async<unit> = async {
+    member x.Transact(interpret: 'state -> Async<'event[]>): Async<unit> = async {
         let! events = interpret x.State
         accumulated.AddRange events }
     /// Invoke a decision function, while also propagating a result yielded as
     /// the fst of an (result, events) pair
-    member x.Transact(decide : 'state -> 'result * 'event[]) : 'result =
+    member x.Transact(decide: 'state -> 'result * 'event[]): 'result =
         let result, newEvents = decide x.State
         accumulated.AddRange newEvents
         result
     /// Invoke a decision function, while also propagating a result yielded as
     /// the fst of an (result, events) pair
-    member x.Transact(decide : 'state -> Async<'result * 'event[]>) : Async<'result> = async {
+    member x.Transact(decide: 'state -> Async<'result * 'event[]>): Async<'result> = async {
         let! result, newEvents = decide x.State
         accumulated.AddRange newEvents
         return result }
 
 type Service ... =
-    member _.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
+    member _.Run(cartId, optimistic, commands: Command seq, ?prepare): Async<Fold.State> =
         let decider = resolve cartId
         let opt = if optimistic then Equinox.AnyCachedValue else Equinox.RequireLoad
         decider.Transact(fun state -> async {
@@ -1812,7 +1813,7 @@ type EventData with
 // Load connection string from your Key Vault (example here is the CosmosDB
 // simulator's well known key)
 // see https://github.com/jet/equinox-provisioning-cosmosdb
-let connectionString : string =
+let connectionString: string =
     "AccountEndpoint=https://localhost:8081;AccountKey=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==;"
 
 // Forward to Log (you can use `Log.Logger` and/or `Log.ForContext` if your app
@@ -1824,7 +1825,7 @@ let gatewayLog =
     outputLog.ForContext(Serilog.Core.Constants.SourceContextPropertyName, "Equinox")
 
 let discovery = Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION")
-let connector : Equinox.CosmosStore.CosmosStoreConnector =
+let connector: Equinox.CosmosStore.CosmosStoreConnector =
     CosmosStoreConnector(
         discovery,
         requestTimeout = TimeSpan.FromSeconds 5.,
