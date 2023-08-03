@@ -44,16 +44,20 @@ let codec = FsCodec.SystemTextJson.CodecJsonElement.Create<Event>()
 
 type State = { items : Todo list; nextId : int }
 let initial = { items = []; nextId = 0 }
-let evolve s (e : Event) =
-    match e with
+
+module Snapshot =
+    
+    let private generate state = Snapshotted { items = Array.ofList state.items }
+    let private isOrigin = function Cleared | Snapshotted _ -> true | _ -> false
+    let config = isOrigin, generate
+    
+let private evolve s = function
     | Added item -> { s with items = item :: s.items; nextId = s.nextId + 1 }
     | Updated value -> { s with items = s.items |> List.map (function { id = id } when id = value.id -> value | item -> item) }
     | Deleted { id=id } -> { s with items = s.items |> List.filter (fun x -> x.id <> id) }
     | Cleared -> { s with items = [] }
     | Snapshotted { items=items } -> { s with items = List.ofArray items }
 let fold = Array.fold evolve
-let isOrigin = function Cleared | Snapshotted _ -> true | _ -> false
-let snapshot state = Snapshotted { items = Array.ofList state.items }
 
 type Command = Add of Todo | Update of Todo | Delete of id: int | Clear
 let interpret c (state : State) = [|
@@ -132,7 +136,7 @@ module Store =
     let context = CosmosStoreContext(storeClient, tipMaxEvents = 100) // Keep up to 100 events in tip before moving events to a new document
     let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
 
-    let access = AccessStrategy.Snapshot (isOrigin,snapshot)
+    let access = AccessStrategy.Snapshot Snapshot.config
     let category = CosmosStoreCategory(context, Category, codec, fold, initial, access, cacheStrategy)
 
 let service = Service(streamId >> Equinox.Decider.forStream log Store.category)

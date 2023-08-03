@@ -36,7 +36,7 @@ type ServiceBuilder(storageConfig, handlerLog) =
 
      member _.CreateFavoritesService() =
         let fold, initial = Favorites.Fold.fold, Favorites.Fold.initial
-        let snapshot = Favorites.Fold.isOrigin, Favorites.Fold.snapshot
+        let snapshot = Favorites.Fold.Snapshot.config
         store.Category(Favorites.Category, Favorites.Events.codec, fold, initial, snapshot)
         |> Decider.forStream handlerLog
         |> Favorites.create
@@ -50,7 +50,7 @@ type ServiceBuilder(storageConfig, handlerLog) =
 
      member _.CreateTodosService() =
         let fold, initial = TodoBackend.Fold.fold, TodoBackend.Fold.initial
-        let snapshot = TodoBackend.Fold.isOrigin, TodoBackend.Fold.snapshot
+        let snapshot = TodoBackend.Fold.Snapshot.config
         store.Category(TodoBackend.Category, TodoBackend.Events.codec, fold, initial, snapshot)
         |> Decider.forStream handlerLog
         |> TodoBackend.create

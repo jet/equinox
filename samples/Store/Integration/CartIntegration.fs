@@ -7,7 +7,7 @@ open Swensen.Unquote
 open System
 
 let fold, initial = Cart.Fold.fold, Cart.Fold.initial
-let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
+let snapshot = Cart.Fold.Snapshot.config
 
 let createMemoryStore () = MemoryStore.VolatileStore<ReadOnlyMemory<byte>>()
 let createServiceMemory log store =
@@ -43,15 +43,13 @@ type Tests(testOutputHelper) =
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service 5
 
         let! state = service.Read cartId
-        test <@ 5 = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
-    }
+        test <@ 5 = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @> }
 
     [<AutoData>]
     let ``Can roundtrip in Memory, correctly folding the events`` args = async {
         let store = createMemoryStore ()
         let service = createServiceMemory log store
-        do! act service args
-    }
+        do! act service args }
 
     let arrangeEs connect choose createCategory = async {
         let client = connect log
@@ -61,14 +59,12 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events without compaction semantics`` args = async {
         let! service = arrangeEs connectToLocalEventStoreNode createContext categoryGesStreamWithoutCustomAccessStrategy
-        do! act service args
-    }
+        do! act service args }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with RollingSnapshots`` args = async {
         let! service = arrangeEs connectToLocalEventStoreNode createContext categoryGesStreamWithRollingSnapshots
-        do! act service args
-    }
+        do! act service args }
 
     let arrangeCosmos connect createCategory =
         let context : CosmosStore.CosmosStoreContext = connect log defaultQueryMaxItems
@@ -77,11 +73,9 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events without custom access strategy`` args = async {
         let service = arrangeCosmos createPrimaryContext categoryCosmosStreamWithoutCustomAccessStrategy
-        do! act service args
-    }
+        do! act service args }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly folding the events with With Snapshotting`` args = async {
+    let ``Can roundtrip against Cosmos, correctly folding the events with with Snapshot`` args = async {
         let service = arrangeCosmos createPrimaryContext categoryCosmosStreamWithSnapshotStrategy
-        do! act service args
-    }
+        do! act service args }

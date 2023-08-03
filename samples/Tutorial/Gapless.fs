@@ -24,6 +24,12 @@ module Fold =
 
     type State = { reserved : Set<int64>; next : int64 }
     let initial = { reserved = Set.empty; next = 0L }
+
+    module Snapshot =
+        let private isOrigin = function Events.Snapshotted _ -> true | _ -> false
+        let generate state = Events.Snapshotted { reservations = Array.ofSeq state.reserved; nextId = state.next }
+        let config = isOrigin, generate
+
     module State =
         let ofInternal (lowWatermark : int64) (reserved : int64 seq) (confirmed : int64 seq) (released : int64 seq) : State =
             failwith "TODO"
@@ -42,8 +48,6 @@ module Fold =
         let s = State.toInternal state
         let state' = (s, xs) ||> Array.fold (fun s -> s.Evolve)
         state'.ToState()
-    let isOrigin = function Events.Snapshotted _ -> true | _ -> false
-    let snapshot state = Events.Snapshotted { reservations = Array.ofSeq state.reserved; nextId = state.next }
 
 let decideReserve count (state : Fold.State) : int64[] * Events.Event[] =
     failwith "TODO"
@@ -86,9 +90,9 @@ module Cosmos =
     module Snapshot =
 
         let category (context, cache) =
-            category (context, cache, AccessStrategy.Snapshot (Fold.isOrigin, Fold.snapshot))
+            category (context, cache, AccessStrategy.Snapshot Fold.Snapshot.config)
 
     module RollingUnfolds =
 
         let category (context, cache) =
-            category (context, cache, AccessStrategy.RollingState Fold.snapshot)
+            category (context, cache, AccessStrategy.RollingState Fold.Snapshot.generate)

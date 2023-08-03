@@ -7,7 +7,7 @@ open Swensen.Unquote
 
 let [<Literal>] Category = Favorites.Category
 let fold, initial = Favorites.Fold.fold, Favorites.Fold.initial
-let snapshot = Favorites.Fold.isOrigin, Favorites.Fold.snapshot
+let snapshot = Favorites.Fold.Snapshot.config
 
 let createMemoryStore () = MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
@@ -28,7 +28,7 @@ let createServiceCosmosSnapshotsUncached log context =
     |> Favorites.create
 
 let createServiceCosmosRollingStateUncached log context =
-    let access = CosmosStore.AccessStrategy.RollingState Favorites.Fold.snapshot
+    let access = CosmosStore.AccessStrategy.RollingState Favorites.Fold.Snapshot.generate
     CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, access, CachingStrategy.NoCaching)
     |> Decider.forStream log
     |> Favorites.create
@@ -70,8 +70,7 @@ type Tests(testOutputHelper) =
         let store = createMemoryStore ()
         let service = createServiceMemory log store
         let! version, items = act service args
-        version =! items.LongLength
-    }
+        version =! items.LongLength }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events`` args = async {
@@ -79,8 +78,7 @@ type Tests(testOutputHelper) =
         let context = createContext client defaultBatchSize
         let service = createServiceGes log context
         let! version, items = act service args
-        version =! items.LongLength
-    }
+        version =! items.LongLength }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with caching`` (clientId, cmd) = async {
@@ -98,20 +96,18 @@ type Tests(testOutputHelper) =
         rereadVersion =! items.LongLength
         let! rereadVersion2, items = service2.ListWithVersion clientId
         rereadVersion2 =! version
-        rereadVersion2 =! items.LongLength
-    }
+        rereadVersion2 =! items.LongLength }
+
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events`` args = async {
         let context = createPrimaryContext log defaultQueryMaxItems
         let service = createServiceCosmosSnapshotsUncached log context
         let! version, items = act service args
-        version =! items.LongLength
-    }
+        version =! items.LongLength }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with rolling unfolds`` args = async {
         let context = createPrimaryContext log defaultQueryMaxItems
         let service = createServiceCosmosRollingStateUncached log context
         let! version, _items = act service args
-        version =! 0L
-    }
+        version =! 0L }

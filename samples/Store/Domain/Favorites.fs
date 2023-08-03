@@ -21,6 +21,13 @@ module Events =
 module Fold =
 
     type State = Events.Favorited []
+    let initial: State = [||]
+
+    module Snapshot =
+
+        let generate state = Events.Snapshotted { net = state }
+        let private isOrigin = function Events.Snapshotted _ -> true | _ -> false
+        let config = isOrigin, generate
 
     type private InternalState(input: State) =
         let dict = System.Collections.Generic.Dictionary<SkuId, Events.Favorited>()
@@ -32,7 +39,6 @@ module Fold =
         member _.Unfavorite id =               dict.Remove id |> ignore
         member _.AsState() =                   Seq.toArray dict.Values
 
-    let initial: State = [||]
     let private evolve (s: InternalState) = function
         | Events.Snapshotted { net = net } ->   s.ReplaceAllWith net
         | Events.Favorited e ->                 s.Favorite e
@@ -41,8 +47,6 @@ module Fold =
         let s = InternalState state
         for e in events do evolve s e
         s.AsState()
-    let isOrigin = function Events.Snapshotted _ -> true | _ -> false
-    let snapshot state = Events.Snapshotted { net = state }
 
 let has skuId (state: Fold.State) = state |> Array.exists (fun x -> x.skuId = skuId)
 
