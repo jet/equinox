@@ -101,6 +101,8 @@ type Cache private (inner: System.Runtime.Caching.MemoryCache) =
     member val Inner = inner
 
 type [<NoComparison; NoEquality; RequireQualifiedAccess>] CachingStrategy =
+    /// Do not apply any caching strategy for this Category.
+    | NoCaching
     /// Retain a single 'state per streamName.
     /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
     /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
@@ -112,4 +114,6 @@ type [<NoComparison; NoEquality; RequireQualifiedAccess>] CachingStrategy =
     | FixedTimeSpan of Cache * period: TimeSpan
     /// Prefix is used to segregate multiple folded states per stream when they are stored in the cache.
     /// Semantics are otherwise identical to <c>SlidingWindow</c>.
+    /// NOTE In general, its much preferred to ensure that the snapshot includes all relevant state
+    ///      or use an AccessStrategy such as MultiSnapshot where available
     | SlidingWindowPrefixed of Cache * window: TimeSpan * prefix: string

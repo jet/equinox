@@ -19,14 +19,14 @@ let codec = Cart.Events.codec
 let codecJe = Cart.Events.codecJe
 
 let categoryGesStreamWithRollingSnapshots context =
-    EventStoreDb.EventStoreCategory(context, Cart.Category, codec, fold, initial, access = EventStoreDb.AccessStrategy.RollingSnapshots snapshot)
+    EventStoreDb.EventStoreCategory(context, Cart.Category, codec, fold, initial, EventStoreDb.AccessStrategy.RollingSnapshots snapshot, CachingStrategy.NoCaching)
 let categoryGesStreamWithoutCustomAccessStrategy context =
-    EventStoreDb.EventStoreCategory(context, Cart.Category, codec, fold, initial)
+    EventStoreDb.EventStoreCategory(context, Cart.Category, codec, fold, initial, EventStoreDb.AccessStrategy.Unoptimized, CachingStrategy.NoCaching)
 
 let categoryCosmosStreamWithSnapshotStrategy context =
-    CosmosStore.CosmosStoreCategory(context, Cart.Category, codecJe, fold, initial, CosmosStore.AccessStrategy.Snapshot snapshot, CosmosStore.CachingStrategy.NoCaching)
+    CosmosStore.CosmosStoreCategory(context, Cart.Category, codecJe, fold, initial, CosmosStore.AccessStrategy.Snapshot snapshot, CachingStrategy.NoCaching)
 let categoryCosmosStreamWithoutCustomAccessStrategy context =
-    CosmosStore.CosmosStoreCategory(context, Cart.Category, codecJe, fold, initial, CosmosStore.AccessStrategy.Unoptimized, CosmosStore.CachingStrategy.NoCaching)
+    CosmosStore.CosmosStoreCategory(context, Cart.Category, codecJe, fold, initial, CosmosStore.AccessStrategy.Unoptimized, CachingStrategy.NoCaching)
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Cart.Service) count =
     service.ExecuteManyAsync(cartId, false, seq {

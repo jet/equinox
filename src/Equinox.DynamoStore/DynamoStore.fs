@@ -1261,30 +1261,6 @@ type DynamoStoreContext(storeClient: DynamoStoreClient, tipOptions, queryOptions
         let container, fallback, streamName = storeClient.ResolveContainerFallbackAndStreamName(categoryName, streamId)
         struct (StoreClient(container, fallback, x.QueryOptions, x.TipOptions), streamName)
 
-/// For DynamoDB, caching is typically a central aspect of managing RU consumption to maintain performance and capacity.
-/// Omitting can make sense in specific cases; if streams are short, or there's always a usable snapshot in the Tip
-[<NoComparison; NoEquality; RequireQualifiedAccess>]
-type CachingStrategy =
-    /// Do not apply any caching strategy for this Stream.
-    /// NB opting not to leverage caching when using DynamoDB can have significant implications for the scalability
-    ///   of your application, both in terms of latency and running costs.
-    /// While the cost of a cache miss can be ameliorated to varying degrees by employing an appropriate `AccessStrategy`
-    ///   [that works well and has been validated for your scenario with real data], even a cache with a low Hit Rate provides
-    ///   a direct benefit in terms of the number of Read and/or Write Request Charge Units (RCU)s that need to be provisioned for your Tables.
-    | NoCaching
-    /// Retain a single 'state per streamName, together with the associated etag.
-    /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
-    /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
-    /// Unless a <c>LoadOption</c> is used, each cache hit still involves a read roundtrip (RU charges incurred, transport latency) though deserialization is skipped due to etag match
-    // NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
-    // track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the unfolds in Tip
-    | SlidingWindow of Equinox.Cache * window: TimeSpan
-    /// Retain a single 'state per streamName, together with the associated etag.
-    /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
-    /// Typically combined with an `Equinox.LoadOption` to minimize loads.
-    /// Unless a <c>LoadOption</c> is used, each cache hit still involves a read roundtrip (RU charges incurred, transport latency) though deserialization is skipped due to etag match
-    | FixedTimeSpan of Equinox.Cache * period: TimeSpan
-
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event, 'state> =
     /// Don't apply any optimized reading logic. Note this can be extremely RU cost prohibitive
@@ -1319,7 +1295,16 @@ type AccessStrategy<'event, 'state> =
 
 type DynamoStoreCategory<'event, 'state, 'context>(name, resolveStream) =
     inherit Equinox.Category<'event, 'state, 'context>(name, resolveStream = resolveStream)
-    new(context: DynamoStoreContext, name, codec, fold, initial, access, caching) =
+    new(context: DynamoStoreContext, name, codec, fold, initial, access,
+        // For DynamoDB, caching is typically a central aspect of managing RU consumption to maintain performance and capacity.
+        // Omitting can make sense in specific cases; if streams are short, or there's always a usable snapshot in the Tip
+        // NOTE Using NoCaching with DynamoDB can have significant implications for the scalability of your application, both in terms of latency and running costs.
+        // While the cost of a cache miss can be ameliorated to varying degrees by employing an appropriate `AccessStrategy`
+        //   [that works well and has been validated for your scenario with real data], even a cache with a low Hit Rate provides
+        //   a direct benefit in terms of the number of Read and/or Write Request Charge Units (RCU)s that need to be provisioned for your Tables.
+        // NOTE Unless a <c>LoadOption</c> is used, each cache hit still involves a read roundtrip (RU charges incurred, transport latency) though deserialization is skipped due to etag match
+        // NOTE re SlidingWindowPrefixed: the recommended approach is to track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the `u`nfolds in Tip
+        caching) =
         let isOrigin, checkUnfolds, mapUnfolds =
             match access with
             | AccessStrategy.Unoptimized ->                      (fun _ -> false), false, Choice1Of3 ()
@@ -1328,10 +1313,6 @@ type DynamoStoreCategory<'event, 'state, 'context>(name, resolveStream) =
             | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         true,  Choice2Of3 (fun _ (state: 'state) -> unfold state)
             | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> Array.empty, toSnapshot state |> Array.singleton)
             | AccessStrategy.Custom (isOrigin, transmute) ->     isOrigin,         true,  Choice3Of3 transmute
-        let caching = caching |> function
-            | CachingStrategy.NoCaching -> None
-            | CachingStrategy.SlidingWindow (cache, window) -> Some (Equinox.CachingStrategy.SlidingWindow (cache, window))
-            | CachingStrategy.FixedTimeSpan (cache, period) -> Some (Equinox.CachingStrategy.FixedTimeSpan (cache, period))
         let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<'event, 'state, 'context>>()
         let resolveInner (categoryName, container) =
             let createCategory _name: ICategory<_, _, 'context> =

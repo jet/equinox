@@ -15,10 +15,10 @@ open Xunit
 module WiringHelpers =
 
     let private createCategoryUncached name codec initial fold accessStrategy context =
-        let noCachingCacheStrategy = CachingStrategy.NoCaching
+        let noCachingCacheStrategy = Equinox.CachingStrategy.NoCaching
         StoreCategory(context, name, codec, fold, initial, accessStrategy, noCachingCacheStrategy)
     let private createCategory name codec initial fold accessStrategy (context, cache) =
-        let sliding20mCacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
+        let sliding20mCacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
         StoreCategory(context, name, codec, fold, initial, accessStrategy, sliding20mCacheStrategy)
 
     let createCategoryUnoptimizedUncached name codec initial fold context =

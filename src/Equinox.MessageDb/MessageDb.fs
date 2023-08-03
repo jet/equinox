@@ -356,6 +356,8 @@ type MessageDbContext(client: MessageDbClient, batchOptions: BatchOptions) =
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event, 'state> =
+    /// Read events forward, in batches.
+    | Unoptimized
     /// Load only the single most recent event defined in in a stream and trust that it'll be decoded and
     /// doing a <c>fold</c> from any such event will yield a correct and complete state
     /// In other words, the <c>fold</c> function should not need to consider either the preceding <c>'state</c> or <c>'event</c>s.
@@ -374,9 +376,9 @@ type AccessStrategy<'event, 'state> =
 type private Category<'event, 'state, 'context>(context: MessageDbContext, codec: IEventCodec<_, _, 'context>, fold, initial, access) =
     let loadAlgorithm log category streamId streamName requireLeader ct =
         match access with
-        | None -> context.LoadBatched(log, streamName, requireLeader, codec.TryDecode, fold, initial, ct)
-        | Some AccessStrategy.LatestKnownEvent -> context.LoadLast(log, streamName, requireLeader, codec.TryDecode, fold, initial, ct)
-        | Some (AccessStrategy.AdjacentSnapshots (snapshotType, _)) -> task {
+        | AccessStrategy.Unoptimized -> context.LoadBatched(log, streamName, requireLeader, codec.TryDecode, fold, initial, ct)
+        | AccessStrategy.LatestKnownEvent -> context.LoadLast(log, streamName, requireLeader, codec.TryDecode, fold, initial, ct)
+        | AccessStrategy.AdjacentSnapshots (snapshotType, _) -> task {
             match! context.LoadSnapshot(log, category, streamId, requireLeader, codec.TryDecode, snapshotType, ct) with
             | ValueSome (pos, snapshotEvent) ->
                 let state = fold initial [| snapshotEvent |]
@@ -395,8 +397,8 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
             | GatewaySyncResult.Written token' ->
                 let state' = fold state events
                 match access with
-                | None | Some AccessStrategy.LatestKnownEvent -> ()
-                | Some (AccessStrategy.AdjacentSnapshots(_, toSnap)) ->
+                | AccessStrategy.Unoptimized | AccessStrategy.LatestKnownEvent -> ()
+                | AccessStrategy.AdjacentSnapshots(_, toSnap) ->
                     if Token.shouldSnapshot context.BatchOptions.BatchSize token token' then
                         do! x.StoreSnapshot(log, categoryName, streamId, ctx, token', toSnap state', ct)
                 return SyncResult.Written (token', state')
@@ -410,8 +412,11 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
             FsCodec.Core.EventData.Create(rawEvent.EventType, rawEvent.Data, meta = Snapshot.meta token)
         context.StoreSnapshot(log, category, streamId, encodedWithMeta, ct)
 
-type MessageDbCategory<'event, 'state, 'context>(context: MessageDbContext, name, codec, fold, initial, [<O; D(null)>]?access,
-        // For MessageDb, caching is less critical than it is for e.g. CosmosDB
-        // As such, it can often be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
-        [<O; D(null)>]?caching) =
+type MessageDbCategory<'event, 'state, 'context>(context: MessageDbContext, name, codec, fold, initial, access,
+        // For MessageDb, caching is less critical than it is for e.g. CosmosDB.
+        // However, while not necessary to control costs, caching can improve the throughput of your application a few times over,
+        //   as such you should only skip it if you know what you're doing
+        //   e.g. if streams are always short, events are always small, you are absolutely certain there will be no cache hits
+        //        (and you have a cheerful but bored DBA)
+        caching) =
     inherit Equinox.Category<'event, 'state, 'context>(name, Category(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching)

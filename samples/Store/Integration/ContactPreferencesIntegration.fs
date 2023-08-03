@@ -17,17 +17,17 @@ let Category = ContactPreferences.Category
 let codec = ContactPreferences.Events.codec
 let codecJe = ContactPreferences.Events.codecJe
 let categoryGesWithOptimizedStorageSemantics context =
-    EventStoreDb.EventStoreCategory(context 1, Category, codec, fold, initial, access = EventStoreDb.AccessStrategy.LatestKnownEvent)
+    EventStoreDb.EventStoreCategory(context 1, Category, codec, fold, initial, EventStoreDb.AccessStrategy.LatestKnownEvent, CachingStrategy.NoCaching)
 let categoryGesWithoutAccessStrategy context =
-    EventStoreDb.EventStoreCategory(context defaultBatchSize, Category, codec, fold, initial)
+    EventStoreDb.EventStoreCategory(context defaultBatchSize, Category, codec, fold, initial, EventStoreDb.AccessStrategy.Unoptimized, CachingStrategy.NoCaching)
 
 let categoryCosmosWithLatestKnownEventSemantics context =
-    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, CosmosStore.AccessStrategy.LatestKnownEvent, CosmosStore.CachingStrategy.NoCaching)
+    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, CosmosStore.AccessStrategy.LatestKnownEvent, CachingStrategy.NoCaching)
 let categoryCosmosUnoptimized context =
-    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, CosmosStore.AccessStrategy.Unoptimized, CosmosStore.CachingStrategy.NoCaching)
+    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, CosmosStore.AccessStrategy.Unoptimized, CachingStrategy.NoCaching)
 let categoryCosmosRollingUnfolds context =
     let access = CosmosStore.AccessStrategy.Custom(ContactPreferences.Fold.isOrigin, ContactPreferences.Fold.transmute)
-    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, access, CosmosStore.CachingStrategy.NoCaching)
+    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, access, CachingStrategy.NoCaching)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutput testOutputHelper
