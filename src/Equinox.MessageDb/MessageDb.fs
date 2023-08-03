@@ -413,7 +413,10 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
         context.StoreSnapshot(log, category, streamId, encodedWithMeta, ct)
 
 type MessageDbCategory<'event, 'state, 'context>(context: MessageDbContext, name, codec, fold, initial, access,
-        // For MessageDb, caching is less critical than it is for e.g. CosmosDB
-        // As such, it can sometimes be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
+        // For MessageDb, caching is less critical than it is for e.g. CosmosDB.
+        // However, while not necessary to control costs, caching can improve the throughput of your application a few times over,
+        //   as such you should only skip it if you know what you're doing
+        //   e.g. if streams are always short, events are always small, you are absolutely certain there will be no cache hits
+        //        (and you have a cheerful but bored DBA)
         caching) =
     inherit Equinox.Category<'event, 'state, 'context>(name, Category(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching)
