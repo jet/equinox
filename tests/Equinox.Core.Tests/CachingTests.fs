@@ -59,7 +59,7 @@ let [<Fact>] ``AsyncLazy.Empty is a true singleton, does not allocate`` () =
     let i2 = Equinox.Core.AsyncLazy<int>.Empty
     test <@ obj.ReferenceEquals(i1, i2) @>
 
-let [<Fact>] ``No strategy, no wrapping`` () =
+let [<Fact>] ``NoCaching strategy does no wrapping`` () =
     let cat = SpyCategory()
     let sut = Equinox.Core.Caching.apply isStale Equinox.CachingStrategy.NoCaching cat
     test <@ obj.ReferenceEquals(cat, sut) @>

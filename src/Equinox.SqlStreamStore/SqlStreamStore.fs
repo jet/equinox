@@ -1,6 +1,5 @@
 ﻿namespace Equinox.SqlStreamStore
 
-open Equinox
 open Equinox.Core
 open Serilog
 open SqlStreamStore
@@ -458,7 +457,7 @@ type SqlStreamStoreCategory<'event, 'state, 'context> internal (name, inner) =
         // As such, it can sometimes be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
         caching) =
         match access, caching with
-        | AccessStrategy.LatestKnownEvent, CachingStrategy.NoCaching -> ()
+        | AccessStrategy.LatestKnownEvent, Equinox.CachingStrategy.NoCaching -> ()
         | AccessStrategy.LatestKnownEvent, _ ->
             invalidOp "Equinox.SqlStreamStore does not support mixing AccessStrategy.LatestKnownEvent with Caching at present."
         | _ -> ()
