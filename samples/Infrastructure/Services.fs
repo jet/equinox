@@ -17,13 +17,13 @@ type Store(store) =
         | Store.Context.Memory store ->
             MemoryStore.MemoryStoreCategory(store, name, codec, fold, initial)
         | Store.Context.Cosmos (store, caching, unfolds) ->
-            let accessStrategy = if unfolds then CosmosStore.AccessStrategy.Snapshot snapshot else Equinox.CosmosStore.AccessStrategy.Unoptimized
+            let accessStrategy = if unfolds then CosmosStore.AccessStrategy.Snapshot snapshot else CosmosStore.AccessStrategy.Unoptimized
             CosmosStore.CosmosStoreCategory<'event,'state,_>(store, name, codec.ToJsonElementCodec(), fold, initial, accessStrategy, caching)
         | Store.Context.Dynamo (store, caching, unfolds) ->
-            let accessStrategy = if unfolds then DynamoStore.AccessStrategy.Snapshot snapshot else Equinox.DynamoStore.AccessStrategy.Unoptimized
+            let accessStrategy = if unfolds then DynamoStore.AccessStrategy.Snapshot snapshot else DynamoStore.AccessStrategy.Unoptimized
             DynamoStore.DynamoStoreCategory<'event,'state,_>(store, name, FsCodec.Deflate.EncodeTryDeflate codec, fold, initial, accessStrategy, caching)
         | Store.Context.Es (context, caching, unfolds) ->
-            let accessStrategy = if unfolds then EventStoreDb.AccessStrategy.RollingSnapshots snapshot else Equinox.EventStoreDb.AccessStrategy.Unoptimized
+            let accessStrategy = if unfolds then EventStoreDb.AccessStrategy.RollingSnapshots snapshot else EventStoreDb.AccessStrategy.Unoptimized
             EventStoreDb.EventStoreCategory<'event,'state,_>(context, name, codec, fold, initial, accessStrategy, caching)
         | Store.Context.Sql (context, caching, unfolds) ->
             let accessStrategy = if unfolds then SqlStreamStore.AccessStrategy.RollingSnapshots snapshot else SqlStreamStore.AccessStrategy.Unoptimized
