@@ -227,8 +227,7 @@ type GeneralTests(testOutputHelper) =
 
         // Need to read 4 batches to read 11 events in batches of 3
         let expectedBatches = ceil(float expectedEventCount/float batchSize) |> int
-        test <@ (List.replicate (expectedBatches-1) sliceForward |> List.concat) @ singleBatchForward = capture.ExternalCalls @>
-    }
+        test <@ (List.replicate (expectedBatches-1) sliceForward |> List.concat) @ singleBatchForward = capture.ExternalCalls @> }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, managing sync conflicts by retrying [without any optimizations]`` (ctx, initialState) = async {
@@ -312,8 +311,7 @@ type GeneralTests(testOutputHelper) =
                 && has sku21 21 && has sku22 22 @>
        // Intended conflicts pertained
         let hadConflict= function EsEvent (EsAction EsAct.AppendConflict) -> Some () | _ -> None
-        test <@ [1; 1] = [for c in [capture1; capture2] -> c.ChooseCalls hadConflict |> List.length] @>
-    }
+        test <@ [1; 1] = [for c in [capture1; capture2] -> c.ChooseCalls hadConflict |> List.length] @> }
 
 #if STORE_EVENTSTOREDB // gRPC does not expose slice metrics
     let sliceBackward = []
@@ -349,8 +347,7 @@ type GeneralTests(testOutputHelper) =
 
         let! result = service.Read id
         test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
-        test <@ value = result @>
-    }
+        test <@ value = result @> }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly caching to avoid redundant reads`` (ctx, skuId) = async {
@@ -415,8 +412,7 @@ type GeneralTests(testOutputHelper) =
         // Conflict with cached state leads to a read forward to resync; Then we'll idempotently decide not to do any append
         capture.Clear()
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne ctx cartId skuId4 service2 1
-        test <@ [EsAct.AppendConflict; yield! sliceForward; EsAct.BatchForward] = capture.ExternalCalls @>
-    }
+        test <@ [EsAct.AppendConflict; yield! sliceForward; EsAct.BatchForward] = capture.ExternalCalls @> }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Version is 0-based`` () = async {
@@ -434,8 +430,7 @@ type GeneralTests(testOutputHelper) =
         let! before, after = decider.TransactEx(
             (fun state -> state.Version, [| SimplestThing.StuffHappened |]),
             mapResult = (fun result ctx-> result, ctx.Version))
-        test <@ [before; after] = [0L; 1L] @>
-    }
+        test <@ [before; after] = [0L; 1L] @> }
 
 #if STORE_MESSAGEDB
     interface IDisposable with
@@ -502,8 +497,7 @@ type RollingSnapshotTests(testOutputHelper) =
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 1
         // and reload the 24 events with a single read
         let! _ = service.Read cartId
-        test <@ singleBatchBackwards @ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
-    }
+        test <@ singleBatchBackwards @ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @> }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can combine compaction with caching against Store`` (ctx, skuId) = async {
@@ -547,8 +541,7 @@ type RollingSnapshotTests(testOutputHelper) =
         // and we _could_ reload the 24 events with a single read if reading backwards. However we are using the cache, which last saw it with 10 events, which necessitates two reads
         let! _ = service2.Read cartId
         let suboptimalExtraSlice: EsAct list = sliceForward
-        test <@ singleBatchBackwards @ batchBackwardsAndAppend @ suboptimalExtraSlice @ singleBatchForward = capture.ExternalCalls @>
-    }
+        test <@ singleBatchBackwards @ batchBackwardsAndAppend @ suboptimalExtraSlice @ singleBatchForward = capture.ExternalCalls @> }
 #endif
 
 

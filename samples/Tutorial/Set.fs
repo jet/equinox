@@ -22,10 +22,11 @@ module Fold =
     module Snapshot =
 
         let generate state = Events.Snapshotted { items = Set.toArray state }
+        let hydrate ({ items = xs } : Events.Items) =
+            (initial,xs) ||> Array.fold (fun state x -> Set.add x state)
 
     let private evolve state = function
-        | Events.Snapshotted { items = xs } ->
-            (initial,xs) ||> Array.fold (fun state x -> Set.add x state)
+        | Events.Snapshotted e -> Snapshot.hydrate e
         | Events.Deleted { items = xs } ->
             (state,xs) ||> Array.fold (fun state x -> Set.remove x state)
         | Events.Added { items = xs } ->

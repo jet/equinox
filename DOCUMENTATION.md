@@ -348,12 +348,12 @@ module Fold =
 
     module Snapshot =
         
-        let snapshot (state: State): Event =
+        let generate (state: State): Event =
             Events.Snapshotted { ... }
         let isOrigin = function
             | Events.Snapshotted -> true
             | _ -> false
-        let config = generate, isOrigin
+        let config = isOrigin, generate
         let hydrate (e: Snapshotted): State = ...
         
     let private evolve state = function
@@ -386,7 +386,7 @@ type Service internal (resolve: Id -> Equinox.Decider<Events.Event, Fold.State) 
         let decider = resolve id
         decider.Transact(decideX inputs)
 
-let create category = Service(streamId >> Equinox.Decider.resolve Serilog.Log.Logger category)
+let create category = Service(streamId >> Equinox.Decider.forStream Serilog.Log.Logger category)
 ```
 
 - `Service`'s constructor is `internal`; `create` is the main way in which one
@@ -980,7 +980,7 @@ module Snapshot =
 
     let private generate state = Snapshotted (Array.ofList state.items)
     let private isOrigin = function Cleared | Snapshotted _ -> true | _ -> false
-    let config = generate, isOrigin
+    let config = isOrigin, generate
     let hydrate items = { initial with items = List.ofArray items }
     
 let private evolve s = function

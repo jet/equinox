@@ -112,8 +112,7 @@ type Tests(testOutputHelper) =
         let service = Cart.create (CartIntegration.categoryGesStreamWithRollingSnapshots context |> Equinox.Decider.forStream log)
         let itemCount = batchSize / 2 + 1
         let cartId = % Guid.NewGuid()
-        do! act buffer service itemCount ctx cartId skuId "ReadStreamAsyncB-Duration"
-    }
+        do! act buffer service itemCount ctx cartId skuId "ReadStreamAsyncB-Duration" }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, hooking, extracting and substituting metrics in the logging information`` (ctx, skuId) = async {
@@ -124,5 +123,4 @@ type Tests(testOutputHelper) =
         let service = Cart.create (CartIntegration.categoryCosmosStreamWithSnapshotStrategy context |> Equinox.Decider.forStream log)
         let itemCount = queryMaxItems / 2 + 1
         let cartId = % Guid.NewGuid()
-        do! act buffer service itemCount ctx cartId skuId "EqxCosmos Tip " // one is a 404, one is a 200
-    }
+        do! act buffer service itemCount ctx cartId skuId "EqxCosmos Tip " } // one is a 404, one is a 200

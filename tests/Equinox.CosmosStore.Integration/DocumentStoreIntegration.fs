@@ -265,8 +265,7 @@ type Tests(testOutputHelper) =
         else
             test <@ let c2 = List.choose conflict capture2.ExternalCalls
                     [EqxAct.Conflict] = List.choose conflict capture1.ExternalCalls
-                    && [EqxAct.Conflict] = c2 @>
-    }
+                    && [EqxAct.Conflict] = c2 @> }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can correctly read and update Contacts against DocStore with LatestKnownEvent without Caching`` (eventsInTip, value: ContactPreferences.Events.Preferences) = async {
@@ -322,8 +321,7 @@ type Tests(testOutputHelper) =
         let! _ = service.Read id
         test <@ value = result @>
         test <@ [EqxAct.Tip] = capture.ExternalCalls @>
-        verifyRequestChargesMax 1
-    }
+        verifyRequestChargesMax 1 }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can correctly read and update Contacts against DocStore with LatestKnownEvent`` value = async {
@@ -345,8 +343,7 @@ type Tests(testOutputHelper) =
         let! result = service.ReadStale id // should not trigger roundtrip
         test <@ value = result @>
 
-        test <@ [EqxAct.TipNotModified; EqxAct.Append; EqxAct.TipNotModified] = capture.ExternalCalls @>
-    }
+        test <@ [EqxAct.TipNotModified; EqxAct.Append; EqxAct.TipNotModified] = capture.ExternalCalls @> }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against DocStore with RollingState, detecting conflicts based on etag`` (ctx, initialState) = async {
@@ -430,7 +427,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against DocStore, using Snapshotting to avoid queries`` (cartContext, skuId) = async {
+    let ``Can roundtrip against DocStore, using Snapshot to avoid queries`` (cartContext, skuId) = async {
         let queryMaxItems = 10
         let context = createPrimaryContextEx log queryMaxItems 10
         let createServiceIndexed () = Cart.createServiceWithSnapshotStrategy log context
@@ -477,11 +474,10 @@ type Tests(testOutputHelper) =
         capture.Clear()
         let! _ = service2.Read cartId
         test <@ [EqxAct.Tip] = capture.ExternalCalls @>
-        verifyRequestChargesMax 1
-    }
+        verifyRequestChargesMax 1 }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against DocStore, correctly using Snapshotting and Cache to avoid redundant reads`` (eventsInTip: bool, cartContext, skuId) = async {
+    let ``Can roundtrip against DocStore, correctly using Snapshot and Cache to avoid redundant reads`` (eventsInTip: bool, cartContext, skuId) = async {
 #if STORE_DYNAMO
         // SEE NOTE above on similar override for details of why
         let eventsInTip = true
@@ -544,7 +540,6 @@ type Tests(testOutputHelper) =
         let! _ = service2.Read cartId
         test <@ [if eventsInTip then EqxAct.Tip else EqxAct.TipNotModified] = capture.ExternalCalls @>
         // Charges are 1 RU regardless of whether a reload occurs, as the snapshot is tiny
-        verifyRequestChargesMax 1
-    }
+        verifyRequestChargesMax 1 }
 
     interface IDisposable with member _.Dispose() = log.Dispose()

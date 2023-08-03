@@ -46,8 +46,9 @@ type State = { items : Todo list; nextId : int }
 let initial = { items = []; nextId = 0 }
 
 module Snapshot =
-    let private isOrigin = function Cleared | Snapshotted _ -> true | _ -> false
+    
     let private generate state = Snapshotted { items = Array.ofList state.items }
+    let private isOrigin = function Cleared | Snapshotted _ -> true | _ -> false
     let config = isOrigin, generate
     
 let private evolve s = function
