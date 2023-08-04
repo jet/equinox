@@ -43,7 +43,7 @@ type ServiceBuilder(storageConfig, handlerLog) =
 
      member _.CreateSaveForLaterService() =
         let fold, initial = SavedForLater.Fold.fold, SavedForLater.Fold.initial
-        let snapshot = SavedForLater.Fold.isOrigin, SavedForLater.Fold.compact
+        let snapshot = SavedForLater.Fold.Snapshot.config
         store.Category(SavedForLater.Category, SavedForLater.Events.codec, fold, initial, snapshot)
         |> Decider.forStream handlerLog
         |> SavedForLater.create 50
