@@ -41,8 +41,9 @@
 
 open System
 
-let [<Literal>] Category = "Account"
-let streamId = Equinox.StreamId.gen id
+module Stream =
+    let [<Literal>] Category = "Account"
+    let id = FsCodec.StreamId.gen id
 
 module Events =
 
@@ -156,7 +157,7 @@ module EventStore =
     let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     // rig snapshots to be injected as events into the stream every `snapshotWindow` events
     let accessStrategy = AccessStrategy.RollingSnapshots (Fold.isValid,Fold.snapshot)
-    let cat = EventStoreCategory(context, Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
+    let cat = EventStoreCategory(context, Stream.Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
     let resolve = Equinox.Decider.forStream Log.log cat
 
 module Cosmos =
@@ -170,10 +171,10 @@ module Cosmos =
     let context = CosmosStoreContext(storeClient, tipMaxEvents = 10)
     let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     let accessStrategy = AccessStrategy.Snapshot (Fold.isValid,Fold.snapshot)
-    let cat = CosmosStoreCategory(context, Category, Events.codecJe, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
+    let cat = CosmosStoreCategory(context, Stream.Category, Events.codecJe, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
     let resolve = Equinox.Decider.forStream Log.log cat
 
-let service = Service(streamId >> EventStore.resolve)
+let service = Service(Stream.id >> EventStore.resolve)
 //let service= Service(streamId >> Cosmos.resolve)
 
 let client = "ClientA"

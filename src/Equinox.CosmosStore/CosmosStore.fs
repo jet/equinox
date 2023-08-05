@@ -1224,7 +1224,7 @@ type CosmosStoreConnector
 /// - The (singleton) per Container Stored Procedure initialization state
 type CosmosStoreClient
     (   // Facilitates custom mapping of Stream Category Name to underlying Cosmos Database/Container names
-        categoryAndStreamNameToDatabaseContainerStream: string * string -> string * string * string,
+        categoryAndStreamNameToDatabaseContainerStream: string * string -> string * string * FsCodec.StreamName,
         createContainer: string * string -> Container,
         createFallbackContainer: string * string -> Container option,
         [<O; D null>] ?primaryDatabaseAndContainerToArchive: string * string -> string * string,
@@ -1247,7 +1247,7 @@ type CosmosStoreClient
         [<O; D null>] ?archiveDatabaseId,
         // Container Name to use for locating missing events. Default: use <c>containerId</c>
         [<O; D null>] ?archiveContainerId) =
-        let genStreamName (categoryName, streamId) = if categoryName = null then streamId else StreamName.render categoryName streamId
+        let genStreamName (categoryName, streamId) = if categoryName = null then FsCodec.StreamName.parse streamId else FsCodec.StreamName.create categoryName (FsCodec.StreamId.create streamId)
         let catAndStreamToDatabaseContainerStream (categoryName, streamId) = databaseId, containerId, genStreamName (categoryName, streamId)
         let primaryContainer (d, c) = (client: CosmosClient).GetDatabase(d).GetContainer(c)
         let fallbackContainer =
@@ -1255,7 +1255,7 @@ type CosmosStoreClient
             else fun (d, c) -> Some ((defaultArg archiveClient client).GetDatabase(defaultArg archiveDatabaseId d).GetContainer(defaultArg archiveContainerId c))
         CosmosStoreClient(catAndStreamToDatabaseContainerStream, primaryContainer, fallbackContainer,
             ?disableInitialization = disableInitialization, ?createGateway = createGateway)
-    member internal _.ResolveContainerGuardAndStreamName(categoryName, streamId): struct (Initialization.ContainerInitializerGuard * string) =
+    member internal _.ResolveContainerGuardAndStreamName(categoryName, sid: string): struct (Initialization.ContainerInitializerGuard * FsCodec.StreamName) =
         let createContainerInitializerGuard (d, c) =
             let init =
                 if Some true = disableInitialization then None
@@ -1263,7 +1263,7 @@ type CosmosStoreClient
             let archiveD, archiveC = primaryDatabaseAndContainerToArchive (d, c)
             let primaryContainer, fallbackContainer = createContainer (d, c), createFallbackContainer (archiveD, archiveC)
             Initialization.ContainerInitializerGuard(createGateway primaryContainer, Option.map createGateway fallbackContainer, ?initContainer = init)
-        let databaseId, containerId, streamName = categoryAndStreamNameToDatabaseContainerStream (categoryName, streamId)
+        let databaseId, containerId, streamName = categoryAndStreamNameToDatabaseContainerStream (categoryName, sid)
         let g = containerInitGuards.GetOrAdd((databaseId, containerId), createContainerInitializerGuard)
         struct (g, streamName)
 
@@ -1305,8 +1305,8 @@ type CosmosStoreContext(storeClient: CosmosStoreClient, tipOptions, queryOptions
     member val StoreClient = storeClient
     member val QueryOptions = queryOptions
     member val TipOptions = tipOptions
-    member internal x.ResolveStoreClientAndStreamNameAndInit(categoryName, streamId) =
-        let struct (cg, streamName) = storeClient.ResolveContainerGuardAndStreamName(categoryName, streamId)
+    member internal x.ResolveStoreClientAndStreamNameAndInit(categoryName, sid) =
+        let struct (cg, streamName) = storeClient.ResolveContainerGuardAndStreamName(categoryName, sid)
         let store = StoreClient(cg.Container, cg.Fallback, x.QueryOptions, x.TipOptions)
         struct (store, streamName, cg.Initialize)
 
@@ -1374,8 +1374,8 @@ type CosmosStoreCategory<'event, 'state, 'context> internal (name, resolveStream
                 |> Caching.apply Token.isStale caching
             categories.GetOrAdd(categoryName, createCategory)
         let resolveStream streamId =
-            let struct (_, streamName, _) as args = context.ResolveStoreClientAndStreamNameAndInit(name, streamId)
-            struct (resolveInner args, streamName)
+            let struct (container, streamName, init) = context.ResolveStoreClientAndStreamNameAndInit(name, streamId)
+            struct (resolveInner (container, name, init), FsCodec.StreamName.toString streamName)
         CosmosStoreCategory(name, resolveStream)
 
 module Exceptions =
@@ -1430,16 +1430,15 @@ type EventsContext internal
         EventsContext(context, store, log)
 
     member _.ResolveStream(streamName) =
-        let struct (_cc, streamName, init) = context.ResolveStoreClientAndStreamNameAndInit(null, streamName)
+        let struct (_cc, streamName, init) = context.ResolveStoreClientAndStreamNameAndInit(null, StreamName.toString streamName)
         struct (streamName, init)
-    member x.StreamId(streamName): string = x.ResolveStream streamName |> ValueTuple.fst
 
-    member internal _.GetLazy(stream, ?ct, ?queryMaxItems, ?direction, ?minIndex, ?maxIndex): IAsyncEnumerable<ITimelineEvent<EventBody>[]> =
+    member internal _.GetLazy(streamName, ?ct, ?queryMaxItems, ?direction, ?minIndex, ?maxIndex): IAsyncEnumerable<ITimelineEvent<EventBody>[]> =
         let direction = defaultArg direction Direction.Forward
         let batching = match queryMaxItems with Some qmi -> QueryOptions(qmi) | _ -> context.QueryOptions
-        store.ReadLazy(log, batching, stream, direction, (Some, fun _ -> false), ?ct = ct, ?minIndex = minIndex, ?maxIndex = maxIndex)
+        store.ReadLazy(log, batching, StreamName.toString streamName, direction, (Some, fun _ -> false), ?ct = ct, ?minIndex = minIndex, ?maxIndex = maxIndex)
 
-    member internal _.GetInternal((stream, startPos), ?ct, ?maxCount, ?direction) = task {
+    member internal _.GetInternal((streamName, startPos), ?ct, ?maxCount, ?direction) = task {
         let direction = defaultArg direction Direction.Forward
         if maxCount = Some 0 then
             // Search semantics include the first hit so we need to special case this anyway
@@ -1450,32 +1449,33 @@ type EventsContext internal
                 | Some limit -> maxCountPredicate limit
                 | None -> fun _ -> false
             let minIndex, maxIndex = getRange direction startPos
-            let! token, events = store.Read(log, stream, direction, (ValueSome, isOrigin), ?ct = ct, ?minIndex = minIndex, ?maxIndex = maxIndex)
+            let! token, events = store.Read(log, StreamName.toString streamName, direction, (ValueSome, isOrigin), ?ct = ct, ?minIndex = minIndex, ?maxIndex = maxIndex)
             if direction = Direction.Backward then System.Array.Reverse events
             return token, events }
 
     /// Establishes the current position of the stream in as efficient a manner as possible
     /// (The ideal situation is that the preceding token is supplied as input in order to avail of 1RU low latency validation in the case of an unchanged Tip)
-    member _.Sync(stream, ct, [<O; D null>] ?position: Position): Task<Position> = task {
-        let! Token.Unpack pos' = store.GetPosition(log, stream, ct, ?pos = position)
+    member _.Sync(streamName, ct, [<O; D null>] ?position: Position): Task<Position> = task {
+        let! Token.Unpack pos' = store.GetPosition(log, StreamName.toString streamName, ct, ?pos = position)
         return pos' }
 
     /// Query (with MaxItems set to `queryMaxItems`) from the specified `Position`, allowing the reader to efficiently walk away from a running query
     /// ... NB as long as they Dispose!
-    member x.Walk(stream, queryMaxItems, [<O; D null>] ?ct, [<O; D null>] ?minIndex, [<O; D null>] ?maxIndex, [<O; D null>] ?direction): IAsyncEnumerable<ITimelineEvent<EventBody>[]> =
-        x.GetLazy(stream, ?ct = ct, queryMaxItems = queryMaxItems, ?direction = direction, ?minIndex = minIndex, ?maxIndex = maxIndex)
+    member x.Walk(streamName, queryMaxItems, [<O; D null>] ?ct, [<O; D null>] ?minIndex, [<O; D null>] ?maxIndex, [<O; D null>] ?direction): IAsyncEnumerable<ITimelineEvent<EventBody>[]> =
+        x.GetLazy(streamName, ?ct = ct, queryMaxItems = queryMaxItems, ?direction = direction, ?minIndex = minIndex, ?maxIndex = maxIndex)
 
     /// Reads all Events from a `Position` in a given `direction`
-    member x.Read(stream, [<O; D null>] ?ct, [<O; D null>] ?position, [<O; D null>] ?maxCount, [<O; D null>] ?direction): Task<Position*ITimelineEvent<EventBody>[]> =
-        x.GetInternal((stream, position), ?ct = ct, ?maxCount = maxCount, ?direction = direction) |> yieldPositionAndData
+    member x.Read(streamName, [<O; D null>] ?ct, [<O; D null>] ?position, [<O; D null>] ?maxCount, [<O; D null>] ?direction): Task<Position*ITimelineEvent<EventBody>[]> =
+        x.GetInternal((streamName, position), ?ct = ct, ?maxCount = maxCount, ?direction = direction) |> yieldPositionAndData
 
     /// Appends the supplied batch of events, subject to a consistency check based on the `position`
     /// Callers should implement appropriate idempotent handling, or use Equinox.Decider for that purpose
-    member x.Sync(stream, position, events: IEventData<_>[], ct): Task<AppendResult<Position>> = task {
+    member x.Sync(streamName, position, events: IEventData<_>[], ct): Task<AppendResult<Position>> = task {
         // Writes go through the stored proc, which we need to provision per container
-        // The way this is routed is definitely hacky, but the entire existence of this API is pretty questionable, so ugliness is apppropiate
-        let struct (_, createStoredProcIfNotExistsExactlyOnce) = x.ResolveStream(stream)
+        // The way this is routed is definitely hacky, but the entire existence of this API is pretty questionable, so ugliness is appropriate
+        let struct (_, createStoredProcIfNotExistsExactlyOnce) = x.ResolveStream(streamName)
         do! createStoredProcIfNotExistsExactlyOnce ct
+        let stream = StreamName.toString streamName
         let batch = Sync.mkBatch stream events Seq.empty
         match! store.Sync(log, stream, SyncExp.Version position.index, batch, ct) with
         | InternalSyncResult.Written (Token.Unpack pos) -> return AppendResult.Ok pos
@@ -1484,8 +1484,8 @@ type EventsContext internal
 
     /// Low level, non-idempotent call appending events to a stream without a concurrency control mechanism in play
     /// NB Should be used sparingly; Equinox.Decider enables building equivalent equivalent idempotent handling with minimal code.
-    member x.NonIdempotentAppend(stream, events: IEventData<_>[], ct): Task<Position> = task {
-        match! x.Sync(stream, Position.fromAppendAtEnd, events, ct) with
+    member x.NonIdempotentAppend(streamName, events: IEventData<_>[], ct): Task<Position> = task {
+        match! x.Sync(streamName, Position.fromAppendAtEnd, events, ct) with
         | AppendResult.Ok token -> return token
         | x -> return x |> sprintf "Conflict despite it being disabled %A" |> invalidOp }
 
@@ -1524,52 +1524,52 @@ module Events =
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let getAll (ctx: EventsContext) (streamName: string) (index: int64) (batchSize: int): Async<IAsyncEnumerable<ITimelineEvent<EventBody>[]>> = async {
+    let getAll (ctx: EventsContext) (streamName: StreamName) (index: int64) (batchSize: int): Async<IAsyncEnumerable<ITimelineEvent<EventBody>[]>> = async {
         let! ct = Async.CancellationToken
-        return ctx.Walk(ctx.StreamId streamName, batchSize, ct, minIndex = index) }
+        return ctx.Walk(streamName, batchSize, ct, minIndex = index) }
 
     /// Returns an async array of events in the stream starting at the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let get (ctx: EventsContext) (streamName: string) (MinPosition index: int64) (maxCount: int): Async<ITimelineEvent<EventBody>[]> =
-        Async.call (fun ct -> ctx.Read(ctx.StreamId streamName, ct, ?position = index, maxCount = maxCount) |> dropPosition)
+    let get (ctx: EventsContext) (streamName: StreamName) (MinPosition index: int64) (maxCount: int): Async<ITimelineEvent<EventBody>[]> =
+        Async.call (fun ct -> ctx.Read(streamName, ct, ?position = index, maxCount = maxCount) |> dropPosition)
 
     /// Appends a batch of events to a stream at the specified expected sequence number.
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
-    let append (ctx: EventsContext) (streamName: string) (index: int64) (events: IEventData<_>[]): Async<AppendResult<int64>> =
-        Async.call (fun ct -> ctx.Sync(ctx.StreamId streamName, Position.fromI index, events, ct) |> stripSyncResult)
+    let append (ctx: EventsContext) (streamName: StreamName) (index: int64) (events: IEventData<_>[]): Async<AppendResult<int64>> =
+        Async.call (fun ct -> ctx.Sync(streamName, Position.fromI index, events, ct) |> stripSyncResult)
 
     /// Appends a batch of events to a stream at the the present Position without any conflict checks.
     /// NB typically, it is recommended to ensure idempotency of operations by using the `append` and related API as
     /// this facilitates ensuring consistency is maintained, and yields reduced latency and Request Charges impacts
     /// (See equivalent APIs on `Context` that yield `Position` values)
-    let appendAtEnd (ctx: EventsContext) (streamName: string) (events: IEventData<_>[]): Async<int64> =
-        Async.call (fun ct -> ctx.NonIdempotentAppend(ctx.StreamId streamName, events, ct) |> stripPosition)
+    let appendAtEnd (ctx: EventsContext) (streamName: StreamName) (events: IEventData<_>[]): Async<int64> =
+        Async.call (fun ct -> ctx.NonIdempotentAppend(streamName, events, ct) |> stripPosition)
 
     /// Requests deletion of events up and including the specified <c>index</c>.
     /// Due to the need to preserve ordering of data in the stream, only complete Batches will be removed.
     /// If the <c>index</c> is within the Tip, events are removed via an etag-checked update. Does not alter the unfolds held in the Tip, or remove the Tip itself.
     /// Returns count of events deleted this time, events that could not be deleted due to partial batches, and the stream's lowest remaining sequence number.
-    let pruneUntil (ctx: EventsContext) (streamName: string) (index: int64): Async<int * int * int64> =
-        Async.call (fun ct -> ctx.Prune(ctx.StreamId streamName, index, ct))
+    let pruneUntil (ctx: EventsContext) (streamName: StreamName) (index: int64): Async<int * int * int64> =
+        Async.call (fun ct -> ctx.Prune(StreamName.toString streamName, index, ct))
 
     /// Returns an async sequence of events in the stream backwards starting from the specified sequence number,
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getAllBackwards (ctx: EventsContext) (streamName: string) (index: int64) (batchSize: int): Async<IAsyncEnumerable<ITimelineEvent<EventBody>[]>> = async {
+    let getAllBackwards (ctx: EventsContext) (streamName: StreamName) (index: int64) (batchSize: int): Async<IAsyncEnumerable<ITimelineEvent<EventBody>[]>> = async {
         let! ct = Async.CancellationToken
-        return ctx.Walk(ctx.StreamId streamName, batchSize, ct, maxIndex = index, direction = Direction.Backward) }
+        return ctx.Walk(streamName, batchSize, ct, maxIndex = index, direction = Direction.Backward) }
 
     /// Returns an async array of events in the stream backwards starting from the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getBackwards (ctx: EventsContext) (streamName: string) (MaxPosition index: int64) (maxCount: int): Async<ITimelineEvent<EventBody>[]> =
-        Async.call (fun ct -> ctx.Read(ctx.StreamId streamName, ct, ?position = index, maxCount = maxCount, direction = Direction.Backward) |> dropPosition)
+    let getBackwards (ctx: EventsContext) (streamName: StreamName) (MaxPosition index: int64) (maxCount: int): Async<ITimelineEvent<EventBody>[]> =
+        Async.call (fun ct -> ctx.Read(streamName, ct, ?position = index, maxCount = maxCount, direction = Direction.Backward) |> dropPosition)
 
     /// Obtains the `index` from the current write Position
-    let getNextIndex (ctx: EventsContext) (streamName: string): Async<int64> =
-        Async.call (fun ct -> ctx.Sync(ctx.StreamId streamName, ct = ct) |> stripPosition)
+    let getNextIndex (ctx: EventsContext) (streamName: StreamName): Async<int64> =
+        Async.call (fun ct -> ctx.Sync(streamName, ct = ct) |> stripPosition)

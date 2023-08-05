@@ -95,7 +95,7 @@ let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
 
 // related streams are termed a Category; Each client will have it's own Stream.
 let Category = "Favorites"
-let clientAFavoritesStreamId = Equinox.StreamId.gen id "ClientA"
+let clientAFavoritesStreamId = FsCodec.StreamId.gen id "ClientA"
 
 // For test purposes, we use the in-memory store
 let store = Equinox.MemoryStore.VolatileStore()
@@ -161,7 +161,7 @@ type Service(deciderFor : string -> Handler) =
 
 (* See Counter.fsx and Cosmos.fsx for a more compact representation which makes the Handler wiring less obtrusive *)
 let handlerFor (clientId: string) =
-    let streamId = Equinox.StreamId.gen id clientId
+    let streamId = FsCodec.StreamId.gen id clientId
     let decider = Equinox.Decider.forStream log cat streamId 
     Handler(decider)
 

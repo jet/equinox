@@ -8,7 +8,6 @@
     <Compile Include="..\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
     <Compile Include="Core.fs" />
     <Compile Include="Decider.fs" />
-    <Compile Include="StreamId.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -18,7 +17,5 @@
     <!-- Removal triggers issues in dotnet publish, e.g. for Lambda projects -->
     <!-- Also avoids Rider search finding stuff in FSharp.Core.xml -->
     <PackageReference Include="FSharp.Core" Version="6.0.7"><ExcludeAssets>contentfiles</ExcludeAssets></PackageReference>
-
-    <PackageReference Include="FSharp.UMX" Version="1.1.0" />
   </ItemGroup>
 </Project>

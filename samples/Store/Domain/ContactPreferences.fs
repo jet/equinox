@@ -3,8 +3,10 @@
 type ClientId = ClientId of email: string
 module ClientId = let toString (ClientId email) = email
 
-let [<Literal>] Category = "ContactPreferences"
-let streamId = Equinox.StreamId.gen ClientId.toString // TODO hash >> base64
+module Stream =
+    let [<Literal>] Category = "ContactPreferences"
+    let id = FsCodec.StreamId.gen ClientId.toString // TODO hash >> base64
+    let name = id >> FsCodec.StreamName.create Category
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -60,4 +62,4 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
         decider.Query(id, Equinox.AnyCachedValue)
 
 let create resolve =
-    Service(streamId >> resolve)
+    Service(Stream.id >> resolve)

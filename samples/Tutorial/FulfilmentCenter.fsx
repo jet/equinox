@@ -52,8 +52,9 @@ module Types =
 
 module FulfilmentCenter =
 
-    let [<Literal>] Category = "FulfilmentCenter"
-    let streamId = Equinox.StreamId.gen id
+    module Stream =
+        let [<Literal>] Category = "FulfilmentCenter"
+        let id = FsCodec.StreamId.gen id
 
     module Events =
 
@@ -145,8 +146,8 @@ module Store =
 open FulfilmentCenter
 
 let service =
-    let cat = CosmosStoreCategory(Store.context, Category, Events.codec, Fold.fold, Fold.initial, AccessStrategy.Unoptimized, Store.cacheStrategy)
-    Service(streamId >> Equinox.Decider.forStream Log.log cat)
+    let cat = CosmosStoreCategory(Store.context, Stream.Category, Events.codec, Fold.fold, Fold.initial, AccessStrategy.Unoptimized, Store.cacheStrategy)
+    Service(Stream.id >> Equinox.Decider.forStream Log.log cat)
 
 let fc = "fc0"
 service.UpdateName(fc, { code="FC000"; name="Head" }) |> Async.RunSynchronously
@@ -157,8 +158,9 @@ Log.dumpMetrics ()
 /// Manages ingestion of summary events tagged with the version emitted from FulfilmentCenter.Service.QueryWithVersion
 module FulfilmentCenterSummary =
 
-    let [<Literal>] Category = "FulfilmentCenter"
-    let streamId = Equinox.StreamId.gen id
+    module Stream =
+        let [<Literal>] Category = "FulfilmentCenter"
+        let id = FsCodec.StreamId.gen id
 
     module Events =
         type UpdatedData = { version : int64; state : Summary }

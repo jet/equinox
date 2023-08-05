@@ -25,7 +25,7 @@ type Tests(testOutputHelper) =
     let mutable testIterations = 0
     let (|TestStream|) (name: Guid) =
         testIterations <- testIterations + 1
-        $"events-{name}-%i{testIterations}"
+        StreamName.parse $"events-{name}-%i{testIterations}"
 
     let verifyRequestChargesMax rus =
         let tripRequestCharges = [ for e, c in capture.RequestCharges -> $"%A{e}", c ]
@@ -142,25 +142,23 @@ type Tests(testOutputHelper) =
         capture.Clear()
         pos =! res
 
-        // Demonstrate benefit/mechanism for using the Position-based API to avail of the etag tracking
-        let stream = ctx.StreamId streamName
+        (* Demonstrate benefit/mechanism for using the Position-based API to avail of the etag tracking *)
 
         let extrasCount = match extras with x when x > 50 -> 5000 | x when x < 1 -> 1 | x -> x*100
-        let! _pos = Async.call (fun ct -> ctx.NonIdempotentAppend(stream, TestEvents.Create (int pos,extrasCount), ct))
+        let! _pos = Async.call (fun ct -> ctx.NonIdempotentAppend(streamName, TestEvents.Create (int pos,extrasCount), ct))
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
         if eventsInTip then verifyRequestChargesMax 451 // 450.03
         else verifyRequestChargesMax 448 // 447.5 // 463.01 observed
         capture.Clear()
 
-        let! pos = Async.call (fun ct -> ctx.Sync(stream, ct, ?position = None))
+        let! pos = Async.call (fun ct -> ctx.Sync(streamName, ct, ?position = None))
         test <@ [EqxAct.Tip] = capture.ExternalCalls @>
         verifyRequestChargesMax 5 // 41 observed // for a 200, you'll pay a lot (we omitted to include the position that NonIdempotentAppend yielded)
         capture.Clear()
 
-        let! _pos = Async.call (fun ct -> ctx.Sync(stream, ct, pos))
+        let! _pos = Async.call (fun ct -> ctx.Sync(streamName, ct, pos))
         test <@ [EqxAct.TipNotModified] = capture.ExternalCalls @>
-        verifyRequestChargesMax 1 // for a 304 by definition - when an etag IfNotMatch is honored, you only pay one RU
-    }
+        verifyRequestChargesMax 1 } // for a 304 by definition - when an etag IfNotMatch is honored, you only pay one RU
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``append - fails on non-matching`` (eventsInTip, TestStream streamName) = async {

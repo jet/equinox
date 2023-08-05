@@ -505,10 +505,10 @@ module Dump =
                                  with e -> log.ForContext("str", s).Warning(e, "JSON Parse failure - use --JsonSkip option to inhibit"); reraise()
                      else $"(%d{s.Length} chars)"
                  with e -> log.Warning(e, "UTF-8 Parse failure - use --Blobs option to inhibit"); reraise()
-        let dumpEvents (streamName : FsCodec.StreamName) = async {
-            let struct (categoryName, sid) = FsCodec.StreamName.splitCategoryAndStreamId streamName
+        let dumpEvents (streamName: FsCodec.StreamName) = async {
+            let struct (categoryName, sid) = FsCodec.StreamName.split streamName
             let cat = store.Category(categoryName, idCodec, fold, initial, isOriginAndSnapshot)
-            let decider = Equinox.Decider.forStream storeLog cat (UMX.tag sid)
+            let decider = Equinox.Decider.forStream storeLog cat sid
             let! streamBytes, events = decider.QueryEx(fun c -> c.StreamEventBytes, c.State)
             let mutable prevTs = None
             for x in events |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do

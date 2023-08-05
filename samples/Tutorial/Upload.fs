@@ -15,7 +15,7 @@ module CompanyId =
     let toString (value : CompanyId) : string = %value
 
 let [<Literal>] Category = "Upload"
-let streamId = Equinox.StreamId.gen2 CompanyId.toString PurchaseOrderId.toString
+let streamId = FsCodec.StreamId.gen2 CompanyId.toString PurchaseOrderId.toString
 
 type UploadId = string<uploadId>
 and [<Measure>] uploadId

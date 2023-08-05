@@ -1205,7 +1205,7 @@ module internal ConnectMode =
 type DynamoStoreClient
     (   tableName,
         // Facilitates custom mapping of Stream Category Name to underlying Table and Stream names
-        categoryAndStreamIdToTableAndStreamNames: string * string -> string * string,
+        categoryAndStreamIdToTableAndStreamNames: string * string -> string * FsCodec.StreamName,
         createContainer: string -> Container,
         createFallbackContainer: string -> Container option,
         [<O; D null>] ?archiveTableName: string,
@@ -1219,14 +1219,14 @@ type DynamoStoreClient
             // Client to use for archive store. Default: (if <c>archiveTableName</c> specified) use same <c>archiveTableName</c> but via <c>client</c>.
             // Events that have been archived and purged (and hence are missing from the primary) are retrieved from this Table
             [<O; D null>] ?archiveClient: Amazon.DynamoDBv2.IAmazonDynamoDB) =
-        let genStreamName (categoryName, streamId) = if categoryName = null then streamId else StreamName.render categoryName streamId
+        let genStreamName (categoryName, streamId) = if categoryName = null then FsCodec.StreamName.parse streamId else FsCodec.StreamName.create categoryName (FsCodec.StreamId.create streamId)
         let catAndStreamToTableStream (categoryName, streamId) = tableName, genStreamName (categoryName, streamId)
         let primaryContainer t = Container.Create(client, t)
         let fallbackContainer =
             if Option.isNone archiveClient && Option.isNone archiveTableName then fun _ -> None
             else fun primaryContainerName -> Some (Container.Create(defaultArg archiveClient client, defaultArg archiveTableName primaryContainerName))
         DynamoStoreClient(tableName, catAndStreamToTableStream, primaryContainer, fallbackContainer, ?archiveTableName = archiveTableName)
-    member internal _.ResolveContainerFallbackAndStreamName(categoryName, streamId): Container * Container option * string =
+    member internal _.ResolveContainerFallbackAndStreamName(categoryName, streamId): Container * Container option * FsCodec.StreamName =
         let tableName, streamName = categoryAndStreamIdToTableAndStreamNames (categoryName, streamId)
         let fallbackTableName = primaryTableToSecondary tableName
         createContainer tableName, createFallbackContainer fallbackTableName, streamName
@@ -1321,7 +1321,7 @@ type DynamoStoreCategory<'event, 'state, 'context>(name, resolveStream) =
             categories.GetOrAdd(categoryName, createCategory)
         let resolveStream streamId =
             let struct (container, streamName) = context.ResolveContainerClientAndStreamName(name, streamId)
-            struct (resolveInner (name, container), streamName)
+            struct (resolveInner (name, container), FsCodec.StreamName.toString streamName)
         DynamoStoreCategory(name, resolveStream)
 
 module Exceptions =
@@ -1342,8 +1342,8 @@ type AppendResult<'t> =
     | ConflictUnknown
 
 /// Encapsulates the core facilities Equinox.DynamoStore offers for operating directly on Events in Streams.
-type EventsContext internal
-    (   context: Equinox.DynamoStore.DynamoStoreContext, store: StoreClient,
+type EventsContext
+    (   context: Equinox.DynamoStore.DynamoStoreContext,
         // Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
         log: Serilog.ILogger) =
     do if log = null then nullArg "log"
@@ -1354,15 +1354,14 @@ type EventsContext internal
             acc.Value <- acc.Value - 1
             false
 
-    new (context: Equinox.DynamoStore.DynamoStoreContext, log) =
-        let storeClient = context.ResolveContainerClientAndStreamName(null, null) |> ValueTuple.fst
-        EventsContext(context, storeClient, log)
+    let resolve streamName =
+        let struct (store, sn) = context.ResolveContainerClientAndStreamName(null, StreamName.toString streamName)
+        store, StreamName.toString sn
 
-    member _.StreamName(rawStreamName) = context.ResolveContainerClientAndStreamName(null, rawStreamName) |> ValueTuple.snd |> StreamName.parse
-
-    member internal _.GetLazy(stream, ct, ?queryMaxItems, ?direction, ?minIndex, ?maxIndex): taskSeq<ITimelineEvent<EncodedBody>[]> =
+    member internal _.GetLazy(streamName, ct, ?queryMaxItems, ?direction, ?minIndex, ?maxIndex): taskSeq<ITimelineEvent<EncodedBody>[]> =
         let direction = defaultArg direction Direction.Forward
         let batching = match queryMaxItems with Some qmi -> QueryOptions(qmi) | _ -> context.QueryOptions
+        let store, stream = resolve streamName
         store.ReadLazy(log, batching, stream, direction, (Some, fun _ -> false), ct, ?minIndex = minIndex, ?maxIndex = maxIndex)
 
     member internal _.GetInternal(streamName, ct, ?minIndex, ?maxIndex, ?maxCount, ?direction) = task {
@@ -1376,21 +1375,23 @@ type EventsContext internal
                 match maxCount with
                 | Some limit -> maxCountPredicate limit
                 | None -> fun _ -> false
-            let! token, events = store.Read(log, StreamName.toString streamName, (*consistentRead*)false, direction, (ValueSome, isOrigin), ct, ?minIndex = minIndex, ?maxIndex = maxIndex)
+            let store, stream = resolve streamName
+            let! token, events = store.Read(log, stream, (*consistentRead*)false, direction, (ValueSome, isOrigin), ct, ?minIndex = minIndex, ?maxIndex = maxIndex)
             if direction = Direction.Backward then System.Array.Reverse events
             return token, events }
 
     /// Establishes the current position of the stream in as efficient a manner as possible
     /// (The ideal situation is that the preceding token is supplied as input in order to avail of efficient validation of an unchanged state)
     member _.Sync(streamName, ct, [<O; D null>] ?position: Position): Task<Position> = task {
-        let! Token.Unpack pos' = store.GetPosition(log, StreamName.toString streamName, ct, ?pos = position)
+        let store, stream = resolve streamName
+        let! Token.Unpack pos' = store.GetPosition(log, stream, ct, ?pos = position)
         return Position.flatten pos' }
 
     /// Query (with MaxItems set to `queryMaxItems`) from the specified `Position`, allowing the reader to efficiently walk away from a running query
     /// ... NB as long as they Dispose!
     member x.Walk(streamName, queryMaxItems, ct, [<O; D null>] ?minIndex, [<O; D null>] ?maxIndex, [<O; D null>] ?direction)
         : taskSeq<ITimelineEvent<EncodedBody>[]> =
-        x.GetLazy(StreamName.toString streamName, queryMaxItems, ct, ?direction = direction, ?minIndex = minIndex, ?maxIndex = maxIndex)
+        x.GetLazy(streamName, queryMaxItems, ct, ?direction = direction, ?minIndex = minIndex, ?maxIndex = maxIndex)
 
     /// Reads all Events from a `Position` in a given `direction`
     member x.Read(streamName, ct, [<O; D null>] ?minIndex, [<O; D null>] ?maxIndex, [<O; D null>] ?maxCount, [<O; D null>] ?direction)
@@ -1401,14 +1402,16 @@ type EventsContext internal
 
     /// Appends the supplied batch of events, subject to a consistency check based on the `position`
     /// Callers should implement appropriate idempotent handling, or use Equinox.Decider for that purpose
-    member x.Sync(stream, position, events: IEventData<_>[]): Async<AppendResult<Position>> = async {
+    member x.Sync(streamName, position, events: IEventData<_>[]): Async<AppendResult<Position>> = async {
+        let store, stream = resolve streamName
         match! store.Sync(log, stream, Some position, Position.toIndex >> Sync.Exp.Version, position.index, events, Seq.empty) with
         | InternalSyncResult.Written (Token.Unpack pos) -> return AppendResult.Ok (Position.flatten pos)
         | InternalSyncResult.ConflictUnknown -> return AppendResult.ConflictUnknown }
 #endif
 
     member _.Prune(streamName, index, ct): Task<int * int * int64> =
-        store.Prune(log, StreamName.toString streamName, index, ct)
+        let store, stream = resolve streamName
+        store.Prune(log, stream, index, ct)
 
 /// Provides mechanisms for building `EventData` records to be supplied to the `Events` API
 type EventData() =
@@ -1432,46 +1435,46 @@ module Events =
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let getAll (ctx: EventsContext) (streamName: string) (index: int64) (batchSize: int) ct: taskSeq<ITimelineEvent<EncodedBody>[]> =
-        ctx.Walk(ctx.StreamName streamName, ct, batchSize, minIndex = index)
+    let getAll (ctx: EventsContext) (streamName: FsCodec.StreamName) (index: int64) (batchSize: int) ct: taskSeq<ITimelineEvent<EncodedBody>[]> =
+        ctx.Walk(streamName, ct, batchSize, minIndex = index)
 
     /// Returns an async array of events in the stream starting at the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let get (ctx: EventsContext) (streamName: string) (index: int64) (maxCount: int): Async<ITimelineEvent<EncodedBody>[]> = Async.call <| fun ct ->
-        ctx.Read(ctx.StreamName streamName, ct, ?minIndex = (if index = 0 then None else Some index), maxCount = maxCount)
+    let get (ctx: EventsContext) (streamName: StreamName) (index: int64) (maxCount: int): Async<ITimelineEvent<EncodedBody>[]> = Async.call <| fun ct ->
+        ctx.Read(streamName, ct, ?minIndex = (if index = 0 then None else Some index), maxCount = maxCount)
 
 #if APPEND_SUPPORT
     /// Appends a batch of events to a stream at the specified expected sequence number.
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
-    let append (ctx: EventsContext) (streamName: string) (index: int64) (events: IEventData<_>[]): Async<AppendResult<int64>> =
-        ctx.Sync(ctx.StreamId streamName, Sync.Exp.Version index, events) |> stripSyncResult
+    let append (ctx: EventsContext) (streamName: StreamName) (index: int64) (events: IEventData<_>[]): Async<AppendResult<int64>> =
+        ctx.Sync(streamName, Sync.Exp.Version index, events) |> stripSyncResult
 
 #endif
     /// Requests deletion of events up and including the specified <c>index</c>.
     /// Due to the need to preserve ordering of data in the stream, only complete Batches will be removed.
     /// If the <c>index</c> is within the Tip, events are removed via an etag-checked update. Does not alter the unfolds held in the Tip, or remove the Tip itself.
     /// Returns count of events deleted this time, events that could not be deleted due to partial batches, and the stream's lowest remaining sequence number.
-    let pruneUntil (ctx: EventsContext) (streamName: string) (index: int64): Async<int * int * int64> = Async.call <| fun ct ->
-        ctx.Prune(ctx.StreamName streamName, index, ct)
+    let pruneUntil (ctx: EventsContext) (streamName: StreamName) (index: int64): Async<int * int * int64> = Async.call <| fun ct ->
+        ctx.Prune(streamName, index, ct)
 
     /// Returns an async sequence of events in the stream backwards starting from the specified sequence number,
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getAllBackwards (ctx: EventsContext) (streamName: string) (index: int64) (batchSize: int) ct: taskSeq<ITimelineEvent<EncodedBody>[]> =
-        ctx.Walk(ctx.StreamName streamName, ct, batchSize, maxIndex = index, direction = Direction.Backward)
+    let getAllBackwards (ctx: EventsContext) (streamName: StreamName) (index: int64) (batchSize: int) ct: taskSeq<ITimelineEvent<EncodedBody>[]> =
+        ctx.Walk(streamName, ct, batchSize, maxIndex = index, direction = Direction.Backward)
 
     /// Returns an async array of events in the stream backwards starting from the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getBackwards (ctx: EventsContext) (streamName: string) (index: int64) (maxCount: int): Async<ITimelineEvent<EncodedBody>[]> = Async.call <| fun ct ->
-        ctx.Read(ctx.StreamName streamName, ct, ?maxIndex = (match index with int64.MaxValue -> None | i -> Some (i + 1L)), maxCount = maxCount, direction = Direction.Backward)
+    let getBackwards (ctx: EventsContext) (streamName: StreamName) (index: int64) (maxCount: int): Async<ITimelineEvent<EncodedBody>[]> = Async.call <| fun ct ->
+        ctx.Read(streamName, ct, ?maxIndex = (match index with int64.MaxValue -> None | i -> Some (i + 1L)), maxCount = maxCount, direction = Direction.Backward)
 
   /// Obtains the `index` from the current write Position
-    let getNextIndex (ctx: EventsContext) (streamName: string): Async<int64> =
-        Async.call (fun ct -> ctx.Sync(ctx.StreamName streamName, ct))
+    let getNextIndex (ctx: EventsContext) (streamName: StreamName): Async<int64> =
+        Async.call (fun ct -> ctx.Sync(streamName, ct))
         |> stripPosition

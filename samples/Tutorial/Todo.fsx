@@ -27,8 +27,9 @@ open System
 (* NB It's recommended to look at Favorites.fsx first as it establishes the groundwork
    This tutorial stresses different aspects *)
 
-let Category = "Todos"
-let streamId = Equinox.StreamId.gen id
+module Stream =
+    let Category = "Todos"
+    let id = FsCodec.StreamId.gen id
 
 type Todo =             { id: int; order: int; title: string; completed: bool }
 type DeletedInfo =      { id: int }
@@ -137,9 +138,9 @@ module Store =
     let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
 
     let access = AccessStrategy.Snapshot Snapshot.config
-    let category = CosmosStoreCategory(context, Category, codec, fold, initial, access, cacheStrategy)
+    let category = CosmosStoreCategory(context, Stream.Category, codec, fold, initial, access, cacheStrategy)
 
-let service = Service(streamId >> Equinox.Decider.forStream log Store.category)
+let service = Service(Stream.id >> Equinox.Decider.forStream log Store.category)
 
 let client = "ClientJ"
 let item = { id = 0; order = 0; title = "Feed cat"; completed = false }
