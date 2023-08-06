@@ -45,41 +45,26 @@ type VolatileStore<'Format>() =
         // NOTE the lock could be more granular, the guarantee of notification ordering is/needs to be at stream level only
         lock streams <| fun () ->
             let struct (succeeded, _) as outcome = trySync streamName expectedCount events
-            if succeeded then committed.Trigger(FSharp.UMX.UMX.tag streamName, events)
+            if succeeded then committed.Trigger(FsCodec.StreamName.Internal.trust streamName, events)
             outcome
 
-type Token = int
-
-/// Internal implementation detail of MemoryStore
-module private Token =
-
-    let private streamTokenOfEventCount (eventCount: int): StreamToken =
-        // TOCONSIDER Could implement streamBytes tracking based on a supplied event size function (store is agnostic to format)
-        { value = box eventCount; version = int64 eventCount; streamBytes = -1 }
-    let (|Unpack|) (token: StreamToken): int = unbox<Token> token.value
-    /// Represent a stream known to be empty
-    let ofEmpty = streamTokenOfEventCount 0
-    let ofValue (value: 'event[]) = streamTokenOfEventCount value.Length
-
-/// Represents the state of a set of streams in a style consistent withe the concrete Store types - no constraints on memory consumption (but also no persistence!).
-type private Category<'event, 'state, 'context, 'Format>(store: VolatileStore<'Format>, codec: FsCodec.IEventCodec<'event, 'Format, 'context>, fold, initial) =
+type private StoreCategory<'event, 'state, 'context, 'Format>(store: VolatileStore<'Format>, codec, fold, initial) =
+    let res version state events = struct ({ value = null; version = version; streamBytes = -1 }, fold state events)
+    let decode events = Array.chooseV (codec : FsCodec.IEventCodec<'event, 'Format, 'context>).TryDecode events
     interface ICategory<'event, 'state, 'context> with
-        member _.Empty = Token.ofEmpty, initial
+        member _.Empty = res 0 initial Array.empty
         member _.Load(_log, _categoryName, _streamId, streamName, _maxAge, _requireLeader, _ct) = task {
             match store.Load(streamName) with
-            | null -> return (Token.ofEmpty, initial)
-            | xs -> return (Token.ofValue xs, fold initial (Array.chooseV codec.TryDecode xs)) }
-        member _.Sync(_log, categoryName, streamId, streamName, context, Token.Unpack eventCount, state, events, _ct) = task {
-            let inline map i (e: FsCodec.IEventData<'Format>) = FsCodec.Core.TimelineEvent.Create(int64 i, e)
-            let encoded = Array.ofSeq events |> Array.mapi (fun i e -> map (eventCount + i) (codec.Encode(context, e)))
-            match store.TrySync(streamName, categoryName, streamId, eventCount, encoded) with
+            | null -> return res 0 initial Array.empty
+            | xs -> return res xs.Length initial (decode xs) }
+        member _.Sync(_log, categoryName, streamId, streamName, context, token, state, events, _ct) = task {
+            let encoded = events |> Array.mapi (fun i e -> FsCodec.Core.TimelineEvent.Create(token.version + int64 i, codec.Encode(context, e)))
+            match store.TrySync(streamName, categoryName, streamId, int token.version, encoded) with
             | true, streamEvents' ->
-                return SyncResult.Written (Token.ofValue streamEvents', fold state events)
+                return SyncResult.Written (res streamEvents'.Length state events)
             | false, conflictingEvents ->
-                let resync _ct = task {
-                    let token' = Token.ofValue conflictingEvents
-                    return struct (token', fold state (conflictingEvents |> Seq.skip eventCount |> Array.chooseV codec.TryDecode)) }
-                return SyncResult.Conflict resync }
+                let eventsSinceExpectedVersion = conflictingEvents |> Seq.skip (int token.version) |> decode
+                return SyncResult.Conflict (fun _ct -> task { return res conflictingEvents.Length state eventsSinceExpectedVersion }) }
 
 type MemoryStoreCategory<'event, 'state, 'Format, 'context>(store: VolatileStore<'Format>, name: string, codec, fold, initial) =
-    inherit Equinox.Category<'event, 'state, 'context>(name, inner = Category(store, codec, fold, initial))
+    inherit Equinox.Category<'event, 'state, 'context>(name, inner = StoreCategory(store, codec, fold, initial))
