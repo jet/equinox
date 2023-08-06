@@ -109,6 +109,14 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.MessageDb.Integrati
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.Core.Tests", "tests\Equinox.Core.Tests\Equinox.Core.Tests.fsproj", "{FB376808-7B32-4724-98BE-D9458EB0F68B}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FsCodec", "..\FsCodec\src\FsCodec\FsCodec.fsproj", "{CA591E81-F20A-4B2C-AF58-20EC5D2CB365}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FsCodec.Box", "..\FsCodec\src\FsCodec.Box\FsCodec.Box.fsproj", "{2DD5332A-5575-4782-9202-1FE4E0C4ED31}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FsCodec.NewtonsoftJson", "..\FsCodec\src\FsCodec.NewtonsoftJson\FsCodec.NewtonsoftJson.fsproj", "{61621F91-1196-427A-988A-7E0206FF8770}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FsCodec.SystemTextJson", "..\FsCodec\src\FsCodec.SystemTextJson\FsCodec.SystemTextJson.fsproj", "{20B822F0-4A0F-498A-977B-AEC3EAADA8A3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -247,6 +255,22 @@ Global
 		{FB376808-7B32-4724-98BE-D9458EB0F68B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FB376808-7B32-4724-98BE-D9458EB0F68B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FB376808-7B32-4724-98BE-D9458EB0F68B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CA591E81-F20A-4B2C-AF58-20EC5D2CB365}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CA591E81-F20A-4B2C-AF58-20EC5D2CB365}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CA591E81-F20A-4B2C-AF58-20EC5D2CB365}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CA591E81-F20A-4B2C-AF58-20EC5D2CB365}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2DD5332A-5575-4782-9202-1FE4E0C4ED31}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2DD5332A-5575-4782-9202-1FE4E0C4ED31}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2DD5332A-5575-4782-9202-1FE4E0C4ED31}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2DD5332A-5575-4782-9202-1FE4E0C4ED31}.Release|Any CPU.Build.0 = Release|Any CPU
+		{61621F91-1196-427A-988A-7E0206FF8770}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{61621F91-1196-427A-988A-7E0206FF8770}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{61621F91-1196-427A-988A-7E0206FF8770}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{61621F91-1196-427A-988A-7E0206FF8770}.Release|Any CPU.Build.0 = Release|Any CPU
+		{20B822F0-4A0F-498A-977B-AEC3EAADA8A3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{20B822F0-4A0F-498A-977B-AEC3EAADA8A3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{20B822F0-4A0F-498A-977B-AEC3EAADA8A3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{20B822F0-4A0F-498A-977B-AEC3EAADA8A3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

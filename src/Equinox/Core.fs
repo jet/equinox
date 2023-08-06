@@ -5,8 +5,8 @@ namespace Equinox.Core
 /// Store-agnostic interface representing interactions a Flow can have with the state of a given event stream. Not intended for direct use by consumer code.
 type IStream<'event, 'state> =
 
-    /// The StreamName, derived from the Name of the Category, and the StreamId supplied to Category.Stream
-    abstract Name: string
+    // /// The StreamName, derived from the Name of the Category, and the StreamId supplied to Category.Stream
+    // abstract Name: string
 
     /// Generate a stream token that represents a stream one believes to be empty to use as a Null Object when optimizing out the initial load roundtrip
     abstract LoadEmpty: unit -> struct (StreamToken * 'state)

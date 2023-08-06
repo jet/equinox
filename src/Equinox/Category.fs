@@ -21,28 +21,21 @@ type ICategory<'event, 'state, 'context> =
                    * CancellationToken -> Task<SyncResult<'state>>
 
 module StreamName =
-
     let render (cat: string) (sid: string): string =
         FsCodec.StreamName.create cat (FsCodec.StreamId.Elements.trust sid) |> FsCodec.StreamName.toString
 
-// Low level stream operations skeleton; base type for Store-specific Category types
 namespace Equinox
 
 open Equinox.Core.Tracing
 
 /// Store-agnostic baseline functionality for Load and Syncing a Category of 'event representations that fold to a given 'state
+/// Provides access to the low level store operations used for Loading and/or Syncing updates via the Decider
+/// (Normal usage is via the adjacent `module Decider` / `Stream.Resolve` helpers)
 [<NoComparison; NoEquality>]
-type Category<'event, 'state, 'context>(categoryName, resolveStream: string -> struct (_ * string)) =
-
-    /// Stores without custom routing for categoryName/streamId to Table/Container etc use this default impl
-    new(categoryName, inner) = Category(categoryName, fun streamId -> struct (inner, Core.StreamName.render categoryName streamId))
-
-    /// Provides access to the low level store operations used for Loading and/or Syncing updates via the Decider
-    /// (Normal usage is via the adjacent `module Decider` / `Stream.Resolve` helpers)
+type Category<'event, 'state, 'context>(categoryName, inner: Core.ICategory<'event, 'state, 'context>) =
     member _.Stream(log: Serilog.ILogger, context: 'context, streamId: string) =
-        let struct (inner: Core.ICategory<'event, 'state, 'context>, streamName) = resolveStream streamId
+        let streamName = Core.StreamName.render categoryName streamId
         { new Core.IStream<'event, 'state> with
-            member _.Name = streamName
             member _.LoadEmpty() = inner.Empty
             member _.Load(maxAge, requireLeader, ct) = task {
                 use act = source.StartActivity("Load", System.Diagnostics.ActivityKind.Client)

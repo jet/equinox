@@ -8,6 +8,8 @@
     <Compile Include="..\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
     <Compile Include="Core.fs" />
     <Compile Include="Decider.fs" />
+    <Compile Include="Tracing.fs" />
+    <Compile Include="Category.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -17,5 +19,9 @@
     <!-- Removal triggers issues in dotnet publish, e.g. for Lambda projects -->
     <!-- Also avoids Rider search finding stuff in FSharp.Core.xml -->
     <PackageReference Include="FSharp.Core" Version="6.0.7"><ExcludeAssets>contentfiles</ExcludeAssets></PackageReference>
+
+    <ProjectReference Include="..\..\..\FsCodec\src\FsCodec\FsCodec.fsproj" />
+    <PackageReference Include="Serilog" Version="2.12.0" />
+
   </ItemGroup>
 </Project>
