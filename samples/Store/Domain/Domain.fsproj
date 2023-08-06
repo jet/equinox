@@ -17,8 +17,10 @@
   <ItemGroup>
     <PackageReference Include="FSharp.Core" Version="6.0.7" ExcludeAssets="contentfiles" />
 
-    <PackageReference Include="FsCodec.NewtonsoftJson" Version="3.0.0-rc.10" />
-    <PackageReference Include="FsCodec.SystemTextJson" Version="3.0.0-rc.10" />
+    <ProjectReference Include="..\..\..\..\FsCodec\src\FsCodec.NewtonsoftJson\FsCodec.NewtonsoftJson.fsproj" />
+    <ProjectReference Include="..\..\..\..\FsCodec\src\FsCodec.SystemTextJson\FsCodec.SystemTextJson.fsproj" />
+<!--    <PackageReference Include="FsCodec.NewtonsoftJson" Version="3.0.0-rc.10" />-->
+<!--    <PackageReference Include="FsCodec.SystemTextJson" Version="3.0.0-rc.10" />-->
 
     <ProjectReference Include="..\..\..\src\Equinox\Equinox.fsproj" />
   </ItemGroup>
