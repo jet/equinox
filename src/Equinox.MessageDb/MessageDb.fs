@@ -277,7 +277,7 @@ module private Token =
 module private Snapshot =
 
     let inline snapshotCategory original = original + ":snapshot"
-    let inline streamName category (streamId: string) = Equinox.Core.StreamName.render (snapshotCategory category) streamId
+    let inline streamName category (streamId: string) = StreamName.create (snapshotCategory category) (StreamId.Elements.trust streamId) |> StreamName.toString
     type Meta = {| streamVersion: int64 |} // STJ doesn't want to serialize it unless its anonymous
     let private streamVersion (evt: ITimelineEvent<EventBody>) =
         let meta = evt.Meta // avoid defensive copy
