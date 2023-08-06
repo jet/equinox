@@ -411,7 +411,7 @@ module DynamoInit =
             | Throughput.OnDemand ->
                 log.Information("DynamoStore Provisioning Table {table} with On-Demand capacity management; streaming {streaming}",
                                 sa.Table, a.StreamingMode)
-            let client = sa.Connector.CreateClient()
+            let client = sa.Connector.CreateDynamoDbClient()
             let! t = Core.Initialization.provision client sa.Table (t, a.StreamingMode)
             log.Information("DynamoStore DynamoDB Streams ARN {streamArn}", Core.Initialization.tryGetActiveStreamsArn t)
         | x -> return Store.missingArg $"unexpected subcommand %A{x}" }
@@ -460,7 +460,7 @@ module CosmosStats =
         | StatsParameters.Dynamo sp -> async {
             let sa = Store.Dynamo.Arguments sp
             sa.Connector.LogConfiguration(log)
-            let client = sa.Connector.CreateClient()
+            let client = sa.Connector.CreateDynamoDbClient()
             let! t = Equinox.DynamoStore.Core.Initialization.describe client sa.Table
             match t.BillingModeSummary, t.ProvisionedThroughput, Equinox.DynamoStore.Core.Initialization.tryGetActiveStreamsArn t with
             | null, p, streamsArn when p <> null ->

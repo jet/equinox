@@ -1178,7 +1178,7 @@ type DynamoStoreConnector(clientConfig: Amazon.DynamoDBv2.AmazonDynamoDBConfig, 
         | null -> ConnectionMode.AwsEnvironment x.Options.RegionEndpoint.SystemName
         | x -> ConnectionMode.AwsKeyCredentials x
 
-    member _.CreateClient() =
+    member _.CreateDynamoDbClient() =
         match credentials with
         | None -> new Amazon.DynamoDBv2.AmazonDynamoDBClient(clientConfig) // this uses credentials=FallbackCredentialsFactory.GetCredentials()
         | Some credentials -> new Amazon.DynamoDBv2.AmazonDynamoDBClient(credentials, clientConfig)

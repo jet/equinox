@@ -210,7 +210,7 @@ module Dynamo =
 
     let config (log : ILogger) (cache, unfolds) (a : Arguments) =
         a.Connector.LogConfiguration(log)
-        let client = a.Connector.CreateClient() |> DynamoStoreClient
+        let client = a.Connector.CreateDynamoDbClient() |> DynamoStoreClient
         let context = DynamoStoreContext(client, a.Table, maxBytes = a.TipMaxBytes, queryMaxItems = a.QueryMaxItems,
                                          ?tipMaxEvents = a.TipMaxEvents, ?archiveTableName = a.ArchiveTable)
         context.LogConfiguration("Main", log)
