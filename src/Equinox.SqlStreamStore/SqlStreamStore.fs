@@ -414,7 +414,7 @@ type private CompactionContext(eventsLen: int, capacityBeforeCompaction: int) =
     /// Determines whether writing a Compaction event is warranted (based on the existing state and the current accumulated changes)
     member _.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
-type private Category<'event, 'state, 'context>(context: SqlStreamStoreContext, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, access) =
+type private StoreCategory<'event, 'state, 'context>(context: SqlStreamStoreContext, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, access) =
     let tryDecode (e: ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
     let isOrigin =
         match access with
@@ -461,7 +461,7 @@ type SqlStreamStoreCategory<'event, 'state, 'context> internal (name, inner) =
         | AccessStrategy.LatestKnownEvent, _ ->
             invalidOp "Equinox.SqlStreamStore does not support mixing AccessStrategy.LatestKnownEvent with Caching at present."
         | _ -> ()
-        let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
+        let cat = StoreCategory<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
         SqlStreamStoreCategory(name, cat)
 
 [<AbstractClass>]

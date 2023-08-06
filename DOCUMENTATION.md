@@ -613,7 +613,7 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
         read clientId
 
 let create resolve: Service =
-    Service(Stream.id >> resolve Category)
+    Service(Stream.id >> resolve)
 ```
 
 <a name="api"></a>
@@ -842,7 +842,7 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
         let decider = resolve clientId
         decider.Query id
 
-let create resolve = Service(Stream.id >> resolve Category)
+let create resolve = Service(Stream.id >> resolve)
 ```
 
 `Read` above will do a roundtrip to the Store in order to fetch the most recent

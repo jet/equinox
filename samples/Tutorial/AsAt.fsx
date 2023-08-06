@@ -142,6 +142,8 @@ module Log =
 
 let [<Literal>] AppName = "equinox-tutorial"
 let cache = Equinox.Cache(AppName, 20)
+// cache so normal read pattern is to read from whatever we've built in memory
+let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
 
 module EventStore =
 
@@ -153,8 +155,6 @@ module EventStore =
     let esc = connector.Connect(AppName, Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false")
     let connection = EventStoreConnection(esc)
     let context = EventStoreContext(connection, batchSize = snapshotWindow)
-    // cache so normal read pattern is to read from whatever we've built in memory
-    let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     // rig snapshots to be injected as events into the stream every `snapshotWindow` events
     let accessStrategy = AccessStrategy.RollingSnapshots (Fold.isValid,Fold.snapshot)
     let cat = EventStoreCategory(context, Stream.Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
@@ -170,13 +170,12 @@ module Cosmos =
     let databaseId, containerId = read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER"
     let storeClient = CosmosStoreClient.Connect(connector.CreateAndInitialize, databaseId, containerId) |> Async.RunSynchronously
     let context = CosmosStoreContext(storeClient, databaseId, containerId, tipMaxEvents = 10)
-    let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     let accessStrategy = AccessStrategy.Snapshot (Fold.isValid,Fold.snapshot)
     let cat = CosmosStoreCategory(context, Stream.Category, Events.codecJe, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
     let resolve = Equinox.Decider.forStream Log.log cat
 
 let service = Service(Stream.id >> EventStore.resolve)
-//let service= Service(streamId >> Cosmos.resolve)
+//let service= Service(Stream.id >> Cosmos.resolve)
 
 let client = "ClientA"
 service.Add(client, 1) |> Async.RunSynchronously

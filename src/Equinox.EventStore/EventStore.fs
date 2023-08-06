@@ -438,7 +438,7 @@ type private CompactionContext(eventsLen: int, capacityBeforeCompaction: int) =
     /// Determines whether writing a Compaction event is warranted (based on the existing state and the current accumulated changes)
     member _.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
-type private Category<'event, 'state, 'context>(context: EventStoreContext, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, access) =
+type private StoreCategory<'event, 'state, 'context>(context: EventStoreContext, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, access) =
     let tryDecode (e: ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
     let isOrigin =
         match access with
@@ -485,7 +485,7 @@ type EventStoreCategory<'event, 'state, 'context> internal (name, inner) =
         | AccessStrategy.LatestKnownEvent, _ ->
             invalidOp "Equinox.EventStore does not support mixing AccessStrategy.LatestKnownEvent with Caching at present."
         | _ -> ()
-        let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
+        let cat = StoreCategory<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
         EventStoreCategory(name, inner = cat)
 
 type private SerilogAdapter(log: ILogger) =

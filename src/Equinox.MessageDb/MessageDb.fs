@@ -373,7 +373,7 @@ type AccessStrategy<'event, 'state> =
     /// </summary>
     | AdjacentSnapshots of snapshotEventCaseName: string * toSnapshot: ('state -> 'event)
 
-type private Category<'event, 'state, 'context>(context: MessageDbContext, codec: IEventCodec<_, _, 'context>, fold, initial, access) =
+type private StoreCategory<'event, 'state, 'context>(context: MessageDbContext, codec: IEventCodec<_, _, 'context>, fold, initial, access) =
     let loadAlgorithm log category streamId streamName requireLeader ct =
         match access with
         | AccessStrategy.Unoptimized -> context.LoadBatched(log, streamName, requireLeader, codec.TryDecode, fold, initial, ct)
@@ -419,4 +419,4 @@ type MessageDbCategory<'event, 'state, 'context>(context: MessageDbContext, name
         //   e.g. if streams are always short, events are always small, you are absolutely certain there will be no cache hits
         //        (and you have a cheerful but bored DBA)
         caching) =
-    inherit Equinox.Category<'event, 'state, 'context>(name, Category(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching)
+    inherit Equinox.Category<'event, 'state, 'context>(name, StoreCategory(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching)
