@@ -10,7 +10,6 @@
 #r "FSharp.UMX.dll"
 #r "FsCodec.dll"
 #r "TypeShape.dll"
-#r "FsCodec.NewtonsoftJson.dll"
 #r "FsCodec.SystemTextJson.dll"
 #r "Microsoft.Azure.Cosmos.Client.dll"
 #r "Serilog.Sinks.Seq.dll"
@@ -138,8 +137,9 @@ module Store =
     let read key = Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
     let appName = "equinox-tutorial"
     let connector = CosmosStoreConnector(Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"), TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5.)
-    let storeClient = CosmosStoreClient.Connect(connector.CreateAndInitialize, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER") |> Async.RunSynchronously
-    let context = CosmosStoreContext(storeClient, tipMaxEvents = 256)
+    let databaseId, containerId = read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER"
+    let storeClient = CosmosStoreClient.Connect(connector.CreateAndInitialize, databaseId, containerId) |> Async.RunSynchronously
+    let context = CosmosStoreContext(storeClient, databaseId, containerId, tipMaxEvents = 256)
     let cache = Equinox.Cache(appName, 20)
     let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
 
@@ -167,7 +167,7 @@ module FulfilmentCenterSummary =
         type Event =
             | Updated of UpdatedData
             interface TypeShape.UnionContract.IUnionContract
-        let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+        let codec = FsCodec.SystemTextJson.Codec.Create<Event>()
 
     type StateSummary = { version : int64; state : Types.Summary }
     type State = StateSummary option

@@ -22,9 +22,7 @@
     <PackageReference Include="MinVer" Version="4.2.0" PrivateAssets="All" />
 
     <PackageReference Include="FSharp.Core" Version="6.0.7" ExcludeAssets="contentfiles" />
-<!--    <ProjectReference Include="..\..\..\FsCodec\src\FsCodec\FsCodec.fsproj" />-->
-<!--&lt;!&ndash;    <PackageReference Include="FsCodec" Version="3.0.0-rc.10" />&ndash;&gt;-->
-<!--    <PackageReference Include="Serilog" Version="2.12.0" />-->
+    
     <PackageReference Include="System.Runtime.Caching" Version="6.0.0" />
   </ItemGroup>
 

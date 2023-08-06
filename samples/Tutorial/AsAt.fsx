@@ -167,8 +167,9 @@ module Cosmos =
     let read key = Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
     let discovery = Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION")
     let connector = CosmosStoreConnector(discovery, TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5., Microsoft.Azure.Cosmos.ConnectionMode.Gateway)
-    let storeClient = CosmosStoreClient.Connect(connector.CreateAndInitialize, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER") |> Async.RunSynchronously
-    let context = CosmosStoreContext(storeClient, tipMaxEvents = 10)
+    let databaseId, containerId = read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER"
+    let storeClient = CosmosStoreClient.Connect(connector.CreateAndInitialize, databaseId, containerId) |> Async.RunSynchronously
+    let context = CosmosStoreContext(storeClient, databaseId, containerId, tipMaxEvents = 10)
     let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     let accessStrategy = AccessStrategy.Snapshot (Fold.isValid,Fold.snapshot)
     let cat = CosmosStoreCategory(context, Stream.Category, Events.codecJe, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)

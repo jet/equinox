@@ -102,8 +102,9 @@ module Store =
     let discovery = Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION")
     let connector = CosmosStoreConnector(discovery, System.TimeSpan.FromSeconds 5., 2, System.TimeSpan.FromSeconds 5., Microsoft.Azure.Cosmos.ConnectionMode.Gateway)
 
-    let storeClient = CosmosStoreClient.Connect(connector.CreateAndInitialize, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER") |> Async.RunSynchronously
-    let context = CosmosStoreContext(storeClient, tipMaxEvents = 10)
+    let databaseId, containerId = read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER"
+    let storeClient = CosmosStoreClient.Connect(connector.CreateAndInitialize, databaseId, containerId) |> Async.RunSynchronously
+    let context = CosmosStoreContext(storeClient, databaseId, containerId, tipMaxEvents = 10)
     let cache = Equinox.Cache(appName, 20)
 
 let service = Favorites.Cosmos.category (Store.context, Store.cache) |> Favorites.create

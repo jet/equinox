@@ -12,7 +12,6 @@
 #r "FSharp.UMX.dll"
 #r "FsCodec.dll"
 #r "FsCodec.Box.dll"
-#r "FsCodec.NewtonsoftJson.dll"
 #else
 #r "nuget:Equinox.MemoryStore, *-*"
 #r "nuget:FsCodec.Box"

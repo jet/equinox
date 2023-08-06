@@ -1217,7 +1217,7 @@ type CosmosStoreConnector
     member _.CreateUninitialized() = factory.CreateUninitialized(discovery)
 
     /// Creates and validates a Client [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
-    member _.Connect(containers): Async<CosmosClient> = factory.CreateAndInitialize(discovery, containers)
+    member _.CreateAndInitialize(containers): Async<CosmosClient> = factory.CreateAndInitialize(discovery, containers)
 
 /// Holds all relevant state for a Store within a given CosmosDB Database
 /// - The CosmosDB CosmosClient (there should be a single one of these per process, plus an optional fallback one for pruning scenarios)

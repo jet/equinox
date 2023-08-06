@@ -75,7 +75,7 @@ type BatcherDictionary<'Id, 'Entry>(create: Func<'Id, 'Entry>) =
 /// NOTE if the number of items is bounded, <c>BatcherDictionary</c> is significantly more efficient</summary>
 type BatcherCache<'Id, 'Entry>(cache: Cache<'Entry>, toKey: Func<'Id, string>, create: Func<'Id, 'Entry>, ?cacheWindow) =
     let cacheWindow = defaultArg cacheWindow (TimeSpan.FromMinutes 1)
-    let cachePolicy = Caching.policySlidingExpiration cacheWindow ()
+    let cachePolicy = System.Runtime.Caching.CacheItemPolicy(SlidingExpiration = cacheWindow)
 
     /// Maintains the entries in an internal cache limited to the specified size, with entries identified by "{id}"
     new(name, create: Func<'Id, 'Entry>, sizeMb: int, ?cacheWindow) =
