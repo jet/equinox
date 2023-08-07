@@ -1,22 +1,19 @@
 ﻿namespace Equinox.Core
 
-open Serilog
-
 /// Store-agnostic interface representing interactions a Decider can have with a set of streams with a given pair of Event and State types
 type ICategory<'event, 'state, 'context> =
     /// Obtain a Null state for optimistic processing
     abstract Empty: struct (StreamToken * 'state)
     /// Obtain the state from the target stream
-    abstract Load: log: ILogger * categoryName: string * streamId: string * streamName: string
+    abstract Load: log: Serilog.ILogger * categoryName: string * streamId: string * streamName: string
                    * maxAge: System.TimeSpan * requireLeader: bool
                    * ct: CancellationToken -> Task<struct (StreamToken * 'state)>
-
     /// Given the supplied `token`, attempt to sync to the proposed updated `state'` by appending the supplied `events` to the underlying stream, yielding:
     /// - Written: signifies synchronization has succeeded, implying the included StreamState should now be assumed to be the state of the stream
     /// - Conflict: signifies the sync failed, and the proposed decision hence needs to be reconsidered in light of the supplied conflicting Stream State
     /// NB the central precondition upon which the sync is predicated is that the stream has not diverged from the `originState` represented by `token`
     ///    where the precondition is not met, the SyncResult.Conflict bears a [lazy] async result (in a specific manner optimal for the store)
-    abstract Sync: log: ILogger * categoryName: string * streamId: string * streamName: string * 'context
+    abstract Sync: log: Serilog.ILogger * categoryName: string * streamId: string * streamName: string * 'context
                    * originToken: StreamToken * originState: 'state * events: 'event[]
                    * CancellationToken -> Task<SyncResult<'state>>
 
@@ -29,7 +26,7 @@ open Equinox.Core.Tracing
 /// (Normal usage is via the adjacent `module Decider` / `Stream.Resolve` helpers)
 [<NoComparison; NoEquality>]
 type Category<'event, 'state, 'context>(categoryName, inner: Core.ICategory<'event, 'state, 'context>) =
-    member _.Stream(log: Serilog.ILogger, context: 'context, streamId: FsCodec.StreamId) =
+    member internal _.Stream(log: Serilog.ILogger, context: 'context, streamId: FsCodec.StreamId) =
         let streamName = FsCodec.StreamName.create categoryName streamId |> FsCodec.StreamName.toString
         let streamId = FsCodec.StreamId.toString streamId
         { new Core.IStream<'event, 'state> with

@@ -1,11 +1,9 @@
-﻿// Internal data structures/impl. While these are intended to be legible, understanding the abstractions involved is only necessary if you are implementing a Store or a decorator thereof.
-// i.e., if you're seeking to understand the main usage flows of the Equinox library, that's in Decider.fs, not here
-namespace Equinox.Core
+﻿namespace Equinox.Core
 
-/// Store-agnostic interface representing interactions a Flow can have with the state of a given event stream. Not intended for direct use by consumer code.
+/// Store-agnostic interface implemented by Category, representing interactions a Transact/Query can have with the state of a given event stream.
 type IStream<'event, 'state> =
 
-    /// Generate a stream token that represents a stream one believes to be empty to use as a Null Object when optimizing out the initial load roundtrip
+    /// Generate a stream token representing a stream one believes to be empty for use as a Null Object when optimizing out the initial load roundtrip
     abstract LoadEmpty: unit -> struct (StreamToken * 'state)
 
     /// Obtain the state from the target stream

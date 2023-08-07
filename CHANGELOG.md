@@ -11,7 +11,6 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 
 - `Equinox`: `Decider.Transact`, `TransactAsync`, `TransactExAsync` overloads [#325](https://github.com/jet/equinox/pull/325)
-- `Equinox`: `StreamId` replaces usage of `FsCodec.StreamName` [#353](https://github.com/jet/equinox/pull/353) [#378](https://github.com/jet/equinox/pull/378)
 - `Equinox.LoadOption.RequireLeader`: support for requesting a consistent read of a stream [#341](https://github.com/jet/equinox/pull/341)
 - `Equinox.LoadOption.AllowStale`: Read mode that limits reads to a maximum of one retrieval per the defined time window [#386](https://github.com/jet/equinox/pull/386)
 - `Equinox.Core`: `Category` base class, with `Decider` and `Stream` helper `module`s [#337](https://github.com/jet/equinox/pull/337)
@@ -21,6 +20,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `CosmosStore.Exceptions`: Active patterns to simplify classification in the context of Propulsion handlers [#416](https://github.com/jet/equinox/pull/416)
 - `CosmosStore.Prometheus`: Add `rut` tag to enable filtering/grouping by Read vs Write activity as per `DynamoStore` [#321](https://github.com/jet/equinox/pull/321)
 - `DynamoStore`/`DynamoStore.Prometheus`: Implements the majority of the `CosmosStore` functionality via `FSharp.AWS.DynamoDB` [#321](https://github.com/jet/equinox/pull/321)
+- `EventStore`: Revise test rig to target a Docker-hosted cluster [#317](https://github.com/jet/equinox/pull/317)
 - `EventStoreDb`: As per `EventStore` module, but using the modern `EventStore.Client.Grpc.Streams` client [#196](https://github.com/jet/equinox/pull/196)
 - `MessageDb`: Implements a [message-db](http://docs.eventide-project.org/user-guide/message-db/) storage backend [#339](https://github.com/jet/equinox/pull/339) with OpenTelemetry tracing and snapshotting support [#348](https://github.com/jet/equinox/pull/348) :pray: [@nordfjord](https://github.com/nordfjord)
 - `eqx dump`: `-s` flag is now optional
@@ -31,16 +31,16 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Change surface APIs that use`'event list` or `'event seq` to `'event[]` [#411](https://github.com/jet/equinox/pull/411)
 - Raise `FSharp.Core` req to `6.0.7`, framework req to `net6.0` [#310](https://github.com/jet/equinox/pull/310) [#337](https://github.com/jet/equinox/pull/337) [#33](https://github.com/jet/equinox/pull/33) [#411](https://github.com/jet/equinox/pull/411)
 - Replace `AsyncSeq` usage with `FSharp.Control.TaskSeq` v `0.4.0` [#361](https://github.com/jet/equinox/pull/361) [#391](https://github.com/jet/equinox/pull/391)
-- `Equinox`: Push `Serilog` dependency out to `Equinox.Core` [#337](https://github.com/jet/equinox/pull/337)
+- `Equinox`: Move `Serilog` dependency from `Decider` constructor to `Category`/`Decider.forStream` [#337](https://github.com/jet/equinox/pull/337) [#419](https://github.com/jet/equinox/pull/419)
+- `Equinox`: `FsCodec.StreamId` replaces usage of `FsCodec.StreamName` [#353](https://github.com/jet/equinox/pull/353) [#378](https://github.com/jet/equinox/pull/378) [#419](https://github.com/jet/equinox/pull/419)
 - `Equinox.ResolveOption`: rename to `LoadOption` [#308](https://github.com/jet/equinox/pull/308) [#413](https://github.com/jet/equinox/pull/413)
 - `Equinox.LoadOption`: Rename `AllowStale` to `AnyCachedValue` [#386](https://github.com/jet/equinox/pull/386)
-- `Equinox.Decider`: `log` is now supplied via `Equinox.Category` [#337](https://github.com/jet/equinox/pull/337)
 - `Equinox.Decider`: Replace `'event list` with `'event[]` [#411](https://github.com/jet/equinox/pull/411)
 - `Equinox.Decider`: Replace `maxAttempts` with a default policy and an optional argument on `Transact*` APIs [#337](https://github.com/jet/equinox/pull/337)
 - `Equinox.Core`: push `FsCodec` dependency out to concrete stores [#337](https://github.com/jet/equinox/pull/337)
 - `Equinox.Core.AsyncBatchingGate`: renamed to `Batching.Batcher` [#390](https://github.com/jet/equinox/pull/390)
 - Stores: Change Event Body types, requiring `FsCodec` v `3.0.0`, with [`EventBody` types switching from `byte[]` to `ReadOnlyMemory<byte>` and/or `JsonElement` see FsCodec#75](https://github.com/jet/FsCodec/pull/75) [#323](https://github.com/jet/equinox/pull/323)
-- Stores: `*Category.Resolve`: Replace `Resolve(sn, ?ResolveOption)` with `?load = LoadOption` parameter on all `Transact` and `Query` methods [#308](https://github.com/jet/equinox/pull/308)
+- Stores: `*Category.Resolve`: Replace `Resolve(sn, ?ResolveOption, ?context)` with `?load = LoadOption` parameter on all `Transact` and `Query` methods, and `Decider.forStream`/`Decider.forContext` to convey context [#308](https://github.com/jet/equinox/pull/308)
 - Stores: `*Category` ctor: Add mandatory `name` argument, and `Name` property [#410](https://github.com/jet/equinox/pull/410)
 - Stores: `*Category` ctor: Change `caching` to be last argument, to reflect that it is applied over the top [#410](https://github.com/jet/equinox/pull/410)
 - Stores: `*Category` ctor: Change `caching` and `access` to be mandatory, adding `NoCaching` and `Unoptimized` modes to represent the former defaults [#417](https://github.com/jet/equinox/pull/417)
@@ -62,7 +62,6 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Fixed
 
-- `EventStore`: Revise test rig to target a Docker-hosted cluster [#317](https://github.com/jet/equinox/pull/317)
 - `EventStore/SqlStreamStore`: rename `Equinox.XXXStore.Log.Event` -> `Metric` to match `CosmosStore` [#311](https://github.com/jet/equinox/pull/311)
 - `SqlStreamStore`: Fix `Metric` key to be `ssEvt` (was `esEvt`) [#311](https://github.com/jet/equinox/pull/311)
 
