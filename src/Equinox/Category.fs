@@ -26,7 +26,7 @@ open Equinox.Core.Tracing
 /// (Normal usage is via the adjacent `module Decider` / `Stream.Resolve` helpers)
 [<NoComparison; NoEquality>]
 type Category<'event, 'state, 'context>(categoryName, inner: Core.ICategory<'event, 'state, 'context>) =
-    member internal _.Stream(log: Serilog.ILogger, context: 'context, streamId: FsCodec.StreamId) =
+    member _.Stream(log: Serilog.ILogger, context: 'context, streamId: FsCodec.StreamId) =
         let streamName = FsCodec.StreamName.create categoryName streamId |> FsCodec.StreamName.toString
         let streamId = FsCodec.StreamId.toString streamId
         { new Core.IStream<'event, 'state> with
