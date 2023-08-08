@@ -1274,8 +1274,8 @@ type AccessStrategy<'event, 'state> =
     /// </remarks>
     | Custom of isOrigin: ('event -> bool) * transmute: ('event[] -> 'state -> 'event[] * 'event[])
 
-type DynamoStoreCategory<'event, 'state, 'context> internal (name, inner) =
-    inherit Equinox.Category<'event, 'state, 'context>(name, inner = inner)
+type DynamoStoreCategory<'event, 'state, 'context> =
+    inherit Equinox.Category<'event, 'state, 'context>
     new(context: DynamoStoreContext, name, codec, fold, initial, access,
         // For DynamoDB, caching is typically a central aspect of managing RU consumption to maintain performance and capacity.
         // Omitting can make sense in specific cases; if streams are short, or there's always a usable snapshot in the Tip
@@ -1294,10 +1294,9 @@ type DynamoStoreCategory<'event, 'state, 'context> internal (name, inner) =
             | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         true,  Choice2Of3 (fun _ (state: 'state) -> unfold state)
             | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> Array.empty, toSnapshot state |> Array.singleton)
             | AccessStrategy.Custom (isOrigin, transmute) ->     isOrigin,         true,  Choice3Of3 transmute
-        let inner: ICategory<_, _, _> =
+        { inherit Equinox.Category<'event, 'state, 'context>(name,
             StoreCategory<'event, 'state, 'context>(context.StoreClient, codec, fold, initial, isOrigin, checkUnfolds, mapUnfolds)
-            |> Caching.apply Token.isStale caching
-        DynamoStoreCategory(name, inner)
+            |> Caching.apply Token.isStale caching) }
 
 module Exceptions =
 

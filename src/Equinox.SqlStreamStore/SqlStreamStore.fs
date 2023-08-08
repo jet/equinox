@@ -450,8 +450,8 @@ type private StoreCategory<'event, 'state, 'context>(context: SqlStreamStoreCont
             | GatewaySyncResult.ConflictUnknown -> return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, streamToken, state)) }
     interface Caching.IReloadable<'state> with member _.Reload(log, sn, leader, token, state, ct) = reload (log, sn, leader, token, state) ct
 
-type SqlStreamStoreCategory<'event, 'state, 'context> internal (name, inner) =
-    inherit Equinox.Category<'event, 'state, 'context>(name, inner = inner)
+type SqlStreamStoreCategory<'event, 'state, 'context> =
+    inherit Equinox.Category<'event, 'state, 'context>
     new(context: SqlStreamStoreContext, name, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, access,
         // For SqlStreamStore, caching is less critical than it is for e.g. CosmosDB
         // As such, it can sometimes be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
@@ -461,8 +461,9 @@ type SqlStreamStoreCategory<'event, 'state, 'context> internal (name, inner) =
         | AccessStrategy.LatestKnownEvent, _ ->
             invalidOp "Equinox.SqlStreamStore does not support mixing AccessStrategy.LatestKnownEvent with Caching at present."
         | _ -> ()
-        let cat = StoreCategory<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
-        SqlStreamStoreCategory(name, cat)
+        { inherit Equinox.Category<'event, 'state, 'context>(name,
+            StoreCategory<'event, 'state, 'context>(context, codec, fold, initial, access)
+            |> Caching.apply Token.isStale caching) }
 
 [<AbstractClass>]
 type ConnectorBase([<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =

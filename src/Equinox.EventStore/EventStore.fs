@@ -474,8 +474,8 @@ type private StoreCategory<'event, 'state, 'context>(context: EventStoreContext,
             | GatewaySyncResult.ConflictUnknown _ -> return SyncResult.Conflict (fun _ct -> reload (log, streamName, true, streamToken, state)) }
     interface Caching.IReloadable<'state> with member _.Reload(log, sn, leader, token, state, _ct) = reload (log, sn, leader, token, state)
 
-type EventStoreCategory<'event, 'state, 'context> internal (name, inner) =
-    inherit Equinox.Category<'event, 'state, 'context>(name, inner = inner)
+type EventStoreCategory<'event, 'state, 'context> =
+    inherit Equinox.Category<'event, 'state, 'context>
     new(context: EventStoreContext, name, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, access,
         // Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
         // e.g., a key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
@@ -486,7 +486,7 @@ type EventStoreCategory<'event, 'state, 'context> internal (name, inner) =
             invalidOp "Equinox.EventStore does not support mixing AccessStrategy.LatestKnownEvent with Caching at present."
         | _ -> ()
         let cat = StoreCategory<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
-        EventStoreCategory(name, inner = cat)
+        { inherit Equinox.Category<'event, 'state, 'context>(name, cat) }
 
 type private SerilogAdapter(log: ILogger) =
     interface EventStore.ClientAPI.ILogger with

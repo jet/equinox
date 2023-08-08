@@ -428,8 +428,9 @@ type EventStoreCategory<'event, 'state, 'context> =
         | AccessStrategy.LatestKnownEvent, _ ->
             invalidOp "Equinox.EventStoreDb does not support mixing AccessStrategy.LatestKnownEvent with Caching at present."
         | _ -> ()
-        let cat = StoreCategory<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
-        { inherit Equinox.Category<'event, 'state, 'context>(name, cat) }
+        { inherit Equinox.Category<'event, 'state, 'context>(name,
+            StoreCategory<'event, 'state, 'context>(context, codec, fold, initial, access)
+            |> Caching.apply Token.isStale caching) }
 
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =

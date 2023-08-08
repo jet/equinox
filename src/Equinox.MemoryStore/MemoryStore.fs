@@ -67,4 +67,4 @@ type private StoreCategory<'event, 'state, 'context, 'Format>(store: VolatileSto
                 return SyncResult.Conflict (fun _ct -> task { return res conflictingEvents.Length state eventsSinceExpectedVersion }) }
 
 type MemoryStoreCategory<'event, 'state, 'Format, 'context>(store: VolatileStore<'Format>, name: string, codec, fold, initial) =
-    inherit Equinox.Category<'event, 'state, 'context>(name, inner = StoreCategory(store, codec, fold, initial))
+    inherit Equinox.Category<'event, 'state, 'context>(name, StoreCategory(store, codec, fold, initial))
