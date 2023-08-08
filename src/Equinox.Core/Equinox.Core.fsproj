@@ -22,7 +22,7 @@
     <PackageReference Include="MinVer" Version="4.2.0" PrivateAssets="All" />
 
     <PackageReference Include="FSharp.Core" Version="6.0.7" ExcludeAssets="contentfiles" />
-    
+
     <PackageReference Include="System.Runtime.Caching" Version="6.0.0" />
   </ItemGroup>
 
