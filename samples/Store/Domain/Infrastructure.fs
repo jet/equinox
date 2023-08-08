@@ -8,7 +8,7 @@ open System
 /// Endows any type that inherits this class with standard .NET comparison semantics using a supplied token identifier
 [<AbstractClass>]
 type Comparable<'TComp, 'Token when 'TComp :> Comparable<'TComp, 'Token> and 'Token : comparison>(token: 'Token) =
-    member private _.Token = token
+    member val private Token = token
     override x.Equals y = match y with :? Comparable<'TComp, 'Token> as y -> x.Token = y.Token | _ -> false
     override _.GetHashCode() = hash token
     interface IComparable with
@@ -32,9 +32,9 @@ module Guid =
 /// - Guards against XSS by only permitting initialization based on Guid.Parse
 /// - Implements comparison/equality solely to enable tests to leverage structural equality
 [<Sealed; AutoSerializable(false); JsonConverter(typeof<SkuIdJsonConverter>); System.Text.Json.Serialization.JsonConverter(typeof<SkuIdJsonConverterStj>)>]
-type SkuId private (id: string) =
-    inherit StringId<SkuId>(id)
-    new(value: Guid) = SkuId(value.ToString "N")
+type SkuId =
+    inherit StringId<SkuId>
+    new(value: Guid) = { inherit StringId<SkuId>(value.ToString "N") }
     /// Required to support empty
     [<Obsolete>] new() = SkuId(Guid.NewGuid())
 /// Represent as a Guid.ToString("N") output externally

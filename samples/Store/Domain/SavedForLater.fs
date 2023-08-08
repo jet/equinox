@@ -3,8 +3,9 @@
 open System
 open System.Collections.Generic
 
-let [<Literal>] Category = "SavedForLater"
-let streamId = Equinox.StreamId.gen ClientId.toString
+module Stream =
+    let [<Literal>] Category = "SavedForLater"
+    let id = FsCodec.StreamId.gen ClientId.toString
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -53,6 +54,13 @@ module Fold =
 
     type State = Item []
     let initial = Array.empty<Item>
+
+    module Snapshot =
+
+        let generate state = Compacted { items = state }
+        let isOrigin = function Compacted _ -> true | _ -> false
+        let config = isOrigin, generate
+
     let fold (state: State) (events: seq<Event>): State =
         let index = InternalState state
         for event in events do
@@ -66,8 +74,6 @@ module Fold =
     let proposedEventsWouldExceedLimit maxSavedItems events state =
         let newState = fold state events
         Array.length newState > maxSavedItems
-    let isOrigin = function Compacted _ -> true | _ -> false
-    let compact state = Compacted { items = state }
 
 type Command =
     | Merge of merges: Events.Item []
@@ -144,4 +150,4 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
         return! execute targetId (Merge state) }
 
 let create maxSavedItems resolve =
-    Service(streamId >> resolve, maxSavedItems)
+    Service(Stream.id >> resolve, maxSavedItems)

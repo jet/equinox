@@ -1,7 +1,9 @@
 ﻿module Domain.Favorites
 
-let [<Literal>] Category = "Favorites"
-let streamId = Equinox.StreamId.gen ClientId.toString
+module Stream =
+    let [<Literal>] Category = "Favorites"
+    let id = FsCodec.StreamId.gen ClientId.toString
+    let name = id >> FsCodec.StreamName.create Category
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -83,4 +85,4 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
         decider.TransactEx((fun c -> (), decideUnfavorite sku c.State), fun () c -> c.Version)
 
 let create resolve =
-    Service(streamId >> resolve)
+    Service(Stream.id >> resolve)

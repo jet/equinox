@@ -1,7 +1,9 @@
 ﻿module Domain.Cart
 
-let [<Literal>] Category = "Cart"
-let streamId = Equinox.StreamId.gen CartId.toString
+module Stream =
+    let [<Literal>] Category = "Cart"
+    let id = FsCodec.StreamId.gen CartId.toString
+    let name = id >> FsCodec.StreamName.create Category
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 [<RequireQualifiedAccess>]
@@ -159,7 +161,7 @@ type Service internal (resolve: CartId -> Equinox.Decider<Events.Event, Fold.Sta
             return interpretMany Fold.fold (Seq.map interpret commands) state }
 #endif
         let decider = resolve cartId
-        let opt = if optimistic then Equinox.AnyCachedValue else Equinox.RequireLoad
+        let opt = if optimistic then Equinox.LoadOption.AnyCachedValue else Equinox.LoadOption.RequireLoad
         decider.TransactAsync(interpret, opt)
 
     member x.ExecuteManyAsync(cartId, optimistic, commands: Command seq, ?prepare): Async<unit> =
@@ -176,4 +178,4 @@ type Service internal (resolve: CartId -> Equinox.Decider<Events.Event, Fold.Sta
         decider.Query(id, Equinox.LoadOption.AnyCachedValue)
 
 let create resolve =
-    Service(streamId >> resolve)
+    Service(Stream.id >> resolve)

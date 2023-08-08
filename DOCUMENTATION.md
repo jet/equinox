@@ -315,10 +315,9 @@ highly recommended to use the following canonical skeleton layout:
 ```fsharp
 module Aggregate
 
-(* StreamName section *)
-
-let [<Literal>] Category = "category"
-let streamId = Equinox.StreamId.gen Id.toString
+module Stream =
+    let [<Literal>] Category = "category"
+    let id = FsCodec.StreamId.gen Id.toString
 
 (* Optionally, Helpers/Types *)
 
@@ -386,7 +385,7 @@ type Service internal (resolve: Id -> Equinox.Decider<Events.Event, Fold.State) 
         let decider = resolve id
         decider.Transact(decideX inputs)
 
-let create category = Service(streamId >> Equinox.Decider.forStream Serilog.Log.Logger category)
+let create category = Service(Stream.id >> Equinox.Decider.forStream Serilog.Log.Logger category)
 ```
 
 - `Service`'s constructor is `internal`; `create` is the main way in which one
@@ -417,12 +416,12 @@ let cacheStrategy = Equinox.CosmosStore.CachingStrategy.SlidingWindow (cache, de
 module EventStore =
     let accessStrategy = Equinox.EventStoreDb.AccessStrategy.RollingSnapshots (Fold.isOrigin, Fold.snapshot)
     let category (context, cache) =
-        Equinox.EventStore.EventStoreCategory(context, Category, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+        Equinox.EventStore.EventStoreCategory(context, Stream.Category, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
 
 module Cosmos =
     let accessStrategy = Equinox.CosmosStore.AccessStrategy.Snapshot Fold.Snapshot.config
     let category (context, cache) =
-        Equinox.CosmosStore.CosmosStoreCategory(context, Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
+        Equinox.CosmosStore.CosmosStoreCategory(context, Stream.Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
 
 ### `MemoryStore` Storage Binding Module
 
@@ -445,10 +444,10 @@ In F#, independent of the Store being used, the Equinox programming model
 involves (largely by convention, see [FAQ](README.md#FAQ)), per aggregation of
 events on a given category of stream:
 
-- `Category`: the common part of the [Stream Name](https://github.com/fscodec#streamname),
+- `Stream.Category`: the common part of the [Stream Name](https://github.com/fscodec#streamname),
   i.e., the `"Favorites"` part of the `"Favorites-clientId"`
 
-- `streamId`: function responsible for mapping from the input elements that define the Aggregate's identity
+- `Stream.id`: function responsible for mapping from the input elements that define the Aggregate's identity
   to the `streamId` portion of the `{categoryName}-{streamId}` StreamName that's used within the concrete store.
   In general, the inputs should be [strongly typed ids](https://github.com/jet/FsCodec#strongly-typed-stream-ids-using-fsharpumx)
 
@@ -542,8 +541,9 @@ brevity, that implements all the relevant functions above:
 ```fsharp
 (* Event stream naming + schemas *)
 
-let [<Literal>] Category = "Favorites"
-let streamId = Equinox.StreamId.gen ClientId.toString
+module Stream =
+    let [<Literal>] Category = "Favorites"
+    let id = FsCodec.StreamId.gen ClientId.toString
 
 type Item = { id: int; name: string; added: DateTimeOffset }
 type Event =
@@ -589,7 +589,7 @@ let toSnapshot state = [| Event.Snapshotted (Array.ofList state) |]
 (*
  * The Service defines operations in business terms, neutral to any concrete
  * store selection or implementation supplied only a `resolve` function that can
- * be used to map from ids (as supplied to the `streamId` function) to an
+ * be used to map from ids (as supplied to the `Stream.id` function) to an
  * Equinox.Decider; Typically the service should be a stateless Singleton
  *)
 
@@ -613,7 +613,7 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
         read clientId
 
 let create resolve: Service =
-    Service(streamId >> resolve Category)
+    Service(Stream.id >> resolve)
 ```
 
 <a name="api"></a>
@@ -692,13 +692,13 @@ Equinox’s Command Handling consists of < 200 lines including interfaces and
 comments in https://github.com/jet/equinox/tree/master/src/Equinox - the
 elements you'll touch in a normal application are:
 
-- [`module Impl`](https://github.com/jet/equinox/blob/master/src/Equinox/Core.fs#L33) -
+- [`module Stream`](https://github.com/jet/equinox/blob/master/src/Equinox/Stream.fs#L30) -
   internal implementation of Optimistic Concurrency Control / retry loop used
   by `Decider`. It's recommended to at least scan this file as it defines the
   Transaction semantics that are central to Equinox and the overall `Decider` concept.
-- [`type Decider`](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L7) -
+- [`type Decider`](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L11) -
   surface API one uses to `Transact` or `Query` against a specific stream's state
-- [`type LoadOption` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L110) -
+- [`type LoadOption` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L218) -
   used to specify optimization overrides to be applied when a `Decider`'s `Query` or `Transact` operations establishes the state of the stream
 
 Its recommended to read the examples in conjunction with perusing the code in
@@ -828,8 +828,9 @@ context
 #### `Decider` usage
 
 ```fsharp
-let [<Literal>] Category = "Favorites"
-let streamId = Equinox.StreamId.gen ClientId.toString
+module Stream =
+    let [<Literal>] Category = "Favorites"
+    let id = FsCodec.StreamId.gen ClientId.toString
 
 type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
@@ -841,7 +842,7 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
         let decider = resolve clientId
         decider.Query id
 
-let create resolve = Service(streamId >> resolve Category)
+let create resolve = Service(Stream.id >> resolve)
 ```
 
 `Read` above will do a roundtrip to the Store in order to fetch the most recent
@@ -1082,7 +1083,7 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
        and/or simplifications when compared to aspects that might present in a
        more complete implementation.
 
-- the `streamId` helper (and optional [`Parse` Active Patterns](https://github.com/jet/fscodec#adding-matchers-to-the-event-contract))
+- the `Stream.id` helper (and optional [`Parse` Active Patterns](https://github.com/jet/fscodec#adding-matchers-to-the-event-contract))
   provide succinct ways to map an incoming `clientId` (which is not a `string`
   in the real implementation but instead an id using
   [`FSharp.UMX`](https://github.com/fsprojects/FSharp.UMX) in an unobtrusive

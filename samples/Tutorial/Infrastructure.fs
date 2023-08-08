@@ -27,4 +27,4 @@ module EventCodec =
 
     /// For stores other than CosmosStore, we encode to UTF-8 and have the store do the right thing
     let gen<'t when 't :> TypeShape.UnionContract.IUnionContract> =
-        FsCodec.NewtonsoftJson.Codec.Create<'t>()
+        FsCodec.SystemTextJson.Codec.Create<'t>()

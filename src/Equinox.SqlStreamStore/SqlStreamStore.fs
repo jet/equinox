@@ -336,7 +336,7 @@ type SqlStreamStoreConnection(readConnection, [<O; D(null)>]?writeConnection, [<
     member _.WriteRetryPolicy = writeRetryPolicy
 
 type BatchOptions(getBatchSize: Func<int>, [<O; D(null)>]?batchCountLimit) =
-    new (batchSize) = BatchOptions(fun () -> batchSize)
+    new(batchSize) = BatchOptions(fun () -> batchSize)
     member _.BatchSize = getBatchSize.Invoke()
     member _.MaxBatches = batchCountLimit
 
@@ -349,9 +349,9 @@ type SqlStreamStoreContext(connection: SqlStreamStoreConnection, batchOptions: B
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
     let conn requireLeader = if requireLeader then connection.WriteConnection else connection.ReadConnection
 
-    new (   connection: SqlStreamStoreConnection,
-            // Max number of Events to retrieve in a single batch. Also affects frequency of RollingSnapshots. Default: 500.
-            [<O; D null>] ?batchSize) =
+    new(connection: SqlStreamStoreConnection,
+        // Max number of Events to retrieve in a single batch. Also affects frequency of RollingSnapshots. Default: 500.
+        [<O; D null>] ?batchSize) =
         SqlStreamStoreContext(connection, BatchOptions(batchSize = defaultArg batchSize 500))
     member val BatchOptions = batchOptions
 
@@ -414,7 +414,7 @@ type private CompactionContext(eventsLen: int, capacityBeforeCompaction: int) =
     /// Determines whether writing a Compaction event is warranted (based on the existing state and the current accumulated changes)
     member _.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
-type private Category<'event, 'state, 'context>(context: SqlStreamStoreContext, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, access) =
+type private StoreCategory<'event, 'state, 'context>(context: SqlStreamStoreContext, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, access) =
     let tryDecode (e: ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
     let isOrigin =
         match access with
@@ -450,8 +450,8 @@ type private Category<'event, 'state, 'context>(context: SqlStreamStoreContext, 
             | GatewaySyncResult.ConflictUnknown -> return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, streamToken, state)) }
     interface Caching.IReloadable<'state> with member _.Reload(log, sn, leader, token, state, ct) = reload (log, sn, leader, token, state) ct
 
-type SqlStreamStoreCategory<'event, 'state, 'context> internal (name, inner) =
-    inherit Equinox.Category<'event, 'state, 'context>(name, inner = inner)
+type SqlStreamStoreCategory<'event, 'state, 'context> =
+    inherit Equinox.Category<'event, 'state, 'context>
     new(context: SqlStreamStoreContext, name, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, access,
         // For SqlStreamStore, caching is less critical than it is for e.g. CosmosDB
         // As such, it can sometimes be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
@@ -461,8 +461,9 @@ type SqlStreamStoreCategory<'event, 'state, 'context> internal (name, inner) =
         | AccessStrategy.LatestKnownEvent, _ ->
             invalidOp "Equinox.SqlStreamStore does not support mixing AccessStrategy.LatestKnownEvent with Caching at present."
         | _ -> ()
-        let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
-        SqlStreamStoreCategory(name, cat)
+        { inherit Equinox.Category<'event, 'state, 'context>(name,
+            StoreCategory<'event, 'state, 'context>(context, codec, fold, initial, access)
+            |> Caching.apply Token.isStale caching) }
 
 [<AbstractClass>]
 type ConnectorBase([<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =

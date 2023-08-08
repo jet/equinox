@@ -108,7 +108,7 @@ module Cosmos =
     let createClient (a : Arguments) connectionString =
         let connector = CosmosStoreConnector(Discovery.ConnectionString connectionString, a.Timeout, a.Retries, a.MaxRetryWaitTime, ?mode=a.Mode)
         connector.CreateUninitialized()
-    let connect (log : ILogger) (a : Arguments) =
+    let connect (log: ILogger) (a: Arguments) =
         let primaryClient, primaryDatabase, primaryContainer as primary = createClient a a.Connection, a.Database, a.Container
         logContainer log "Primary" (a.Mode, primaryClient.Endpoint, primaryDatabase, primaryContainer)
         let archive =
@@ -119,15 +119,17 @@ module Cosmos =
         archive |> Option.iter (fun (client, db, container) -> logContainer log "Archive" (a.Mode, client.Endpoint, db, container))
         primary, archive
     let config (log : ILogger) (cache, unfolds) (a : Arguments) =
-        let connection =
+        let context =
             match connect log a with
             | (client, databaseId, containerId), None ->
-                CosmosStoreClient(client, databaseId, containerId)
+                let c = CosmosStoreClient client
+                CosmosStoreContext(c, databaseId, containerId, a.TipMaxEvents, queryMaxItems = a.QueryMaxItems, tipMaxJsonLength = a.TipMaxJsonLength)
             | (client, databaseId, containerId), Some (aClient, aDatabaseId, aContainerId) ->
-                CosmosStoreClient(client, databaseId, containerId, archiveClient = aClient, archiveDatabaseId = aDatabaseId, archiveContainerId = aContainerId)
+                let c = CosmosStoreClient(client, aClient)
+                CosmosStoreContext(c, databaseId, containerId, a.TipMaxEvents, queryMaxItems = a.QueryMaxItems, tipMaxJsonLength = a.TipMaxJsonLength,
+                                   archiveDatabaseId = aDatabaseId, archiveContainerId = aContainerId)
         log.Information("CosmosStore Max Events in Tip: {maxTipEvents}e {maxTipJsonLength}b Items in Query: {queryMaxItems}",
                         a.TipMaxEvents, a.TipMaxJsonLength, a.QueryMaxItems)
-        let context = CosmosStoreContext(connection, a.TipMaxEvents, queryMaxItems = a.QueryMaxItems, tipMaxJsonLength = a.TipMaxJsonLength)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
         Context.Cosmos (context, cacheStrategy, unfolds)
 
@@ -135,18 +137,14 @@ module Dynamo =
 
     type Equinox.DynamoStore.DynamoStoreConnector with
 
-        member x.LogConfiguration(log : ILogger) =
+        member x.LogConfiguration(log: ILogger) =
             log.Information("DynamoStore {endpoint} Timeout {timeoutS}s Retries {retries}",
                             x.Endpoint, (let t = x.Timeout in t.TotalSeconds), x.Retries)
 
-    type Equinox.DynamoStore.DynamoStoreClient with
-
-        member internal x.LogConfiguration(role, log : ILogger) =
-            log.Information("DynamoStore {role:l} Table {table} Archive {archive}", role, x.TableName, Option.toObj x.ArchiveTableName)
-
     type Equinox.DynamoStore.DynamoStoreContext with
 
-        member internal x.LogConfiguration(log : ILogger) =
+        member internal x.LogConfiguration(role, log: ILogger) =
+            log.Information("DynamoStore {role:l} Table {table} Archive {archive}", role, x.TableName, Option.toObj x.ArchiveTableName)
             log.Information("DynamoStore Tip thresholds: {maxTipBytes}b {maxTipEvents}e Query Paging {queryMaxItems} items",
                             x.TipOptions.MaxBytes, Option.toNullable x.TipOptions.MaxEvents, x.QueryOptions.MaxItems)
 
@@ -212,11 +210,10 @@ module Dynamo =
 
     let config (log : ILogger) (cache, unfolds) (a : Arguments) =
         a.Connector.LogConfiguration(log)
-        let client = a.Connector.CreateClient()
-        let storeClient = DynamoStoreClient(client, a.Table, ?archiveTableName = a.ArchiveTable)
-        storeClient.LogConfiguration("Main", log)
-        let context = DynamoStoreContext(storeClient, maxBytes = a.TipMaxBytes, queryMaxItems = a.QueryMaxItems, ?tipMaxEvents = a.TipMaxEvents)
-        context.LogConfiguration(log)
+        let client = a.Connector.CreateDynamoDbClient() |> DynamoStoreClient
+        let context = DynamoStoreContext(client, a.Table, maxBytes = a.TipMaxBytes, queryMaxItems = a.QueryMaxItems,
+                                         ?tipMaxEvents = a.TipMaxEvents, ?archiveTableName = a.ArchiveTable)
+        context.LogConfiguration("Main", log)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
         Context.Dynamo (context, cacheStrategy, unfolds)
 

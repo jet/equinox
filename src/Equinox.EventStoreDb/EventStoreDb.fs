@@ -292,7 +292,7 @@ type EventStoreConnection(readConnection, [<O; D(null)>] ?writeConnection, [<O; 
     member _.WriteRetryPolicy = writeRetryPolicy
 
 type BatchOptions(getBatchSize: Func<int>) =
-    new (batchSize) = BatchOptions(fun () -> batchSize)
+    new(batchSize) = BatchOptions(fun () -> batchSize)
     member _.BatchSize = getBatchSize.Invoke()
 
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
@@ -303,9 +303,9 @@ type EventStoreContext(connection: EventStoreConnection, batchOptions: BatchOpti
     let isResolvedEventEventType (tryDecode, predicate) (x: ResolvedEvent) = predicate (tryDecode x.Event.Data)
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
     let conn requireLeader = if requireLeader then connection.WriteConnection else connection.ReadConnection
-    new (   connection: EventStoreConnection,
-            // Max number of Events to retrieve in a single batch. Also affects frequency of RollingSnapshots. Default: 500.
-            [<O; D null>] ?batchSize) =
+    new(connection: EventStoreConnection,
+        // Max number of Events to retrieve in a single batch. Also affects frequency of RollingSnapshots. Default: 500.
+        [<O; D null>] ?batchSize) =
         EventStoreContext(connection, BatchOptions(batchSize = defaultArg batchSize 500))
     member val BatchOptions = batchOptions
 
@@ -380,7 +380,7 @@ type private CompactionContext(eventsLen: int, capacityBeforeCompaction: int) =
     /// Determines whether writing a Compaction event is warranted (based on the existing state and the current accumulated changes)
     member _.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
-type private Category<'event, 'state, 'context>(context: EventStoreContext, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, access) =
+type private StoreCategory<'event, 'state, 'context>(context: EventStoreContext, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, access) =
     let tryDecode (e: ResolvedEvent) = e.Event |> ClientCodec.timelineEvent |> codec.TryDecode
     let isOrigin =
         match access with
@@ -417,8 +417,8 @@ type private Category<'event, 'state, 'context>(context: EventStoreContext, code
             | GatewaySyncResult.Written token' ->    return SyncResult.Written  (token', fold state events)
             | GatewaySyncResult.ConflictUnknown _ -> return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, streamToken, state)) }
 
-type EventStoreCategory<'event, 'state, 'context> internal (name, inner) =
-    inherit Equinox.Category<'event, 'state, 'context>(name, inner = inner)
+type EventStoreCategory<'event, 'state, 'context> =
+    inherit Equinox.Category<'event, 'state, 'context>
     new(context: EventStoreContext, name, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, access,
         // Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
         // e.g., a key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
@@ -428,8 +428,9 @@ type EventStoreCategory<'event, 'state, 'context> internal (name, inner) =
         | AccessStrategy.LatestKnownEvent, _ ->
             invalidOp "Equinox.EventStoreDb does not support mixing AccessStrategy.LatestKnownEvent with Caching at present."
         | _ -> ()
-        let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
-        EventStoreCategory(name, inner = cat)
+        { inherit Equinox.Category<'event, 'state, 'context>(name,
+            StoreCategory<'event, 'state, 'context>(context, codec, fold, initial, access)
+            |> Caching.apply Token.isStale caching) }
 
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =

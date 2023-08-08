@@ -277,7 +277,7 @@ module private Token =
 module private Snapshot =
 
     let inline snapshotCategory original = original + ":snapshot"
-    let inline streamName category (streamId: string) = Equinox.Core.StreamName.render (snapshotCategory category) streamId
+    let inline streamName category (streamId: string) = StreamName.create (snapshotCategory category) (StreamId.Elements.trust streamId) |> StreamName.toString
     type Meta = {| streamVersion: int64 |} // STJ doesn't want to serialize it unless its anonymous
     let private streamVersion (evt: ITimelineEvent<EventBody>) =
         let meta = evt.Meta // avoid defensive copy
@@ -306,7 +306,7 @@ type MessageDbClient internal (reader, writer, ?readRetryPolicy, ?writeRetryPoli
         MessageDbClient(reader, writer, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
 
 type BatchOptions(getBatchSize: Func<int>, [<O; D(null)>]?batchCountLimit) =
-    new (batchSize) = BatchOptions(fun () -> batchSize)
+    new(batchSize) = BatchOptions(fun () -> batchSize)
     member _.BatchSize = getBatchSize.Invoke()
     member val MaxBatches = batchCountLimit
 
@@ -373,7 +373,7 @@ type AccessStrategy<'event, 'state> =
     /// </summary>
     | AdjacentSnapshots of snapshotEventCaseName: string * toSnapshot: ('state -> 'event)
 
-type private Category<'event, 'state, 'context>(context: MessageDbContext, codec: IEventCodec<_, _, 'context>, fold, initial, access) =
+type private StoreCategory<'event, 'state, 'context>(context: MessageDbContext, codec: IEventCodec<_, _, 'context>, fold, initial, access) =
     let loadAlgorithm log category streamId streamName requireLeader ct =
         match access with
         | AccessStrategy.Unoptimized -> context.LoadBatched(log, streamName, requireLeader, codec.TryDecode, fold, initial, ct)
@@ -419,4 +419,4 @@ type MessageDbCategory<'event, 'state, 'context>(context: MessageDbContext, name
         //   e.g. if streams are always short, events are always small, you are absolutely certain there will be no cache hits
         //        (and you have a cheerful but bored DBA)
         caching) =
-    inherit Equinox.Category<'event, 'state, 'context>(name, Category(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching)
+    inherit Equinox.Category<'event, 'state, 'context>(name, StoreCategory(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching)

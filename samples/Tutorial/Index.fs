@@ -1,7 +1,8 @@
 module Index
 
-let [<Literal>] Category = "Index"
-let streamId = Equinox.StreamId.gen IndexId.toString
+module Stream =
+    let [<Literal>] Category = "Index"
+    let id = FsCodec.StreamId.gen IndexId.toString
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -46,7 +47,7 @@ type Service<'t> internal (decider : Equinox.Decider<Events.Event<'t>, Fold.Stat
         decider.Query id
 
 let create<'t> indexId cat =
-    Service(streamId indexId |> Equinox.Decider.forStream Serilog.Log.Logger cat)
+    Service(Stream.id indexId |> Equinox.Decider.forStream Serilog.Log.Logger cat)
 
 module Cosmos =
 
@@ -54,9 +55,9 @@ module Cosmos =
     let category (context,cache) =
         let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         let accessStrategy = AccessStrategy.RollingState Fold.snapshot
-        CosmosStoreCategory(context, Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
+        CosmosStoreCategory(context, Stream.Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
 
 module MemoryStore =
 
     let category store =
-        Equinox.MemoryStore.MemoryStoreCategory(store, Category, Events.codec, Fold.fold, Fold.initial)
+        Equinox.MemoryStore.MemoryStoreCategory(store, Stream.Category, Events.codec, Fold.fold, Fold.initial)

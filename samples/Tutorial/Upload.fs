@@ -14,8 +14,9 @@ and [<Measure>] companyId
 module CompanyId =
     let toString (value : CompanyId) : string = %value
 
-let [<Literal>] Category = "Upload"
-let streamId = Equinox.StreamId.gen2 CompanyId.toString PurchaseOrderId.toString
+module Stream =
+    let [<Literal>] Category = "Upload"
+    let id = FsCodec.StreamId.gen2 CompanyId.toString PurchaseOrderId.toString
 
 type UploadId = string<uploadId>
 and [<Measure>] uploadId
@@ -52,16 +53,16 @@ type Service internal (resolve : CompanyId * PurchaseOrderId -> Equinox.Decider<
         let decider = resolve (companyId, purchaseOrderId)
         decider.Transact(decide value)
 
-let create cat = Service(streamId >> Equinox.Decider.forStream Serilog.Log.Logger cat)
+let create cat = Service(Stream.id >> Equinox.Decider.forStream Serilog.Log.Logger cat)
 
 module Cosmos =
 
     open Equinox.CosmosStore
     let category (context, cache) =
         let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        CosmosStoreCategory(context, Category, Events.codecJe, Fold.fold, Fold.initial, AccessStrategy.LatestKnownEvent, cacheStrategy)
+        CosmosStoreCategory(context, Stream.Category, Events.codecJe, Fold.fold, Fold.initial, AccessStrategy.LatestKnownEvent, cacheStrategy)
 
 module EventStore =
     open Equinox.EventStoreDb
     let category context =
-        EventStoreCategory(context, Category, Events.codec, Fold.fold, Fold.initial, AccessStrategy.LatestKnownEvent, Equinox.CachingStrategy.NoCaching)
+        EventStoreCategory(context, Stream.Category, Events.codec, Fold.fold, Fold.initial, AccessStrategy.LatestKnownEvent, Equinox.CachingStrategy.NoCaching)

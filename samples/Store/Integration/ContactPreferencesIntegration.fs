@@ -7,13 +7,13 @@ open Swensen.Unquote
 
 let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
 
+let Category = ContactPreferences.Stream.Category
 let createMemoryStore () = MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
-    MemoryStore.MemoryStoreCategory(store, ContactPreferences.Category, FsCodec.Box.Codec.Create(), fold, initial)
+    MemoryStore.MemoryStoreCategory(store, Category, FsCodec.Box.Codec.Create(), fold, initial)
     |> Decider.forStream log
     |> ContactPreferences.create
 
-let Category = ContactPreferences.Category
 let codec = ContactPreferences.Events.codec
 let codecJe = ContactPreferences.Events.codecJe
 let categoryGesWithOptimizedStorageSemantics context =

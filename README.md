@@ -151,7 +151,7 @@ The components within this repository are delivered as multi-targeted Nuget pack
 
 ## Core library
 
-- `Equinox` [![NuGet](https://img.shields.io/nuget/v/Equinox.svg)](https://www.nuget.org/packages/Equinox/): Store-agnostic decision flow runner that manages the optimistic concurrency protocol and application-level API surface. ([depends](https://www.fuget.org/packages/Equinox) only on `FSharp.Core` v `6.0.7`, `FSharp.UMX` v `1.1.0`
+- `Equinox` [![NuGet](https://img.shields.io/nuget/v/Equinox.svg)](https://www.nuget.org/packages/Equinox/): Store-agnostic decision flow runner that manages the optimistic concurrency protocol and application-level API surface. ([depends](https://www.fuget.org/packages/Equinox) only on `FSharp.Core` v `6.0.7`, `FsCodec` v `3.0.0`, `Serilog` (but not specific Serilog sinks, i.e. you configure to emit to `NLog` etc)
 
 ## Serialization support
 
@@ -168,7 +168,7 @@ The components within this repository are delivered as multi-targeted Nuget pack
 
 ## Data Store libraries
 
-- `Equinox.Core` [![NuGet](https://img.shields.io/nuget/v/Equinox.Core.svg)](https://www.nuget.org/packages/Equinox.Core/): Interfaces and helpers used in the concrete Store implementations, together with the default [`System.Runtime.Caching.MemoryCache`-based] `Cache` implementation. Hosts generic utility types frequently useful alongside Equinox: [`AsyncCacheCell`](https://github.com/jet/equinox/blob/master/src/Equinox.Core/AsyncCacheCell.fs#L36), [`Batcher`, `BatcherCache`, `BatcherDictionary`](https://github.com/jet/equinox/blob/master/src/Equinox.Core/Batching.fs#L44). ([depends](https://www.fuget.org/packages/Equinox.Core) on `Equinox`, `System.Runtime.Caching`, `Serilog` (but not specific Serilog sinks, i.e. you configure to emit to `NLog` etc))
+- `Equinox.Core` [![NuGet](https://img.shields.io/nuget/v/Equinox.Core.svg)](https://www.nuget.org/packages/Equinox.Core/): Interfaces and helpers used in the concrete Store implementations, together with the default [`System.Runtime.Caching.MemoryCache`-based] `Cache` implementation. Hosts generic utility types frequently useful alongside Equinox: [`AsyncCacheCell`](https://github.com/jet/equinox/blob/master/src/Equinox.Core/AsyncCacheCell.fs#L36), [`Batcher`, `BatcherCache`, `BatcherDictionary`](https://github.com/jet/equinox/blob/master/src/Equinox.Core/Batching.fs#L44). ([depends](https://www.fuget.org/packages/Equinox.Core) on `Equinox`, `System.Runtime.Caching`)
 - `Equinox.MemoryStore` [![MemoryStore NuGet](https://img.shields.io/nuget/v/Equinox.MemoryStore.svg)](https://www.nuget.org/packages/Equinox.MemoryStore/): In-memory store for integration testing/performance base-lining/providing out-of-the-box zero dependency storage for examples. ([depends](https://www.fuget.org/packages/Equinox.MemoryStore) on `Equinox.Core`, `FsCodec`)
 - `Equinox.CosmosStore` [![CosmosStore NuGet](https://img.shields.io/nuget/v/Equinox.CosmosStore.svg)](https://www.nuget.org/packages/Equinox.CosmosStore/): Azure CosmosDB Adapter with integrated 'unfolds' feature, facilitating optimal read performance in terms of latency and RU costs, instrumented to meet Jet's production monitoring requirements. ([depends](https://www.fuget.org/packages/Equinox.CosmosStore) on `Equinox.Core`, `Microsoft.Azure.Cosmos` >= `3.27`, `FsCodec`, `System.Text.Json`, `FSharp.Control.TaskSeq`)
 - `Equinox.CosmosStore.Prometheus` [![CosmosStore.Prometheus NuGet](https://img.shields.io/nuget/v/Equinox.CosmosStore.Prometheus.svg)](https://www.nuget.org/packages/Equinox.CosmosStore.Prometheus/): Integration package providing a `Serilog.Core.ILogEventSink` that extracts detailed metrics information attached to the `LogEvent`s and feeds them to the `prometheus-net`'s `Prometheus.Metrics` static instance. ([depends](https://www.fuget.org/packages/Equinox.CosmosStore.Prometheus) on `Equinox.CosmosStore`, `prometheus-net >= 3.6.0`)
@@ -875,7 +875,7 @@ Ouch, not looking forward to reading all that logic :frown: ? [Have a read, it's
 
 > I'm having some trouble understanding how Equinox+ESDB handles "expected version". Most of the examples use `Equinox.Decider.Transact` which is storage agnostic and doesn't offer any obvious concurrency checking. In `Equinox.EventStore.Context`, there's a `Sync` that takes a `Token` which holds a `streamVersion`. Should I be be using that instead of `Transact`?
 
-The bulk of the implementation is in [`Equinox/Decider.fs`](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs), see the `let run` function.
+The bulk of the implementation is in [`Equinox/Stream.fs`](https://github.com/jet/equinox/blob/master/src/Equinox/Stream.fs#L32), see the `let run` function.
 
 There are [sequence diagrams in Documentation MD](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#code-diagrams-for-equinoxeventstore--equinoxsqlstreamstore) but I'll summarize here:
 
@@ -958,7 +958,7 @@ As teased in both, there will hopefully eventually (but hopefully not [inevitabl
 #### In Equinox
 
 The Equinox `type Decider` exposes an [API that covers the needs of making Consistent Decisions against a State derived from Events on a Stream](
-https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L22-L56). At a high level, we have:
+https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L11-L96). At a high level, we have:
 - `Transact*` functions - these run a decision function that may result in a change to the State, including management of the retry cycle when a consistency violation occurs during the syncing of the state with the backing store (See [Optmimistic Concurrency Control](https://en.wikipedia.org/wiki/Optimistic_concurrency_control)). Some variants can also yield an outcome to the caller after the syncing to the store has taken place.
 - `Query*` functions - these run a render function projecting from the State that the Decider manages (but can't mutate it or trigger changes). The concept of [CQRS](https://martinfowler.com/bliki/CQRS.html) is a consideration here - using the Decider to read state should not be a default approach (but equally should not be considered off limits).
 

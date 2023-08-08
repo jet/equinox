@@ -4,10 +4,9 @@ module Equinox.DynamoStore.Integration.CosmosFixtures
 
 open Amazon.DynamoDBv2
 open Equinox.DynamoStore
-open System
 
 // docker compose up dynamodb-local will stand up a simulator instance that this wiring can connect to
-let private tryRead env = Environment.GetEnvironmentVariable env |> Option.ofObj
+let private tryRead env = System.Environment.GetEnvironmentVariable env |> Option.ofObj
 let private tableName = tryRead "EQUINOX_DYNAMO_TABLE" |> Option.defaultValue "equinox-test"
 let private archiveTableName = tryRead "EQUINOX_DYNAMO_TABLE_ARCHIVE" |> Option.defaultValue "equinox-test-archive"
 
@@ -16,7 +15,7 @@ let discoverConnection () =
     match tryRead "EQUINOX_DYNAMO_CONNECTION" with
     | None -> "dynamodb-local", "http://localhost:8000"
     | Some connectionString -> "EQUINOX_DYNAMO_CONNECTION", connectionString // e.g "https://dynamodb.eu-west-1.amazonaws.com"
-let isSimulatorServiceUrl url = Uri(url).IsLoopback
+let isSimulatorServiceUrl url = System.Uri(url).IsLoopback
 
 let createClient (log : Serilog.ILogger) name serviceUrl =
     // See https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.DownloadingAndRunning.html#docker for details of how to deploy a simulator instance
@@ -25,27 +24,16 @@ let createClient (log : Serilog.ILogger) name serviceUrl =
     if isSimulatorServiceUrl serviceUrl then
         // Credentials are not validated if connecting to local instance so anything will do (this avoids it looking for profiles to be configured)
         let credentials = Amazon.Runtime.BasicAWSCredentials("A", "A")
-        new AmazonDynamoDBClient(credentials, clientConfig) :> IAmazonDynamoDB
+        new AmazonDynamoDBClient(credentials, clientConfig) |> DynamoStoreClient
     else
         // omitting credentials to ctor in order to trigger use of keychain configured access
-        new AmazonDynamoDBClient(clientConfig) :> IAmazonDynamoDB
+        new AmazonDynamoDBClient(clientConfig) |> DynamoStoreClient
 
-let connectPrimary log =
+let connect log =
     let name, serviceUrl = discoverConnection ()
-    let client = createClient log name serviceUrl
-    DynamoStoreClient(client, tableName)
+    createClient log name serviceUrl
 
-let connectArchive log =
-    let name, serviceUrl = discoverConnection ()
-    let client = createClient log name serviceUrl
-    DynamoStoreClient(client, archiveTableName)
-
-let connectWithFallback log =
-    let name, serviceUrl = discoverConnection ()
-    let client = createClient log name serviceUrl
-    DynamoStoreClient(client, tableName, archiveTableName = archiveTableName)
-
-// Prepares the two required tables that the tests use via connectPrimary/Archive/WithFallback
+// Prepares the two required tables that the tests use via connect + tableName/archiveTableName
 type DynamoTablesFixture() =
 
     interface Xunit.IAsyncLifetime with
@@ -54,17 +42,29 @@ type DynamoTablesFixture() =
             let client = createClient Serilog.Log.Logger name serviceUrl
             let throughput = ProvisionedThroughput (100L, 100L)
             let throughput = Throughput.Provisioned throughput
-            DynamoStoreClient.Establish(client, tableName, archiveTableName = archiveTableName, mode = CreateIfNotExists throughput)
+            DynamoStoreContext.Establish(client, tableName, archiveTableName = archiveTableName, mode = CreateIfNotExists throughput)
+            |> Async.Ignore<DynamoStoreContext>
             |> Async.StartImmediateAsTask
-            :> System.Threading.Tasks.Task
+            |> FSharp.Control.Task.ignore
         member _.DisposeAsync() = task { () }
 
 [<Xunit.CollectionDefinition "DocStore">]
 type DocStoreCollection() =
     interface Xunit.ICollectionFixture<DynamoTablesFixture>
 
+let createPrimaryContextIgnoreMissing client tableName queryMaxItems tipMaxEvents ignoreMissing =
+    DynamoStoreContext(client, tableName, tipMaxEvents = tipMaxEvents, queryMaxItems = queryMaxItems, ignoreMissingEvents = ignoreMissing)
+let defaultTipMaxEvents = 10
+let createArchiveContext log queryMaxItems =
+    let client = connect log
+    DynamoStoreContext(client, archiveTableName, defaultTipMaxEvents, queryMaxItems = queryMaxItems)
+let createFallbackContext log queryMaxItems =
+    let client = connect log
+    DynamoStoreContext(client, tableName, defaultTipMaxEvents, queryMaxItems = queryMaxItems, archiveTableName = archiveTableName)
+
 type StoreContext = DynamoStoreContext
 type StoreCategory<'E, 'S> = DynamoStoreCategory<'E, 'S, unit>
+let primaryTarget = tableName
 #else
 [<AutoOpen>]
 module Equinox.CosmosStore.Integration.CosmosFixtures
@@ -88,52 +88,42 @@ let discoverConnection () =
     | Some connectionString -> "EQUINOX_COSMOS_CONNECTION", Discovery.ConnectionString connectionString
 
 let createClient (log : Serilog.ILogger) name (discovery : Discovery) =
-    let connector = CosmosStoreConnector(discovery, requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
-    log.Information("CosmosDB Connecting {name} to {endpoint}", name, discovery.Endpoint)
+    let connector = CosmosStoreConnector(discovery, requestTimeout = TimeSpan.FromSeconds 3.,
+                                         maxRetryAttemptsOnRateLimitedRequests = 2, maxRetryWaitTimeOnRateLimitedRequests = TimeSpan.FromMinutes 1.)
+    log.Information("CosmosStore {name} {endpoint}", name, discovery.Endpoint)
     connector.CreateUninitialized()
 
-let connectPrimary log =
+let connect log =
     let name, discovery = discoverConnection ()
     let client = createClient log name discovery
-    CosmosStoreClient(client, databaseId, containerId)
-
-let connectArchive log =
-    let name, discovery = discoverConnection ()
-    let client = createClient log name discovery
-    CosmosStoreClient(client, databaseId, archiveContainerId)
-
-let connectWithFallback log =
-    let name, discovery = discoverConnection ()
-    let client = createClient log name discovery
-    CosmosStoreClient(client, databaseId, containerId, archiveContainerId = archiveContainerId)
+    CosmosStoreClient(client)
 
 [<Xunit.CollectionDefinition "DocStore">]
 type DocStoreCollection() =
     do ()
 
-type StoreContext = CosmosStoreContext
-type StoreCategory<'E, 'S> = CosmosStoreCategory<'E, 'S, unit>
-#endif
-
-let createPrimaryContextIgnoreMissing client queryMaxItems tipMaxEvents ignoreMissing =
-    StoreContext(client, tipMaxEvents = tipMaxEvents, queryMaxItems = queryMaxItems, ignoreMissingEvents = ignoreMissing)
-
-let createPrimaryContextEx log queryMaxItems tipMaxEvents =
-    let connection = connectPrimary log
-    createPrimaryContextIgnoreMissing connection queryMaxItems tipMaxEvents false
+let createPrimaryContextIgnoreMissing client containerId queryMaxItems tipMaxEvents ignoreMissing =
+    CosmosStoreContext(client, databaseId, containerId, tipMaxEvents = tipMaxEvents, queryMaxItems = queryMaxItems, ignoreMissingEvents = ignoreMissing)
 
 let defaultTipMaxEvents = 10
+let createArchiveContext log queryMaxItems =
+    let client = connect log
+    CosmosStoreContext(client, databaseId, containerId, defaultTipMaxEvents, queryMaxItems = queryMaxItems)
+let createFallbackContext log queryMaxItems =
+    let client = connect log
+    CosmosStoreContext(client, databaseId, containerId, defaultTipMaxEvents, queryMaxItems = queryMaxItems, archiveContainerId = archiveContainerId)
+
+type StoreContext = CosmosStoreContext
+type StoreCategory<'E, 'S> = CosmosStoreCategory<'E, 'S, unit>
+let primaryTarget = containerId
+#endif
+
+let createPrimaryContextEx log queryMaxItems tipMaxEvents =
+    let client = connect log
+    createPrimaryContextIgnoreMissing client primaryTarget queryMaxItems tipMaxEvents false
 
 let createPrimaryContext log queryMaxItems =
     createPrimaryContextEx log queryMaxItems defaultTipMaxEvents
-
-let createArchiveContext log queryMaxItems =
-    let connection = connectArchive log
-    StoreContext(connection, defaultTipMaxEvents, queryMaxItems = queryMaxItems)
-
-let createFallbackContext log queryMaxItems =
-    let connection = connectWithFallback log
-    StoreContext(connection, defaultTipMaxEvents, queryMaxItems = queryMaxItems)
 
 let defaultQueryMaxItems = 10
 
@@ -142,9 +132,9 @@ let createPrimaryEventsContext log queryMaxItems tipMaxItems =
     Core.EventsContext(context, log)
 
 let createPrimaryEventsContextWithUnsafe log queryMaxItems tipMaxItems =
-    let connection = connectPrimary log
+    let client = connect log
     let create ignoreMissing =
-        let context = createPrimaryContextIgnoreMissing connection queryMaxItems tipMaxItems ignoreMissing
+        let context = createPrimaryContextIgnoreMissing client primaryTarget queryMaxItems tipMaxItems ignoreMissing
         Core.EventsContext(context, log)
     create false, create true
 

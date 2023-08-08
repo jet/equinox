@@ -33,7 +33,7 @@ type InvalidHttpResponseException =
 
     member x.RequestMethod = HttpMethod(x.requestMethod)
 
-    private new (userMessage: string, requestMethod: HttpMethod, requestUri: Uri, requestBody: string,
+    private new(userMessage: string, requestMethod: HttpMethod, requestUri: Uri, requestBody: string,
                    statusCode: HttpStatusCode, reasonPhrase: string, responseBody: string,
                    ?innerException: exn) =
         {
@@ -56,7 +56,7 @@ type InvalidHttpResponseException =
             add "requestUri" e.RequestUri ; add "requestMethod" e.requestMethod ; add "requestBody" e.RequestBody
             add "statusCode" e.StatusCode ; add "reasonPhrase" e.ReasonPhrase ; add "responseBody" e.ResponseBody
 
-    new (si: SerializationInfo, sc: StreamingContext) =
+    new(si: SerializationInfo, sc: StreamingContext) =
         let get name = si.GetValue(name, typeof<'a>) :?> 'a
         {
             inherit Exception(si, sc) ; userMessage = get "userMessage" ;

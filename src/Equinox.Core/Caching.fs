@@ -33,7 +33,7 @@ type private Decorator<'event, 'state, 'context, 'cat when 'cat :> ICategory<'ev
 let private mkKey prefix streamName =
     prefix + streamName
 
-let internal policySlidingExpiration (slidingExpiration: System.TimeSpan) () =
+let private policySlidingExpiration (slidingExpiration: System.TimeSpan) () =
     System.Runtime.Caching.CacheItemPolicy(SlidingExpiration = slidingExpiration)
 let private policyFixedTimeSpan (period: System.TimeSpan) () =
     let expirationPoint = let creationDate = System.DateTimeOffset.UtcNow in creationDate.Add period

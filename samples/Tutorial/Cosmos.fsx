@@ -39,8 +39,9 @@ module Log =
 
 module Favorites =
 
-    let Category = "Favorites"
-    let streamId = Equinox.StreamId.gen id
+    module Stream =
+        let Category = "Favorites"
+        let id = FsCodec.StreamId.gen id
 
     module Events =
 
@@ -80,7 +81,7 @@ module Favorites =
             let decider = resolve clientId
             decider.Query id
 
-    let create cat = Service(streamId >> Equinox.Decider.forStream Log.log cat)
+    let create cat = Service(Stream.id >> Equinox.Decider.forStream Log.log cat)
 
     module Cosmos =
 
@@ -88,7 +89,7 @@ module Favorites =
         let accessStrategy = AccessStrategy.Unoptimized // Or Snapshot etc https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#access-strategies
         let category (context, cache) =
             let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-            CosmosStoreCategory(context, Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
+            CosmosStoreCategory(context, Stream.Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
 
 let [<Literal>] appName = "equinox-tutorial"
 
@@ -101,8 +102,9 @@ module Store =
     let discovery = Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION")
     let connector = CosmosStoreConnector(discovery, System.TimeSpan.FromSeconds 5., 2, System.TimeSpan.FromSeconds 5., Microsoft.Azure.Cosmos.ConnectionMode.Gateway)
 
-    let storeClient = CosmosStoreClient.Connect(connector.CreateAndInitialize, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER") |> Async.RunSynchronously
-    let context = CosmosStoreContext(storeClient, tipMaxEvents = 10)
+    let databaseId, containerId = read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER"
+    let storeClient = CosmosStoreClient.Connect(connector.CreateAndInitialize, databaseId, containerId) |> Async.RunSynchronously
+    let context = CosmosStoreContext(storeClient, databaseId, containerId, tipMaxEvents = 10)
     let cache = Equinox.Cache(appName, 20)
 
 let service = Favorites.Cosmos.category (Store.context, Store.cache) |> Favorites.create
