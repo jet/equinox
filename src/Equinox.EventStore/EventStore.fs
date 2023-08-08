@@ -350,7 +350,7 @@ type EventStoreConnection(readConnection, [<O; D(null)>] ?writeConnection, [<O; 
     member _.WriteRetryPolicy = writeRetryPolicy
 
 type BatchOptions(getBatchSize: Func<int>, [<O; D(null)>]?batchCountLimit) =
-    new (batchSize) = BatchOptions(fun () -> batchSize)
+    new(batchSize) = BatchOptions(fun () -> batchSize)
     member _.BatchSize = getBatchSize.Invoke()
     member _.MaxBatches = batchCountLimit
 
@@ -361,9 +361,9 @@ type EventStoreContext(connection: EventStoreConnection, batchOptions: BatchOpti
     let isResolvedEventEventType (tryDecode, predicate) (x: ResolvedEvent) = predicate (tryDecode x.Event.Data)
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
     let conn requireLeader = if requireLeader then connection.WriteConnection else connection.ReadConnection
-    new (   connection: EventStoreConnection,
-            // Max number of Events to retrieve in a single batch. Also affects frequency of RollingSnapshots. Default: 500.
-            [<O; D null>] ?batchSize) =
+    new(connection: EventStoreConnection,
+        // Max number of Events to retrieve in a single batch. Also affects frequency of RollingSnapshots. Default: 500.
+        [<O; D null>] ?batchSize) =
         EventStoreContext(connection, BatchOptions(batchSize = defaultArg batchSize 500))
     member val BatchOptions = batchOptions
 

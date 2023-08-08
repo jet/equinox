@@ -213,7 +213,7 @@ module Log =
     type Measurement =
        {   table: string; stream: string
            interval: StopwatchInterval; bytes: int; count: int; ru: float }
-       member x.Category = x.stream |> StreamName.Internal.trust |> StreamName.category
+       member x.Category = x.stream |> StreamName.Internal.trust |> StreamName.Category.ofStreamName
     let inline metric table stream t bytes count rc: Measurement =
         { table = table; stream = stream; interval = t; bytes = bytes; count = count; ru = rc.total }
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
@@ -1155,7 +1155,7 @@ type DynamoStoreConnector(clientConfig: Amazon.DynamoDBv2.AmazonDynamoDBConfig, 
     /// Connect explicitly with a triplet of serviceUrl, accessKey, secretKey. No fallback behaviors are applied.
     /// timeout: Required; AWS SDK Default: 100s
     /// maxRetries: Required; AWS SDK Default: 10
-    new (serviceUrl, accessKey, secretKey, timeout: TimeSpan, retries) =
+    new(serviceUrl, accessKey, secretKey, timeout: TimeSpan, retries) =
         let m = Amazon.Runtime.RequestRetryMode.Standard
         let clientConfig = Amazon.DynamoDBv2.AmazonDynamoDBConfig(ServiceURL = serviceUrl, RetryMode = m, MaxErrorRetry = retries, Timeout = timeout)
         DynamoStoreConnector(clientConfig, Amazon.Runtime.BasicAWSCredentials(accessKey, secretKey))
@@ -1164,7 +1164,7 @@ type DynamoStoreConnector(clientConfig: Amazon.DynamoDBv2.AmazonDynamoDBConfig, 
     /// systemName: Amazon SystemName, e.g. "us-west-1"
     /// timeout: Required; AWS SDK Default: 100s
     /// maxRetries: Required; AWS SDK Default: 10
-    new (systemName, timeout: TimeSpan, retries) =
+    new(systemName, timeout: TimeSpan, retries) =
         let regionEndpoint = Amazon.RegionEndpoint.GetBySystemName(systemName)
         let m = Amazon.Runtime.RequestRetryMode.Standard
         let clientConfig = Amazon.DynamoDBv2.AmazonDynamoDBConfig(RegionEndpoint = regionEndpoint, RetryMode = m, MaxErrorRetry = retries, Timeout = timeout)

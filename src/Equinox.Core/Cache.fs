@@ -53,7 +53,7 @@ type private CacheEntry<'state>(initialToken: StreamToken, initialState: 'state,
         x.MergeUpdates(isStale, timestamp, token, state) // merge observed result into the cache
         return res }
 
-type Cache private (inner: System.Runtime.Caching.MemoryCache) =
+type Cache(inner: System.Runtime.Caching.MemoryCache) =
     let tryLoad key =
         match inner.Get key with
         | null -> ValueNone
@@ -73,10 +73,12 @@ type Cache private (inner: System.Runtime.Caching.MemoryCache) =
         match addOrGet key options entry with
         | Ok _ -> () // Our fresh one got added
         | Error existingEntry -> existingEntry.MergeUpdates(isStale, timestamp, token, state)
-    new (name, sizeMb: int) =
+    new(name, sizeMb: int) =
         let config = System.Collections.Specialized.NameValueCollection(1)
         config.Add("cacheMemoryLimitMegabytes", string sizeMb);
         Cache(new System.Runtime.Caching.MemoryCache(name, config))
+    /// Exposes the internal MemoryCache
+    member val Inner = inner
     // if there's a non-zero maxAge, concurrent read attempts share the roundtrip (and its fate, if it throws)
     member internal _.Load(key, maxAge, isStale, policy, loadOrReload, ct) = task {
         let loadOrReload maybeBaseState = task {
@@ -96,9 +98,6 @@ type Cache private (inner: System.Runtime.Caching.MemoryCache) =
     // Newer values get saved; equal values update the last retrieval timestamp
     member internal _.Save(key, isStale, policy, timestamp, token, state) =
         addOrMergeCacheEntry isStale key policy timestamp (token, state)
-
-    /// Exposes the internal MemoryCache
-    member val Inner = inner
 
 type [<NoComparison; NoEquality; RequireQualifiedAccess>] CachingStrategy =
     /// Do not apply any caching strategy for this Category.

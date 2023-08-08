@@ -178,7 +178,7 @@ module Log =
     type Measurement =
        {   database: string; container: string; stream: string
            interval: StopwatchInterval; bytes: int; count: int; ru: float }
-       member x.Category = x.stream |> StreamName.Internal.trust |> StreamName.category
+       member x.Category = x.stream |> StreamName.Internal.trust |> StreamName.Category.ofStreamName
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
     type Metric =
         /// Individual read request for the Tip

@@ -306,7 +306,7 @@ type MessageDbClient internal (reader, writer, ?readRetryPolicy, ?writeRetryPoli
         MessageDbClient(reader, writer, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
 
 type BatchOptions(getBatchSize: Func<int>, [<O; D(null)>]?batchCountLimit) =
-    new (batchSize) = BatchOptions(fun () -> batchSize)
+    new(batchSize) = BatchOptions(fun () -> batchSize)
     member _.BatchSize = getBatchSize.Invoke()
     member val MaxBatches = batchCountLimit
 

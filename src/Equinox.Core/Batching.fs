@@ -43,7 +43,7 @@ type Batcher<'Req, 'Res>(dispatch: Func<'Req[], CancellationToken, Task<'Res[]>>
     let lingerMs = match linger with None -> 1 | Some x -> int x.TotalMilliseconds
     let mutable cell = AsyncBatch<'Req, 'Res>()
 
-    new (dispatch: 'Req[] -> Async<'Res[]>, ?linger) = Batcher((fun items ct -> Async.StartImmediateAsTask(dispatch items, ct)), ?linger = linger)
+    new(dispatch: 'Req[] -> Async<'Res[]>, ?linger) = Batcher((fun items ct -> Async.StartImmediateAsTask(dispatch items, ct)), ?linger = linger)
 
     /// Include an item in the batch; await the collective dispatch (subject to the configured linger time)
     member x.ExecuteAsync(req, ct) = task {
