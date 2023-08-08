@@ -7,7 +7,7 @@
   <ItemGroup>
     <Compile Include="..\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
     <Compile Include="Tracing.fs" />
-    <Compile Include="Core.fs" />
+    <Compile Include="Stream.fs" />
     <Compile Include="Decider.fs" />
     <Compile Include="Category.fs" />
   </ItemGroup>

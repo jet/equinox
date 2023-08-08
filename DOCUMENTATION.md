@@ -692,13 +692,13 @@ Equinox’s Command Handling consists of < 200 lines including interfaces and
 comments in https://github.com/jet/equinox/tree/master/src/Equinox - the
 elements you'll touch in a normal application are:
 
-- [`module Impl`](https://github.com/jet/equinox/blob/master/src/Equinox/Core.fs#L33) -
+- [`module Stream`](https://github.com/jet/equinox/blob/master/src/Equinox/Stream.fs#L30) -
   internal implementation of Optimistic Concurrency Control / retry loop used
   by `Decider`. It's recommended to at least scan this file as it defines the
   Transaction semantics that are central to Equinox and the overall `Decider` concept.
-- [`type Decider`](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L7) -
+- [`type Decider`](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L11) -
   surface API one uses to `Transact` or `Query` against a specific stream's state
-- [`type LoadOption` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L110) -
+- [`type LoadOption` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L218) -
   used to specify optimization overrides to be applied when a `Decider`'s `Query` or `Transact` operations establishes the state of the stream
 
 Its recommended to read the examples in conjunction with perusing the code in

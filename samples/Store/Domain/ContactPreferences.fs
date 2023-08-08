@@ -59,7 +59,7 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
 
     member _.ReadStale(email) =
         let decider = resolve email
-        decider.Query(id, Equinox.AnyCachedValue)
+        decider.Query(id, Equinox.LoadOption.AnyCachedValue)
 
 let create resolve =
     Service(Stream.id >> resolve)

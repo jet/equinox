@@ -1,4 +1,5 @@
-﻿namespace Equinox.Core
+﻿// Defines base Contract with Stores; Decider talks to an IStream, which is implemented in full within this file
+namespace Equinox.Core
 
 /// Store-agnostic interface representing interactions a Decider can have with a set of streams with a given pair of Event and State types
 type ICategory<'event, 'state, 'context> =

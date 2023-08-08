@@ -875,7 +875,7 @@ Ouch, not looking forward to reading all that logic :frown: ? [Have a read, it's
 
 > I'm having some trouble understanding how Equinox+ESDB handles "expected version". Most of the examples use `Equinox.Decider.Transact` which is storage agnostic and doesn't offer any obvious concurrency checking. In `Equinox.EventStore.Context`, there's a `Sync` that takes a `Token` which holds a `streamVersion`. Should I be be using that instead of `Transact`?
 
-The bulk of the implementation is in [`Equinox/Decider.fs`](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs), see the `let run` function.
+The bulk of the implementation is in [`Equinox/Stream.fs`](https://github.com/jet/equinox/blob/master/src/Equinox/Stream.fs#L32), see the `let run` function.
 
 There are [sequence diagrams in Documentation MD](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#code-diagrams-for-equinoxeventstore--equinoxsqlstreamstore) but I'll summarize here:
 
@@ -958,7 +958,7 @@ As teased in both, there will hopefully eventually (but hopefully not [inevitabl
 #### In Equinox
 
 The Equinox `type Decider` exposes an [API that covers the needs of making Consistent Decisions against a State derived from Events on a Stream](
-https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L22-L56). At a high level, we have:
+https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L11-L96). At a high level, we have:
 - `Transact*` functions - these run a decision function that may result in a change to the State, including management of the retry cycle when a consistency violation occurs during the syncing of the state with the backing store (See [Optmimistic Concurrency Control](https://en.wikipedia.org/wiki/Optimistic_concurrency_control)). Some variants can also yield an outcome to the caller after the syncing to the store has taken place.
 - `Query*` functions - these run a render function projecting from the State that the Decider manages (but can't mutate it or trigger changes). The concept of [CQRS](https://martinfowler.com/bliki/CQRS.html) is a consideration here - using the Decider to read state should not be a default approach (but equally should not be considered off limits).
 
