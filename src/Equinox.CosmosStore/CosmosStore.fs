@@ -1236,20 +1236,20 @@ type CosmosStoreClient
         // Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
         [<O; D null>] ?disableInitialization) =
     let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<struct (string * string), Initialization.ContainerInitializerGuard>()
-    let customize = match customize with Some f -> f.Invoke | None -> id
-    let fallbackClient = defaultArg archiveClient client
-    let createContainer (client: CosmosClient) struct (d, c) = client.GetDatabase(d).GetContainer(c) |> customize
     member val CosmosClient = client
     static member Connect(connector: CosmosStoreConnector, databaseId, containerIds: string[], [<O; D null>] ?customize, [<O; D null>] ?disableInitialization) = async {
         let! cosmosClient = connector.Connect(databaseId, containerIds)
         return CosmosStoreClient(cosmosClient, ?customize = customize, ?disableInitialization = disableInitialization) }
+    member private x.CreateContainer(client: CosmosClient, struct (databaseId, containerId)) =
+        let container = client.GetDatabase(databaseId).GetContainer(containerId)
+        match customize with Some f -> f.Invoke container | None -> container
     member internal x.GetOrAddPrimaryContainer(databaseId, containerId): Initialization.ContainerInitializerGuard =
         let createContainerInitializerGuard databaseIdAndContainerId =
             let init = match disableInitialization with Some true -> None | _ -> Some (Initialization.createSyncStoredProcIfNotExists None)
-            Initialization.ContainerInitializerGuard(createContainer client databaseIdAndContainerId, ?initContainer = init)
+            Initialization.ContainerInitializerGuard(x.CreateContainer(client, databaseIdAndContainerId), ?initContainer = init)
         containerInitGuards.GetOrAdd(struct (databaseId, containerId), createContainerInitializerGuard)
-    member internal _.CreateFallbackContainer(databaseId, containerId) =
-        createContainer fallbackClient (databaseId, containerId)
+    member internal x.CreateFallbackContainer(databaseId, containerId) =
+        x.CreateContainer(defaultArg archiveClient client, (databaseId, containerId))
 
 /// Defines the policies for accessing a given Container (And optional fallback Container for retrieval of archived data).
 type CosmosStoreContext(client: CosmosStoreClient, databaseId, containerId, tipOptions, queryOptions, ?archive) =
