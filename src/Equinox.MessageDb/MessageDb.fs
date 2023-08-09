@@ -374,6 +374,7 @@ type AccessStrategy<'event, 'state> =
     | AdjacentSnapshots of snapshotEventCaseName: string * toSnapshot: ('state -> 'event)
 
 type private StoreCategory<'event, 'state, 'context>(context: MessageDbContext, codec: IEventCodec<_, _, 'context>, fold, initial, access) =
+    let fold s xs = (fold : System.Func<'state, 'event[], 'state>).Invoke(s, xs)
     let loadAlgorithm log category streamId streamName requireLeader ct =
         match access with
         | AccessStrategy.Unoptimized -> context.LoadBatched(log, streamName, requireLeader, codec.TryDecode, fold, initial, ct)

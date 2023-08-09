@@ -381,6 +381,7 @@ type private CompactionContext(eventsLen: int, capacityBeforeCompaction: int) =
     member _.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
 type private StoreCategory<'event, 'state, 'context>(context: EventStoreContext, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, access) =
+    let fold s xs = (fold : System.Func<'state, 'event[], 'state>).Invoke(s, xs)
     let tryDecode (e: ResolvedEvent) = e.Event |> ClientCodec.timelineEvent |> codec.TryDecode
     let isOrigin =
         match access with

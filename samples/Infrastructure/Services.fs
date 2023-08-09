@@ -10,7 +10,7 @@ type Store(store) =
     member _.Category
         (   name,
             codec: FsCodec.IEventCodec<'event, ReadOnlyMemory<byte>, unit>,
-            fold: 'state -> 'event[] -> 'state,
+            fold: Func<'state, 'event[], 'state>,
             initial: 'state,
             snapshot: ('event -> bool) * ('state -> 'event)): Category<'event, 'state, unit> =
         match store with

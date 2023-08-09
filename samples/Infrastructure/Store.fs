@@ -143,8 +143,8 @@ module Dynamo =
 
     type Equinox.DynamoStore.DynamoStoreContext with
 
-        member internal x.LogConfiguration(role, log: ILogger) =
-            log.Information("DynamoStore {role:l} Table {table} Archive {archive}", role, x.TableName, Option.toObj x.ArchiveTableName)
+        member internal x.LogConfiguration(log: ILogger, role, tableName: string, ?archiveTableName: string) =
+            log.Information("DynamoStore {role:l} Table {table} Archive {archive}", role, tableName, Option.toObj archiveTableName)
             log.Information("DynamoStore Tip thresholds: {maxTipBytes}b {maxTipEvents}e Query Paging {queryMaxItems} items",
                             x.TipOptions.MaxBytes, Option.toNullable x.TipOptions.MaxEvents, x.QueryOptions.MaxItems)
 
@@ -213,7 +213,7 @@ module Dynamo =
         let client = a.Connector.CreateDynamoDbClient() |> DynamoStoreClient
         let context = DynamoStoreContext(client, a.Table, maxBytes = a.TipMaxBytes, queryMaxItems = a.QueryMaxItems,
                                          ?tipMaxEvents = a.TipMaxEvents, ?archiveTableName = a.ArchiveTable)
-        context.LogConfiguration("Main", log)
+        context.LogConfiguration(log, "Main", a.Table, ?archiveTableName = a.ArchiveTable)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
         Context.Dynamo (context, cacheStrategy, unfolds)
 

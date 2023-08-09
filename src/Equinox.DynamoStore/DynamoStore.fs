@@ -429,7 +429,7 @@ type StoreTable(name, createContext: (RequestMetrics -> unit) -> TableContext<Ba
     member _.Context(collector) = createContext collector
     member _.Name = name
 
-    /// As per Equinox.CosmosStore, we assume the table to be provisioned correctly (see DynamoStoreClient.Connect(ConnectMode) re validating on startup)
+    /// As per Equinox.CosmosStore, we assume the table to be provisioned correctly (see DynamoStoreContext.Establish(ConnectMode) re validating on startup)
     static member Create(client, tableName) =
         let createContext collector = TableContext<Batch.Schema>(client, tableName, metricsCollector = collector)
         StoreTable(tableName, createContext)
@@ -1114,8 +1114,9 @@ type internal StoreClient(table: StoreTable, fallback: StoreTable option, query:
 
 type internal StoreCategory<'event, 'state, 'context>
     (   store: StoreClient,
-        codec: IEventCodec<'event, EncodedBody, 'context>, fold: 'state -> 'event[] -> 'state, initial: 'state, isOrigin: 'event -> bool,
+        codec: IEventCodec<'event, EncodedBody, 'context>, fold, initial: 'state, isOrigin: 'event -> bool,
         checkUnfolds, mapUnfolds: Choice<unit, 'event[] -> 'state -> 'event[], 'event[] -> 'state -> 'event[] * 'event[]>) =
+    let fold s xs = (fold : Func<'state, 'event[], 'state>).Invoke(s, xs)
     let fetch state f = task { let! token', events = f in return struct (token', fold state events) }
     let reload (log, streamNam, requireLeader, (Token.Unpack pos as streamToken), state) ct: Task<struct (StreamToken * 'state)> = task {
         match! store.Reload(log, (streamNam, pos), requireLeader, (codec.TryDecode, isOrigin), ct) with
@@ -1206,11 +1207,18 @@ type DynamoStoreClient(client: Amazon.DynamoDBv2.IAmazonDynamoDB,
         // Client to use for fallback tables.
         // Events that have been archived and purged (and hence are missing from the primary) are retrieved from this Table
         [<O; D null>] ?fallbackClient: Amazon.DynamoDBv2.IAmazonDynamoDB) =
+    /// Verifies or Creates the underlying Tables comprising the Store
+    member x.Establish(tableName: string, [<O; D null>] ?archiveTableName, [<O; D null>] ?mode: ConnectMode): Async<unit> = async {
+        let init ddb t = ConnectMode.apply ddb t (defaultArg mode ConnectMode.Verify)
+        do! init x.Primary tableName
+        match archiveTableName with None -> () | Some archiveTable-> do! init x.Fallback archiveTable }
     member val internal Primary = client
     member val internal Fallback = defaultArg fallbackClient client
 
 /// Defines the policies for accessing a given Table (And optional fallback Table for retrieval of archived data).
 type DynamoStoreContext(client: DynamoStoreClient, tableName, tipOptions, queryOptions, ?archiveTableName) =
+    member val TipOptions = tipOptions
+    member val QueryOptions = queryOptions
     new(client: DynamoStoreClient, tableName,
         // Maximum serialized event size to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 32K.
         [<O; D null>] ?maxBytes,
@@ -1226,21 +1234,21 @@ type DynamoStoreContext(client: DynamoStoreClient, tableName, tipOptions, queryO
         let tipOptions = TipOptions(?maxBytes = maxBytes, ?maxEvents = tipMaxEvents)
         let queryOptions = QueryOptions(?maxItems = queryMaxItems, ?maxRequests = queryMaxRequests, ?ignoreMissingEvents = ignoreMissingEvents)
         DynamoStoreContext(client, tableName, tipOptions, queryOptions, ?archiveTableName = archiveTableName)
-    member val TableName = tableName
-    member val TipOptions = tipOptions
-    member val QueryOptions = queryOptions
-    member val ArchiveTableName = archiveTableName
+    /// Verifies or Creates the underlying Tables comprising the Store before creating a `DynamoStoreContext`
+    static member Establish(client: DynamoStoreClient, tableName: string,
+            [<O; D null>] ?maxBytes, [<O; D null>] ?tipMaxEvents,
+            [<O; D null>] ?queryMaxItems, [<O; D null>] ?queryMaxRequests,
+            [<O; D null>] ?ignoreMissingEvents, [<O; D null>] ?archiveTableName,
+            [<O; D null>] ?mode: ConnectMode): Async<DynamoStoreContext> = async {
+        do! client.Establish(tableName, ?archiveTableName = archiveTableName)
+        return DynamoStoreContext(client, tableName,
+            ?maxBytes = maxBytes, ?tipMaxEvents = tipMaxEvents,
+            ?queryMaxItems = queryMaxItems, ?queryMaxRequests = queryMaxRequests,
+            ?ignoreMissingEvents = ignoreMissingEvents, ?archiveTableName = archiveTableName) }
     member val internal StoreClient =
         let primary = StoreTable.Create(client.Primary, tableName)
         let fallback = archiveTableName |> Option.map(fun t -> StoreTable.Create(client.Fallback, t))
         StoreClient(primary, fallback, queryOptions, tipOptions)
-
-    /// Verifies or Creates the underlying Tables comprising the Store before creating a `DynamoStoreContext`
-    static member Establish(client: DynamoStoreClient, tableName: string, [<O; D null>] ?archiveTableName, [<O; D null>] ?mode: ConnectMode): Async<DynamoStoreContext> = async {
-        let init ddb t = ConnectMode.apply ddb t (defaultArg mode ConnectMode.Verify)
-        do! init client.Primary tableName
-        match archiveTableName with None -> () | Some archiveTable-> do! init client.Fallback archiveTable
-        return DynamoStoreContext(client, tableName, ?archiveTableName = archiveTableName) }
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event, 'state> =

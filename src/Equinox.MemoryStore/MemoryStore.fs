@@ -49,6 +49,7 @@ type VolatileStore<'Format>() =
             outcome
 
 type private StoreCategory<'event, 'state, 'context, 'Format>(store: VolatileStore<'Format>, codec, fold, initial) =
+    let fold s xs = (fold : System.Func<'state, 'event[], 'state>).Invoke(s, xs)
     let res version state events = struct ({ value = null; version = version; streamBytes = -1 }, fold state events)
     let decode events = Array.chooseV (codec : FsCodec.IEventCodec<'event, 'Format, 'context>).TryDecode events
     interface ICategory<'event, 'state, 'context> with
