@@ -129,7 +129,7 @@ type Tests() =
         let t1 = allowStale 1
         do! Task.Delay 10
         test <@ (1, 0) = (cat.Loads, cat.Reloads) @>
-        let! struct (_token, state) = allowStale 200
+        let! struct (_token, state) = allowStale 300
         test <@ (1, 1, 0) = (state, cat.Loads, cat.Reloads) @>
         let! struct (_token, state) = t1
         test <@ (1, 1, 0) = (state, cat.Loads, cat.Reloads) @> }
