@@ -1,9 +1,7 @@
 module Equinox.Core.Caching
 
-open Serilog
-
 type IReloadable<'state> =
-    abstract Reload: log: ILogger * streamName: string * requireLeader: bool * streamToken: StreamToken * state: 'state * ct: CancellationToken
+    abstract Reload: log: Serilog.ILogger * streamName: string * requireLeader: bool * streamToken: StreamToken * state: 'state * ct: CancellationToken
                      -> Task<struct (StreamToken * 'state)>
 
 let private tee f (inner: CancellationToken -> Task<struct (StreamToken * 'state)>) ct = task {

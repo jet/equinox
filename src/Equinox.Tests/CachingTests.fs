@@ -53,12 +53,6 @@ let write sn (sut: Equinox.Core.ICategory<_, _, _>) = task {
     let wState' = trap <@ match wr with Equinox.Core.SyncResult.Written (_token, state') -> state' | _ -> failwith "unexpected" @>
     test <@ expectedWriteState = wState' @> }
 
-// Pinning the fact that the algorithm is not sensitive to the reuse of the initial value of a cache entry
-let [<Fact>] ``AsyncLazy.Empty is a true singleton, does not allocate`` () =
-    let i1 = Equinox.Core.AsyncLazy<int>.Empty
-    let i2 = Equinox.Core.AsyncLazy<int>.Empty
-    test <@ obj.ReferenceEquals(i1, i2) @>
-
 let [<Fact>] ``NoCaching strategy does no wrapping`` () =
     let cat = SpyCategory()
     let sut = Equinox.Core.Caching.apply isStale Equinox.CachingStrategy.NoCaching cat
@@ -153,10 +147,10 @@ type Tests() =
     let [<Fact>] ``allowStale handles overlapped incompatible loads correctly`` () = task {
         cat.Delay <- TimeSpan.FromMilliseconds 50
         let t1 = allowStale 1
-        do! Task.Delay 20
+        do! Task.Delay 40 // Wait till it should definitely have kicked off
         test <@ (1, 0) = (cat.Loads, cat.Reloads) @>
         do! Task.Delay 50
-        let! struct (_token, state) = allowStale 79
+        let! struct (_token, state) = allowStale 69 // Should trigger a reload as 90ms has passed since the first load started
         test <@ (2, 1, 1) = (state, cat.Loads, cat.Reloads) @>
         let! struct (_token, state) = t1
         test <@ (1, 1, 1) = (state, cat.Loads, cat.Reloads) @> }

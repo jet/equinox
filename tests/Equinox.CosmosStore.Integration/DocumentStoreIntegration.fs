@@ -1,7 +1,6 @@
 ﻿module Equinox.Store.Integration.DocumentStoreIntegration
 
 open Domain
-open Equinox.Core
 open FSharp.UMX
 open Swensen.Unquote
 open System

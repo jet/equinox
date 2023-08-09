@@ -5,10 +5,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\src\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
+    <Compile Include="..\..\src\Equinox\Infrastructure.fs" />
+    <Compile Include="AsyncLazyTests.fs" />
     <Compile Include="AsyncCacheCellTests.fs" />
     <Compile Include="BatchingTests.fs" />
-    <Compile Include="CachingTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
