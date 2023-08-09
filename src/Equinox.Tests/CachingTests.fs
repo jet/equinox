@@ -164,7 +164,7 @@ type Tests() =
         do! Task.Delay 50
         let! struct (_token, state) = allowStale 1000 // Does not load, or extend lifetime
         test <@ (1, 1, 0) = (state, cat.Loads, cat.Reloads) @>
-        let! struct (_token, state) = allowStale 50 // Triggers reload as delay of 50 above has rendered entry stale
+        let! struct (_token, state) = allowStale 40 // Triggers reload as delay of 50 above has rendered entry stale
         test <@ (2, 1, 1) = (state, cat.Loads, cat.Reloads) @>
 
         cat.Delay <- TimeSpan.FromMilliseconds 50
