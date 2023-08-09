@@ -125,11 +125,11 @@ type Tests() =
     let allowStale toleranceMs = load sn (TimeSpan.FromMilliseconds toleranceMs) sut
 
     let [<Fact>] ``allowStale unifies compatible concurrent loads`` () = task {
-        cat.Delay <- TimeSpan.FromMilliseconds 50
+        cat.Delay <- TimeSpan.FromMilliseconds 70 // Ensure it's still in progress when our Delay is over
         let t1 = allowStale 1
-        do! Task.Delay 10
+        do! Task.Delay 40 // Allow it time to definitely have started
         test <@ (1, 0) = (cat.Loads, cat.Reloads) @>
-        let! struct (_token, state) = allowStale 200
+        let! struct (_token, state) = allowStale 300
         test <@ (1, 1, 0) = (state, cat.Loads, cat.Reloads) @>
         let! struct (_token, state) = t1
         test <@ (1, 1, 0) = (state, cat.Loads, cat.Reloads) @> }
@@ -164,12 +164,12 @@ type Tests() =
         do! Task.Delay 50
         let! struct (_token, state) = allowStale 1000 // Does not load, or extend lifetime
         test <@ (1, 1, 0) = (state, cat.Loads, cat.Reloads) @>
-        let! struct (_token, state) = allowStale 50 // Triggers reload as delay of 50 above has rendered entry stale
+        let! struct (_token, state) = allowStale 40 // Triggers reload as delay of 50 above has rendered entry stale
         test <@ (2, 1, 1) = (state, cat.Loads, cat.Reloads) @>
 
         cat.Delay <- TimeSpan.FromMilliseconds 50
         let load1 = requireLoad ()
-        do! Task.Delay 10 // Make the load1 read enter a delay state (of 50)
+        do! Task.Delay 20 // Wait for the load1 read enter a delay state (of 50)
         cat.Delay <- TimeSpan.FromMilliseconds 90 // Next read picks up the longer delay
         // These reads start after the first read so replace the older value in the cache
         let load2 = allowStale 1 // NB this read overlaps with load1 task, ReadThrough should coalesce with next ...
@@ -179,7 +179,7 @@ type Tests() =
         let! struct (_t3, r3) = load1 // We awaited it last, but expect it to have completed first
         test <@ (4, 4, 3) = (r1, r2, r3) && (1, 3) = (cat.Loads, cat.Reloads) @>
         // NOTE While 90 should be fine in next statement, it's not fine on a cold CI rig, don't adjust!
-        let! struct (_token, state) = allowStale 200 // Delay of 90 overlapped with delay of 50+10 should not have expired the entry
+        let! struct (_token, state) = allowStale 250 // Delay of 90 overlapped with delay of 50+10 should not have expired the entry (was 200)
         test <@ (4, 1, 3) = (state, cat.Loads, cat.Reloads) @> // The newer cache entry won
         cat.Delay <- TimeSpan.FromMilliseconds 10 // Reduce the delay, but we do want to overlap a write
         let t4 = allowStale 200 // Delay of 75 in load2/load3 should not have aged the read result beyond 200

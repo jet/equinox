@@ -32,14 +32,15 @@ let createClient (log : Serilog.ILogger) name serviceUrl =
 let connect log =
     let name, serviceUrl = discoverConnection ()
     createClient log name serviceUrl
+let createConnector log =
+    connect log
 
 // Prepares the two required tables that the tests use via connect + tableName/archiveTableName
 type DynamoTablesFixture() =
 
     interface Xunit.IAsyncLifetime with
         member _.InitializeAsync() =
-            let name, serviceUrl = discoverConnection ()
-            let client = createClient Serilog.Log.Logger name serviceUrl
+            let client = connect Serilog.Log.Logger
             let throughput = ProvisionedThroughput (100L, 100L)
             let throughput = Throughput.Provisioned throughput
             DynamoStoreContext.Establish(client, tableName, archiveTableName = archiveTableName, mode = CreateIfNotExists throughput)
@@ -56,11 +57,9 @@ let createPrimaryContextIgnoreMissing client tableName queryMaxItems tipMaxEvent
     DynamoStoreContext(client, tableName, tipMaxEvents = tipMaxEvents, queryMaxItems = queryMaxItems, ignoreMissingEvents = ignoreMissing)
 let defaultTipMaxEvents = 10
 let createArchiveContext log queryMaxItems =
-    let client = connect log
-    DynamoStoreContext(client, archiveTableName, defaultTipMaxEvents, queryMaxItems = queryMaxItems)
+    DynamoStoreContext(createConnector log, archiveTableName, defaultTipMaxEvents, queryMaxItems = queryMaxItems)
 let createFallbackContext log queryMaxItems =
-    let client = connect log
-    DynamoStoreContext(client, tableName, defaultTipMaxEvents, queryMaxItems = queryMaxItems, archiveTableName = archiveTableName)
+    DynamoStoreContext(createConnector log, tableName, defaultTipMaxEvents, queryMaxItems = queryMaxItems, archiveTableName = archiveTableName)
 
 type StoreContext = DynamoStoreContext
 type StoreCategory<'E, 'S> = DynamoStoreCategory<'E, 'S, unit>
@@ -87,31 +86,28 @@ let discoverConnection () =
     | None -> "localDocDbSim", Discovery.AccountUriAndKey(Uri "https://localhost:8081", "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==")
     | Some connectionString -> "EQUINOX_COSMOS_CONNECTION", Discovery.ConnectionString connectionString
 
-let createClient (log : Serilog.ILogger) name (discovery : Discovery) =
+let createConnector (log: Serilog.ILogger) =
+    let name, discovery = discoverConnection ()
     let connector = CosmosStoreConnector(discovery, requestTimeout = TimeSpan.FromSeconds 3.,
                                          maxRetryAttemptsOnRateLimitedRequests = 2, maxRetryWaitTimeOnRateLimitedRequests = TimeSpan.FromMinutes 1.)
     log.Information("CosmosStore {name} {endpoint}", name, discovery.Endpoint)
-    connector.CreateUninitialized()
-
-let connect log =
-    let name, discovery = discoverConnection ()
-    let client = createClient log name discovery
-    CosmosStoreClient(client)
+    connector
 
 [<Xunit.CollectionDefinition "DocStore">]
 type DocStoreCollection() =
     do ()
 
-let createPrimaryContextIgnoreMissing client containerId queryMaxItems tipMaxEvents ignoreMissing =
-    CosmosStoreContext(client, databaseId, containerId, tipMaxEvents = tipMaxEvents, queryMaxItems = queryMaxItems, ignoreMissingEvents = ignoreMissing)
+let createPrimaryContextIgnoreMissing connector containerId queryMaxItems tipMaxEvents ignoreMissing =
+    CosmosStoreContext.Connect(connector, databaseId, containerId, tipMaxEvents = tipMaxEvents, queryMaxItems = queryMaxItems, ignoreMissingEvents = ignoreMissing)
+    |> Async.RunSynchronously
 
 let defaultTipMaxEvents = 10
 let createArchiveContext log queryMaxItems =
-    let client = connect log
-    CosmosStoreContext(client, databaseId, containerId, defaultTipMaxEvents, queryMaxItems = queryMaxItems)
+    CosmosStoreContext.Connect(createConnector log, databaseId, containerId, defaultTipMaxEvents, queryMaxItems = queryMaxItems)
+    |> Async.RunSynchronously
 let createFallbackContext log queryMaxItems =
-    let client = connect log
-    CosmosStoreContext(client, databaseId, containerId, defaultTipMaxEvents, queryMaxItems = queryMaxItems, archiveContainerId = archiveContainerId)
+    CosmosStoreContext.Connect(createConnector log, databaseId, containerId, defaultTipMaxEvents, queryMaxItems = queryMaxItems, archiveContainerId = archiveContainerId)
+    |> Async.RunSynchronously
 
 type StoreContext = CosmosStoreContext
 type StoreCategory<'E, 'S> = CosmosStoreCategory<'E, 'S, unit>
@@ -119,29 +115,23 @@ let primaryTarget = containerId
 #endif
 
 let createPrimaryContextEx log queryMaxItems tipMaxEvents =
-    let client = connect log
-    createPrimaryContextIgnoreMissing client primaryTarget queryMaxItems tipMaxEvents false
+    createPrimaryContextIgnoreMissing (createConnector log) primaryTarget queryMaxItems tipMaxEvents false
 
 let createPrimaryContext log queryMaxItems =
     createPrimaryContextEx log queryMaxItems defaultTipMaxEvents
 
-let defaultQueryMaxItems = 10
-
 let createPrimaryEventsContext log queryMaxItems tipMaxItems =
-    let context = createPrimaryContextEx log queryMaxItems tipMaxItems
-    Core.EventsContext(context, log)
+    Core.EventsContext(createPrimaryContextEx log queryMaxItems tipMaxItems, log)
 
 let createPrimaryEventsContextWithUnsafe log queryMaxItems tipMaxItems =
-    let client = connect log
-    let create ignoreMissing =
-        let context = createPrimaryContextIgnoreMissing client primaryTarget queryMaxItems tipMaxItems ignoreMissing
-        Core.EventsContext(context, log)
+    let connector = createConnector log
+    let create ignoreMissing = Core.EventsContext(createPrimaryContextIgnoreMissing connector primaryTarget queryMaxItems tipMaxItems ignoreMissing, log)
     create false, create true
 
 let createArchiveEventsContext log queryMaxItems =
-    let context = createArchiveContext log queryMaxItems
-    Core.EventsContext(context, log)
+    Core.EventsContext(createArchiveContext log queryMaxItems, log)
 
 let createFallbackEventsContext log queryMaxItems =
-    let context = createFallbackContext log queryMaxItems
-    Core.EventsContext(context, log)
+    Core.EventsContext(createFallbackContext log queryMaxItems, log)
+
+let defaultQueryMaxItems = 10

@@ -105,28 +105,29 @@ module Cosmos =
     // - In normal usage, you typically connect to a single container only.
     // - In hot-warm scenarios, the Archive Container will frequently be within the same account and hence can share a CosmosClient
     // For these typical purposes, CosmosStoreClient.Connect should be used to establish the Client and Connection, not custom wiring as we have here
-    let createClient (a : Arguments) connectionString =
-        let connector = CosmosStoreConnector(Discovery.ConnectionString connectionString, a.Timeout, a.Retries, a.MaxRetryWaitTime, ?mode=a.Mode)
-        connector.CreateUninitialized()
+    let createConnector (a: Arguments) connectionString =
+        CosmosStoreConnector(Discovery.ConnectionString connectionString, a.Timeout, a.Retries, a.MaxRetryWaitTime, ?mode=a.Mode)
     let connect (log: ILogger) (a: Arguments) =
-        let primaryClient, primaryDatabase, primaryContainer as primary = createClient a a.Connection, a.Database, a.Container
-        logContainer log "Primary" (a.Mode, primaryClient.Endpoint, primaryDatabase, primaryContainer)
+        let primaryConnector, primaryDatabase, primaryContainer as primary = createConnector a a.Connection, a.Database, a.Container
+        logContainer log "Primary" (a.Mode, primaryConnector.Endpoint, primaryDatabase, primaryContainer)
         let archive =
             match a.Archive with
-            | Some (Some c2, db, container) -> Some (createClient a c2, db, container)
-            | Some (None, db, container) -> Some (primaryClient, db, container)
+            | Some (Some c2, db, container) -> Some (createConnector a c2, db, container)
+            | Some (None, db, container) -> Some (primaryConnector, db, container)
             | None -> None
         archive |> Option.iter (fun (client, db, container) -> logContainer log "Archive" (a.Mode, client.Endpoint, db, container))
         primary, archive
     let config (log : ILogger) (cache, unfolds) (a : Arguments) =
         let context =
             match connect log a with
-            | (client, databaseId, containerId), None ->
-                let c = CosmosStoreClient client
-                CosmosStoreContext(c, databaseId, containerId, a.TipMaxEvents, queryMaxItems = a.QueryMaxItems, tipMaxJsonLength = a.TipMaxJsonLength)
-            | (client, databaseId, containerId), Some (aClient, aDatabaseId, aContainerId) ->
-                let c = CosmosStoreClient(client, aClient)
-                CosmosStoreContext(c, databaseId, containerId, a.TipMaxEvents, queryMaxItems = a.QueryMaxItems, tipMaxJsonLength = a.TipMaxJsonLength,
+            | (connector, databaseId, containerId), None ->
+                CosmosStoreContext.Connect(connector, databaseId, containerId, a.TipMaxEvents, queryMaxItems = a.QueryMaxItems, tipMaxJsonLength = a.TipMaxJsonLength)
+                |> Async.RunSynchronously
+            | (connector, databaseId, containerId), Some (aConnector, aDatabaseId, aContainerId) ->
+                let cosmosClient = connector.Connect(databaseId, [| containerId |]) |> Async.RunSynchronously
+                let archiveCosmosClient = aConnector.Connect(aDatabaseId, [| aContainerId |]) |> Async.RunSynchronously
+                let client = CosmosStoreClient(cosmosClient, archiveCosmosClient)
+                CosmosStoreContext(client, databaseId, containerId, a.TipMaxEvents, queryMaxItems = a.QueryMaxItems, tipMaxJsonLength = a.TipMaxJsonLength,
                                    archiveDatabaseId = aDatabaseId, archiveContainerId = aContainerId)
         log.Information("CosmosStore Max Events in Tip: {maxTipEvents}e {maxTipJsonLength}b Items in Query: {queryMaxItems}",
                         a.TipMaxEvents, a.TipMaxJsonLength, a.QueryMaxItems)
@@ -143,8 +144,8 @@ module Dynamo =
 
     type Equinox.DynamoStore.DynamoStoreContext with
 
-        member internal x.LogConfiguration(role, log: ILogger) =
-            log.Information("DynamoStore {role:l} Table {table} Archive {archive}", role, x.TableName, Option.toObj x.ArchiveTableName)
+        member internal x.LogConfiguration(log: ILogger, role, tableName: string, ?archiveTableName: string) =
+            log.Information("DynamoStore {role:l} Table {table} Archive {archive}", role, tableName, Option.toObj archiveTableName)
             log.Information("DynamoStore Tip thresholds: {maxTipBytes}b {maxTipEvents}e Query Paging {queryMaxItems} items",
                             x.TipOptions.MaxBytes, Option.toNullable x.TipOptions.MaxEvents, x.QueryOptions.MaxItems)
 
@@ -213,7 +214,7 @@ module Dynamo =
         let client = a.Connector.CreateDynamoDbClient() |> DynamoStoreClient
         let context = DynamoStoreContext(client, a.Table, maxBytes = a.TipMaxBytes, queryMaxItems = a.QueryMaxItems,
                                          ?tipMaxEvents = a.TipMaxEvents, ?archiveTableName = a.ArchiveTable)
-        context.LogConfiguration("Main", log)
+        context.LogConfiguration(log, "Main", a.Table, ?archiveTableName = a.ArchiveTable)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
         Context.Dynamo (context, cacheStrategy, unfolds)
 
