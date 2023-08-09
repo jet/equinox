@@ -2,24 +2,23 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
+    <DefineConstants>EQUINOX_CORE</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Infrastructure.fs" />
+    <Compile Include="..\Equinox\Infrastructure.fs" />
+    <Compile Include="..\Equinox\AsyncLazy.fs" />
     <Compile Include="AsyncCacheCell.fs" />
     <Compile Include="Retry.fs" />
     <Compile Include="Batching.fs" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Equinox\Equinox.fsproj" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="MinVer" Version="4.2.0" PrivateAssets="All" />
 
     <PackageReference Include="FSharp.Core" Version="6.0.7" ExcludeAssets="contentfiles" />
-
+    
+    <PackageReference Include="System.Runtime.Caching" Version="6.0.0" />
   </ItemGroup>
 
 </Project>

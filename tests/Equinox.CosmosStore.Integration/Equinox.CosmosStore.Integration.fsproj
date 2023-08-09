@@ -5,9 +5,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\src\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
-    <Compile Include="..\..\src\Equinox.Core\Internal.fs" Link="Internal.fs" />
-    <Compile Include="..\..\samples\Store\Integration\TestOutput.fs" Link="TestOutput.fs" />
+    <Compile Include="..\..\src\Equinox\Infrastructure.fs" />
+    <Compile Include="..\..\samples\Store\Integration\TestOutput.fs" />
     <Compile Include="CosmosFixtures.fs" />
     <Compile Include="CosmosFixturesInfrastructure.fs" />
     <Compile Include="..\..\samples\Store\Integration\AutoDataAttribute.fs" Link="AutoDataAttribute.fs" />

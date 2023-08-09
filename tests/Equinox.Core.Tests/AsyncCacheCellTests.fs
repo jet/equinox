@@ -6,17 +6,6 @@ open System
 open Xunit
 
 [<Fact>]
-let ``AsyncLazy correctness`` () = async {
-    // ensure that the encapsulated computation fires only once
-    let mutable count = 0
-    let cell = AsyncLazy(fun () -> task { return Interlocked.Increment &count })
-    test <@ cell.TryCompleted() |> ValueOption.isNone @>
-    let! accessResult = [|1 .. 100|] |> Array.map (fun _ -> cell.Await() |> Async.AwaitTaskCorrect) |> Async.Parallel
-    test <@ cell.TryCompleted() |> ValueOption.isSome @>
-    test <@ accessResult |> Array.forall ((=) 1) @>
-}
-
-[<Fact>]
 let ``AsyncCacheCell correctness`` () = async {
     // ensure that the encapsulated computation fires only once and that expiry functions as expected
     let mutable state = 0

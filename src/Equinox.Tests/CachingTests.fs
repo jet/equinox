@@ -53,12 +53,6 @@ let write sn (sut: Equinox.Core.ICategory<_, _, _>) = task {
     let wState' = trap <@ match wr with Equinox.Core.SyncResult.Written (_token, state') -> state' | _ -> failwith "unexpected" @>
     test <@ expectedWriteState = wState' @> }
 
-// Pinning the fact that the algorithm is not sensitive to the reuse of the initial value of a cache entry
-let [<Fact>] ``AsyncLazy.Empty is a true singleton, does not allocate`` () =
-    let i1 = Equinox.Core.AsyncLazy<int>.Empty
-    let i2 = Equinox.Core.AsyncLazy<int>.Empty
-    test <@ obj.ReferenceEquals(i1, i2) @>
-
 let [<Fact>] ``NoCaching strategy does no wrapping`` () =
     let cat = SpyCategory()
     let sut = Equinox.Core.Caching.apply isStale Equinox.CachingStrategy.NoCaching cat

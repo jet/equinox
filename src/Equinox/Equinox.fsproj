@@ -5,7 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
+    <Compile Include="Infrastructure.fs" />
     <Compile Include="StopwatchInterval.fs" />
     <Compile Include="Tracing.fs" />
     <Compile Include="Stream.fs" />

@@ -3,7 +3,13 @@ namespace Equinox.Core
 /// Generic async lazy caching implementation that admits expiration/recomputation/retry on exception semantics.
 /// If `workflow` fails, all readers entering while the load/refresh is in progress will share the failure
 /// The first caller through the gate triggers a recomputation attempt if the previous attempt ended in failure
-type AsyncCacheCell<'T>(startWorkflow : System.Func<CancellationToken, Task<'T>>, [<O; D null>]?isExpired: System.Func<'T, bool>) =
+type
+#if !EQUINOX_CORE
+    // NOT PUBLIC in Equinox.CosmosStore library - used internally to ensure the stored proc init is checked on first append once per container per process
+    // PUBLIC in Equinox.Core (it can also be used independent of Equinox)
+    internal
+#endif
+    AsyncCacheCell<'T>(startWorkflow : System.Func<CancellationToken, Task<'T>>, [<O; D null>]?isExpired: System.Func<'T, bool>) =
 
     let isValid = match isExpired with Some f -> not << f.Invoke | None -> fun _ -> true
     let mutable cell = AsyncLazy<'T>.Empty

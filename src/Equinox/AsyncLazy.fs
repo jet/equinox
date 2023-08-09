@@ -1,8 +1,13 @@
 namespace Equinox.Core
 
 /// Asynchronous Lazy<'T> used to gate a workflow to ensure at most once execution of a computation.
-type AsyncLazy<'T>(startTask: System.Func<Task<'T>>) =
-
+type
+#if !EQUINOX_CORE
+    // NOT PUBLIC in Equinox library - used internally in the impl of CacheEntry
+    // PUBLIC in Equinox.Core (which also uses it in the impl of AsyncCacheCell)
+    internal
+#endif
+      AsyncLazy<'T>(startTask: System.Func<Task<'T>>) =
     // NOTE due to `Lazy<T>` semantics, failed attempts will cache any exception; AsyncCacheCell compensates for this by rolling over to a new instance
     let workflow = lazy startTask.Invoke()
 
