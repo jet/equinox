@@ -6,10 +6,7 @@
 
   <ItemGroup>
     <Compile Include="Infrastructure.fs" />
-    <Compile Include="StopwatchInterval.fs" />
     <Compile Include="AsyncCacheCell.fs" />
-    <Compile Include="Cache.fs" />
-    <Compile Include="Caching.fs" />
     <Compile Include="Retry.fs" />
     <Compile Include="Batching.fs" />
   </ItemGroup>
@@ -23,7 +20,6 @@
 
     <PackageReference Include="FSharp.Core" Version="6.0.7" ExcludeAssets="contentfiles" />
 
-    <PackageReference Include="System.Runtime.Caching" Version="6.0.0" />
   </ItemGroup>
 
 </Project>
