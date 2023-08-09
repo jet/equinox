@@ -169,7 +169,7 @@ type Tests() =
 
         cat.Delay <- TimeSpan.FromMilliseconds 50
         let load1 = requireLoad ()
-        do! Task.Delay 10 // Make the load1 read enter a delay state (of 50)
+        do! Task.Delay 20 // Wait for the load1 read enter a delay state (of 50)
         cat.Delay <- TimeSpan.FromMilliseconds 90 // Next read picks up the longer delay
         // These reads start after the first read so replace the older value in the cache
         let load2 = allowStale 1 // NB this read overlaps with load1 task, ReadThrough should coalesce with next ...
