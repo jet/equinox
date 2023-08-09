@@ -378,7 +378,7 @@ module CosmosInit =
         let a = CosmosInitArguments p
         match p.GetSubCommand() with
         | InitParameters.Cosmos cp ->
-            let client, dName, cName = connect log cp
+            let connector, dName, cName = connect log cp
             match a.ProvisioningMode with
             | CosmosInit.Provisioning.Container throughput ->
                 let modeStr = "Container"
@@ -389,7 +389,7 @@ module CosmosInit =
             | CosmosInit.Provisioning.Serverless ->
                 let modeStr = "Serverless"
                 log.Information("Provisioning `Equinox.CosmosStore` Store in {mode:l} mode with automatic RU/s as configured in account", modeStr)
-            CosmosInit.init log client (dName, cName) a.ProvisioningMode a.SkipStoredProc
+            CosmosInit.init log (connector.CreateUninitialized()) (dName, cName) a.ProvisioningMode a.SkipStoredProc
         | x -> Store.missingArg $"unexpected subcommand %A{x}"
 
 module DynamoInit =
@@ -444,8 +444,8 @@ module CosmosStats =
             let doS, doD, doE = p.Contains StatsParameters.Streams, p.Contains StatsParameters.Documents, p.Contains StatsParameters.Events
             let doS = doS || (not doD && not doE) // default to counting streams only unless otherwise specified
             let inParallel = p.Contains Parallel
-            let client, dName, cName = CosmosInit.connect log sp
-            let container = client.GetContainer(dName, cName)
+            let connector, dName, cName = CosmosInit.connect log sp
+            let container = connector.CreateUninitialized().GetContainer(dName, cName)
             let ops =
                 [   if doS then yield "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """
                     if doD then yield "Documents", """SELECT VALUE COUNT(1) FROM c"""
