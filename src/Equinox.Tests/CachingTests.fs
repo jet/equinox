@@ -125,7 +125,7 @@ type Tests() =
     let allowStale toleranceMs = load sn (TimeSpan.FromMilliseconds toleranceMs) sut
 
     let [<Fact>] ``allowStale unifies compatible concurrent loads`` () = task {
-        cat.Delay <- TimeSpan.FromMilliseconds 50
+        cat.Delay <- TimeSpan.FromMilliseconds 70 // Ensure it's still in progress when our Delay is over
         let t1 = allowStale 1
         do! Task.Delay 40 // Allow it time to definitely have started
         test <@ (1, 0) = (cat.Loads, cat.Reloads) @>
