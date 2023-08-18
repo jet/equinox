@@ -640,7 +640,7 @@ module internal Query =
                 let conditions = Seq.map fst args
                 if List.isEmpty args && includeTip then null
                 else "WHERE " + String.Join(" AND ", if includeTip then conditions else Seq.append conditions (Seq.singleton notTip))
-            let queryString = sprintf "SELECT c.id, c.i, c._etag, c.n, c.e FROM c %s ORDER BY c.i %s" whereClause order
+            let queryString = $"SELECT c.id, c.i, c._etag, c.n, c.e FROM c %s{whereClause} ORDER BY c.i %s{order}"
             let prams = Seq.map snd args
             (QueryDefinition queryString, prams) ||> Seq.fold (fun q wp -> q |> wp)
         log.Debug("EqxCosmos Query {stream} {query}; n>{minIndex} i<{maxIndex}", stream, query.QueryText, Option.toNullable minIndex, Option.toNullable maxIndex)
@@ -1296,7 +1296,7 @@ type CosmosStoreContext(client: CosmosStoreClient, databaseId, containerId, tipO
                      | _ -> ()
                      match otherContainersToInitialize with Some xs when not (isNull xs) -> yield! Seq.map mainDb xs | _ -> () |]
         let! cosmosClient = connector.Connect(ids)
-        let client = CosmosStoreClient cosmosClient
+        let client = CosmosStoreClient(cosmosClient, ?customize = customize, ?disableInitialization = disableInitialization)
         return CosmosStoreContext(client, databaseId, containerId, tipMaxEvents, ?tipMaxJsonLength = tipMaxJsonLength,
             ?queryMaxItems = queryMaxItems, ?queryMaxRequests = queryMaxRequests,
             ?ignoreMissingEvents = ignoreMissingEvents, ?archiveContainerId = archiveContainerId) }
@@ -1365,7 +1365,7 @@ type CosmosStoreCategory<'event, 'state, 'context> =
             | AccessStrategy.Custom (isOrigin, transmute) ->     isOrigin,         true,  Choice3Of3 transmute
         { inherit Equinox.Category<'event, 'state, 'context>(name,
             StoreCategory<'event, 'state, 'context>(context.StoreClient, context.EnsureStoredProcedureInitialized, codec, fold, initial, isOrigin, checkUnfolds, compressUnfolds, mapUnfolds)
-            |> Caching.apply Token.isStale caching) }
+            |> Caching.apply Token.isStale caching); __ = 0 }; val private __: int // __ can be removed after Rider 2023.2
 
 module Exceptions =
 
