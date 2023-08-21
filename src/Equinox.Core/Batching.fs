@@ -45,7 +45,10 @@ type Batcher<'Req, 'Res> private (tryInclude: Func<AsyncBatch<_, _>, 'Req, Cance
     let mutable cell = AsyncBatch<'Req, 'Res>()
     new(dispatch: Func<'Req[], CancellationToken, Task<'Res[]>>, lingerMs, limiter) =
         Batcher(fun cell req ct -> cell.TryAdd(req, dispatch, lingerMs, limiter, ct = ct))
-    new(dispatch: 'Req[] -> Async<'Res[]>, ?linger : TimeSpan, ?limiter) =
+    new(dispatch: 'Req[] -> Async<'Res[]>, ?linger : TimeSpan,
+        // Extends the linger phase to include a period during which we await capacity on an externally managed Semaphore
+        // The Batcher doesn't care, but a typical use is to enable limiting the number of concurrent in-flight dispatches
+        ?limiter) =
         Batcher((fun items ct -> Async.StartImmediateAsTask(dispatch items, ct)),
                 (match linger  with Some x -> int x.TotalMilliseconds | None -> 1),
                 (match limiter with Some x -> ValueSome x | None -> ValueNone))
