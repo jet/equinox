@@ -98,6 +98,7 @@ and [<NoComparison; NoEquality>] StatsParameters =
     | [<AltCommandLine "-E"; Unique>]       Events
     | [<AltCommandLine "-S"; Unique>]       Streams
     | [<AltCommandLine "-D"; Unique>]       Documents
+    | [<AltCommandLine "-A"; Unique>]       All
     | [<AltCommandLine "-P"; Unique>]       Parallel
     | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Store.Cosmos.Parameters>
     | [<CliPrefix(CliPrefix.None)>]         Dynamo of ParseResults<Store.Dynamo.Parameters>
@@ -106,6 +107,7 @@ and [<NoComparison; NoEquality>] StatsParameters =
             | Events _ ->                   "Count the number of Events in the store."
             | Streams _ ->                  "Count the number of Streams in the store. (Default action if no others supplied)"
             | Documents _ ->                "Count the number of Documents in the store."
+            | All _ ->                      "Request all available stats (equivalent to -ESD)"
             | Parallel _ ->                 "Run in Parallel (CAREFUL! can overwhelm RU allocations)."
             | Cosmos _ ->                   "Cosmos Connection parameters."
             | Dynamo _ ->                   "Dynamo Connection parameters."
@@ -441,7 +443,9 @@ module CosmosStats =
     let run (log : ILogger, _verboseConsole, _maybeSeq) (p : ParseResults<StatsParameters>) =
         match p.GetSubCommand() with
         | StatsParameters.Cosmos sp ->
-            let doS, doD, doE = p.Contains StatsParameters.Streams, p.Contains StatsParameters.Documents, p.Contains StatsParameters.Events
+            let doS, doD, doE =
+                let all, s, d, e = p.Contains All, p.Contains StatsParameters.Streams, p.Contains Documents, p.Contains StatsParameters.Events
+                all || s, all || d, all || e
             let doS = doS || (not doD && not doE) // default to counting streams only unless otherwise specified
             let inParallel = p.Contains Parallel
             let connector, dName, cName = CosmosInit.connect log sp

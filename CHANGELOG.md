@@ -25,6 +25,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `EventStoreDb`: As per `EventStore` module, but using the modern `EventStore.Client.Grpc.Streams` client [#196](https://github.com/jet/equinox/pull/196)
 - `MessageDb`: Implements a [message-db](http://docs.eventide-project.org/user-guide/message-db/) storage backend [#339](https://github.com/jet/equinox/pull/339) with OpenTelemetry tracing and snapshotting support [#348](https://github.com/jet/equinox/pull/348) :pray: [@nordfjord](https://github.com/nordfjord)
 - `eqx dump`: `-s` flag is now optional
+- `eqx stats`: `-A` flag to request all stats (equivalent to requesting `-ESD`) [#424](https://github.com/jet/equinox/pull/424)
 
 ### Changed
 
