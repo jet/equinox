@@ -1833,11 +1833,9 @@ let connector: Equinox.CosmosStore.CosmosStoreConnector =
         maxRetryAttemptsOnRateLimitedRequests = 1,
         maxRetryWaitTimeOnRateLimitedRequests = TimeSpan.FromSeconds 3.)
 
-// If storing in a single collection, one specifies the db and collection when using Connect()
-// alternately use factory.CreateUnitialized, which defers that until the stream one is writing to becomes clear
-let! storeClient = CosmosStoreClient.Connect(connector.CreateAndInitialize, "databaseName", "containerName")
+let! context = CosmosStoreContext.Connect(connector, "databaseName", "containerName")
 
-let ctx = EventsContext(storeClient, gatewayLog)
+let ctx = EventsContext(context, gatewayLog)
 
 //
 // Write an event

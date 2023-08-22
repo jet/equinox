@@ -44,7 +44,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Equinox.Core.AsyncBatchingGate`: renamed to `Batching.Batcher` [#390](https://github.com/jet/equinox/pull/390)
 - `Equinox.Core`: Now a free-standing library that a) does not depend on `Equinox` b) is not depended on by the Stores (though `CosmosStore` inlines `AsyncCacheCell`) [#420](https://github.com/jet/equinox/pull/420)
 - Stores: Change Event Body types, requiring `FsCodec` v `3.0.0`, with [`EventBody` types switching from `byte[]` to `ReadOnlyMemory<byte>` and/or `JsonElement` see FsCodec#75](https://github.com/jet/FsCodec/pull/75) [#323](https://github.com/jet/equinox/pull/323)
-- Stores: `*Category.Resolve`: Replace `Resolve(sn, ?ResolveOption, ?context)` with `?load = LoadOption` parameter on all `Transact` and `Query` methods, and `Decider.forStream`/`Decider.forContext` to convey context [#308](https://github.com/jet/equinox/pull/308)
+- Stores: `*Category.Resolve`: Replace `Resolve(sn, ?ResolveOption, ?requestContext)` with `?load = LoadOption` parameter on all `Transact` and `Query` methods, and `Decider.forStream`/`Decider.forRequest` to convey request context [#308](https://github.com/jet/equinox/pull/308)
 - Stores: `*Category` ctor: Add mandatory `name` argument, and `Name` property [#410](https://github.com/jet/equinox/pull/410)
 - Stores: `*Category` ctor: Change `fold` to be a `Func` (no changes to F# code required) [#421](https://github.com/jet/equinox/pull/421)
 - Stores: `*Category` ctor: Change `caching` to be last argument, to reflect that it is applied over the top [#410](https://github.com/jet/equinox/pull/410)
@@ -457,7 +457,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `.Cosmos`: ability to inhibit server certificate validation via `Connector`'s `bypassCertificateValidation` option [#170](https://github.com/jet/equinox/pull/170) :pray: [@Kelvin4702](https://github.com/Kelvin4702)
 - store-neutral `ICache`; centralized implementation in `Equinox.Core` [#161](https://github.com/jet/equinox/pull/161) :pray: [@DSilence](https://github.com/DSilence)
 - `ResolveOption.AllowStale`, maximizing use of OCC for `Stream.Transact`, enabling stale reads (in the face of multiple writers) for `Stream.Query` [#167](https://github.com/jet/equinox/pull/167)
-- Ability to (optionally) pass a `'Context` when creating a `Stream`, in order to be able to interop with FsCodec's `CorrelationId` and `CausationId` fields (as added in [FsCodec#22](https://github.com/jet/FsCodec/pulls/22)) [#169](https://github.com/jet/equinox/pull/169)
+- Ability to (optionally) pass a `'req` when creating a `Stream`, in order to be able to interop with FsCodec's `CorrelationId` and `CausationId` fields (as added in [FsCodec#22](https://github.com/jet/FsCodec/pulls/22)) [#169](https://github.com/jet/equinox/pull/169)
 
 ### Changed
 

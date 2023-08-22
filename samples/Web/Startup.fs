@@ -65,7 +65,7 @@ type Startup() =
             let c = match maybeSeq with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
             c.CreateLogger() :> ILogger
 
-        let storeConfig, storeLog : Store.Context * ILogger =
+        let storeConfig, storeLog : Store.Config * ILogger =
             let options = p.GetResults Cached @ p.GetResults Unfolds
             let unfolds = options |> List.exists (function Unfolds -> true | _ -> false)
             let log = Log.ForContext<App>()

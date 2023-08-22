@@ -14,21 +14,21 @@ type Store(store) =
             initial: 'state,
             snapshot: ('event -> bool) * ('state -> 'event)): Category<'event, 'state, unit> =
         match store with
-        | Store.Context.Memory store ->
+        | Store.Config.Memory store ->
             MemoryStore.MemoryStoreCategory(store, name, codec, fold, initial)
-        | Store.Context.Cosmos (store, caching, unfolds) ->
+        | Store.Config.Cosmos (store, caching, unfolds) ->
             let accessStrategy = if unfolds then CosmosStore.AccessStrategy.Snapshot snapshot else CosmosStore.AccessStrategy.Unoptimized
             CosmosStore.CosmosStoreCategory<'event,'state,_>(store, name, codec.ToJsonElementCodec(), fold, initial, accessStrategy, caching)
-        | Store.Context.Dynamo (store, caching, unfolds) ->
+        | Store.Config.Dynamo (store, caching, unfolds) ->
             let accessStrategy = if unfolds then DynamoStore.AccessStrategy.Snapshot snapshot else DynamoStore.AccessStrategy.Unoptimized
             DynamoStore.DynamoStoreCategory<'event,'state,_>(store, name, FsCodec.Deflate.EncodeTryDeflate codec, fold, initial, accessStrategy, caching)
-        | Store.Context.Es (context, caching, unfolds) ->
+        | Store.Config.Es (context, caching, unfolds) ->
             let accessStrategy = if unfolds then EventStoreDb.AccessStrategy.RollingSnapshots snapshot else EventStoreDb.AccessStrategy.Unoptimized
             EventStoreDb.EventStoreCategory<'event,'state,_>(context, name, codec, fold, initial, accessStrategy, caching)
-        | Store.Context.Sql (context, caching, unfolds) ->
+        | Store.Config.Sql (context, caching, unfolds) ->
             let accessStrategy = if unfolds then SqlStreamStore.AccessStrategy.RollingSnapshots snapshot else SqlStreamStore.AccessStrategy.Unoptimized
             SqlStreamStore.SqlStreamStoreCategory<'event,'state,_>(context, name, codec, fold, initial, accessStrategy, caching)
-        | Store.Context.Mdb (context, caching) ->
+        | Store.Config.Mdb (context, caching) ->
             MessageDb.MessageDbCategory<'event,'state,_>(context, name, codec, fold, initial, MessageDb.AccessStrategy.Unoptimized, caching)
 
 type ServiceBuilder(storageConfig, handlerLog) =

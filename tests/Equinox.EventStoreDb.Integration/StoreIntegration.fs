@@ -17,7 +17,7 @@ let connectToLocalStore (_: Serilog.ILogger) =
     Connector("Host=localhost;Username=postgres;password=postgres;database=postgres",autoCreate=true).Establish()
 
 type Context = SqlStreamStoreContext
-type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
+type Category<'event, 'state, 'req> = SqlStreamStoreCategory<'event, 'state, 'req>
 #endif
 #if STORE_MSSQL
 open Equinox.SqlStreamStore
@@ -27,7 +27,7 @@ let connectToLocalStore (_: Serilog.ILogger) =
     Connector("Server=localhost,1433;User=sa;Password=mssql1Ipw;Database=EQUINOX_TEST_DB", autoCreate = true).Establish()
 
 type Context = SqlStreamStoreContext
-type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
+type Category<'event, 'state, 'req> = SqlStreamStoreCategory<'event, 'state, 'req>
 #endif
 #if STORE_MYSQL
 open Equinox.SqlStreamStore
@@ -37,7 +37,7 @@ let connectToLocalStore (_: Serilog.ILogger) =
     Connector("Server=localhost;User=root;Database=EQUINOX_TEST_DB", autoCreate = true).Establish()
 
 type Context = SqlStreamStoreContext
-type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
+type Category<'event, 'state, 'req> = SqlStreamStoreCategory<'event, 'state, 'req>
 #endif
 #if STORE_MESSAGEDB
 open Equinox.MessageDb
@@ -50,7 +50,7 @@ let connectToLocalStore _ = async {
   return MessageDbClient(connectionString)
 }
 type Context = MessageDbContext
-type Category<'event, 'state, 'context> = MessageDbCategory<'event, 'state, 'context>
+type Category<'event, 'state, 'req> = MessageDbCategory<'event, 'state, 'req>
 #endif
 #if STORE_EVENTSTOREDB
 open Equinox.EventStoreDb
@@ -79,7 +79,7 @@ let connectToLocalStore log =
 #endif
 #if STORE_EVENTSTORE_LEGACY || STORE_EVENTSTOREDB
 type Context = EventStoreContext
-type Category<'event, 'state, 'context> = EventStoreCategory<'event, 'state, 'context>
+type Category<'event, 'state, 'req> = EventStoreCategory<'event, 'state, 'req>
 #endif
 
 let createContext connection batchSize = Context(connection, batchSize = batchSize)

@@ -414,7 +414,7 @@ type private CompactionContext(eventsLen: int, capacityBeforeCompaction: int) =
     /// Determines whether writing a Compaction event is warranted (based on the existing state and the current accumulated changes)
     member _.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
-type private StoreCategory<'event, 'state, 'context>(context: SqlStreamStoreContext, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, access) =
+type private StoreCategory<'event, 'state, 'req>(context: SqlStreamStoreContext, codec: FsCodec.IEventCodec<_, _, 'req>, fold, initial, access) =
     let fold s xs = (fold : System.Func<'state, 'event[], 'state>).Invoke(s, xs)
     let tryDecode (e: ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
     let isOrigin =
@@ -433,27 +433,27 @@ type private StoreCategory<'event, 'state, 'context>(context: SqlStreamStoreCont
         | AccessStrategy.RollingSnapshots (isValid, _) -> Some isValid
     let fetch state f = task { let! token', events = f in return struct (token', fold state events) }
     let reload (log, sn, leader, token, state) ct = fetch state (context.Reload(log, sn, leader, token, tryDecode, compactionPredicate, ct))
-    interface ICategory<'event, 'state, 'context> with
+    interface ICategory<'event, 'state, 'req> with
         member _.Empty = context.TokenEmpty, initial
         member _.Load(log, _categoryName, _streamId, streamName, _maxAge, requireLeader, ct) =
             fetch initial (loadAlgorithm log streamName requireLeader ct)
-        member _.Sync(log, _categoryName, _streamId, streamName, ctx, (Token.Unpack token as streamToken), state, events, ct) = task {
+        member _.Sync(log, _categoryName, _streamId, streamName, req, (Token.Unpack token as streamToken), state, events, ct) = task {
             let events =
                 match access with
                 | AccessStrategy.Unoptimized | AccessStrategy.LatestKnownEvent -> events
                 | AccessStrategy.RollingSnapshots (_, compact) ->
                     let cc = CompactionContext(Array.length events, token.batchCapacityLimit.Value)
                     if cc.IsCompactionDue then Array.append events (fold state events |> compact |> Array.singleton) else events
-            let encode e = codec.Encode(ctx, e)
+            let encode e = codec.Encode(req, e)
             let encodedEvents: EventData[] = events |> Array.map (encode >> UnionEncoderAdapters.eventDataOfEncodedEvent)
             match! context.Sync(log, streamName, streamToken, events, encodedEvents, compactionPredicate, ct) with
             | GatewaySyncResult.Written token' ->  return SyncResult.Written  (token', fold state events)
             | GatewaySyncResult.ConflictUnknown -> return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, streamToken, state)) }
     interface Caching.IReloadable<'state> with member _.Reload(log, sn, leader, token, state, ct) = reload (log, sn, leader, token, state) ct
 
-type SqlStreamStoreCategory<'event, 'state, 'context> =
-    inherit Equinox.Category<'event, 'state, 'context>
-    new(context: SqlStreamStoreContext, name, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, access,
+type SqlStreamStoreCategory<'event, 'state, 'req> =
+    inherit Equinox.Category<'event, 'state, 'req>
+    new(context: SqlStreamStoreContext, name, codec: FsCodec.IEventCodec<_, _, 'req>, fold, initial, access,
         // For SqlStreamStore, caching is less critical than it is for e.g. CosmosDB
         // As such, it can sometimes be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
         caching) =
@@ -462,9 +462,9 @@ type SqlStreamStoreCategory<'event, 'state, 'context> =
         | AccessStrategy.LatestKnownEvent, _ ->
             invalidOp "Equinox.SqlStreamStore does not support mixing AccessStrategy.LatestKnownEvent with Caching at present."
         | _ -> ()
-        { inherit Equinox.Category<'event, 'state, 'context>(name,
-            StoreCategory<'event, 'state, 'context>(context, codec, fold, initial, access)
-            |> Caching.apply Token.isStale caching) }
+        { inherit Equinox.Category<'event, 'state, 'req>(name,
+            StoreCategory<'event, 'state, 'req>(context, codec, fold, initial, access)
+            |> Caching.apply Token.isStale caching); __ = () }; val private __: unit // __ can be removed after Rider 2023.2
 
 [<AbstractClass>]
 type ConnectorBase([<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =

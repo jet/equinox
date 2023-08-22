@@ -1,8 +1,8 @@
 namespace Equinox.CosmosStore.Core
 
 open Equinox.Core
-open FsCodec
 open FSharp.Control
+open FsCodec
 open Microsoft.Azure.Cosmos
 open Serilog
 open System
@@ -1065,24 +1065,24 @@ type StoreClient(container: Container, fallback: Container option, query: QueryO
     member _.Prune(log, stream, index, ct) =
         Prune.until log (container, stream) query.MaxItems index ct
 
-type internal StoreCategory<'event, 'state, 'context>
+type internal StoreCategory<'event, 'state, 'req>
     (   store: StoreClient, createStoredProcIfNotExistsExactlyOnce: CancellationToken -> System.Threading.Tasks.ValueTask,
-        codec: IEventCodec<'event, EventBody, 'context>, fold, initial: 'state, isOrigin: 'event -> bool,
+        codec: IEventCodec<'event, EventBody, 'req>, fold, initial: 'state, isOrigin: 'event -> bool,
         checkUnfolds, compressUnfolds, mapUnfolds: Choice<unit, 'event[] -> 'state -> 'event[], 'event[] -> 'state -> 'event[] * 'event[]>) =
     let fold s xs = (fold : Func<'state, 'event[], 'state>).Invoke(s, xs)
     let reload (log, streamName, (Token.Unpack pos as streamToken), state) preloaded ct: Task<struct (StreamToken * 'state)> = task {
         match! store.Reload(log, (streamName, pos), (codec.TryDecode, isOrigin), ct, ?preview = preloaded) with
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
-    interface ICategory<'event, 'state, 'context> with
+    interface ICategory<'event, 'state, 'req> with
         member _.Empty = Token.create Position.fromKnownEmpty, initial
         member _.Load(log, _categoryName, _streamId, stream, _maxAge, _requireLeader, ct): Task<struct (StreamToken * 'state)> = task {
             let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds, ct)
             return struct (token, fold initial events) }
-        member _.Sync(log, _categoryName, _streamId, streamName, ctx, (Token.Unpack pos as streamToken), state, events, ct) = task {
+        member _.Sync(log, _categoryName, _streamId, streamName, req, (Token.Unpack pos as streamToken), state, events, ct) = task {
             let state' = fold state events
             let exp, events, eventsEncoded, projectionsEncoded =
-                let encode e = codec.Encode(ctx, e)
+                let encode e = codec.Encode(req, e)
                 match mapUnfolds with
                 | Choice1Of3 () ->        SyncExp.Version pos.index, events, Array.map encode events, Seq.empty
                 | Choice2Of3 unfold ->    SyncExp.Version pos.index, events, Array.map encode events, Array.map encode (unfold events state')
@@ -1167,7 +1167,7 @@ type CosmosClientFactory
         co
 
     /// Creates an instance of CosmosClient without actually validating or establishing the connection
-    /// It's recommended to use <c>Connect()</c> and/or <c>CosmosStoreClient.Connect()</c> in preference to this API
+    /// It's recommended to use <c>CosmosStoreClient.Connect()</c> in preference to this API
     ///   in order to avoid latency spikes, and/or deferring discovery of connectivity or permission issues.
     member x.CreateUninitialized(discovery: Discovery) = discovery |> function
         | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> new CosmosClient(string uri, key, x.Options)
@@ -1211,7 +1211,7 @@ type CosmosStoreConnector
     member _.Endpoint = discovery.Endpoint
 
     /// Creates an instance of CosmosClient without actually validating or establishing the connection
-    /// It's recommended to use <c>Connect()</c> and/or <c>CosmosStoreClient.Connect()</c> in preference to this API
+    /// It's recommended to use <c>Connect</c> and/or <c>CosmosStoreClient.Connect()</c> in preference to this API
     ///   in order to avoid latency spikes, and/or deferring discovery of connectivity or permission issues.
     member _.CreateUninitialized() = factory.CreateUninitialized(discovery)
 
@@ -1338,8 +1338,8 @@ type AccessStrategy<'event, 'state> =
     /// </remarks>
     | Custom of isOrigin: ('event -> bool) * transmute: ('event[] -> 'state -> 'event[] * 'event[])
 
-type CosmosStoreCategory<'event, 'state, 'context> =
-    inherit Equinox.Category<'event, 'state, 'context>
+type CosmosStoreCategory<'event, 'state, 'req> =
+    inherit Equinox.Category<'event, 'state, 'req>
     new(context: CosmosStoreContext, name, codec, fold, initial, access,
         // For CosmosDB, caching is typically a central aspect of managing RU consumption to maintain performance and capacity.
         // The cache holds the Tip document's etag, which enables use of etag-contingent Reads (which cost only 1RU in the case where the document is unchanged)
@@ -1363,9 +1363,9 @@ type CosmosStoreCategory<'event, 'state, 'context> =
             | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         true,  Choice2Of3 (fun _ state  -> unfold state)
             | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> Array.empty, toSnapshot state |> Array.singleton)
             | AccessStrategy.Custom (isOrigin, transmute) ->     isOrigin,         true,  Choice3Of3 transmute
-        { inherit Equinox.Category<'event, 'state, 'context>(name,
-            StoreCategory<'event, 'state, 'context>(context.StoreClient, context.EnsureStoredProcedureInitialized, codec, fold, initial, isOrigin, checkUnfolds, compressUnfolds, mapUnfolds)
-            |> Caching.apply Token.isStale caching); __ = 0 }; val private __: int // __ can be removed after Rider 2023.2
+        { inherit Equinox.Category<'event, 'state, 'req>(name,
+            StoreCategory<'event, 'state, 'req>(context.StoreClient, context.EnsureStoredProcedureInitialized, codec, fold, initial, isOrigin, checkUnfolds, compressUnfolds, mapUnfolds)
+            |> Caching.apply Token.isStale caching); __ = () }; val private __: unit // __ can be removed after Rider 2023.2
 
 module Exceptions =
 

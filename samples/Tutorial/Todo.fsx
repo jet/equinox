@@ -7,7 +7,6 @@
 #r "Serilog.Sinks.Console.dll"
 #r "Newtonsoft.Json.dll"
 #r "TypeShape.dll"
-#r "Equinox.Core.dll"
 #r "Equinox.dll"
 #r "FSharp.UMX.dll"
 #r "FsCodec.dll"
@@ -16,10 +15,10 @@
 #r "Microsoft.Azure.Cosmos.Client.dll"
 #r "Equinox.CosmosStore.dll"
 #else
-#r "nuget: Equinox.CosmosStore, *-*"
-#r "nuget: FsCodec.SystemTextJson, *-*"
-#r "nuget: Serilog.Sinks.Console"
-#r "nuget: Serilog.Sinks.Seq"
+#r "nuget:Equinox.CosmosStore, *-*"
+#r "nuget:FsCodec.SystemTextJson, *-*"
+#r "nuget:Serilog.Sinks.Console"
+#r "nuget:Serilog.Sinks.Seq"
 #endif
 
 open System
@@ -134,8 +133,7 @@ module Store =
     let discovery = Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION")
     let connector = CosmosStoreConnector(discovery, TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5.)
     let databaseId, containerId = read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER"
-    let storeClient = CosmosStoreClient.Connect(connector.CreateAndInitialize, databaseId, containerId) |> Async.RunSynchronously
-    let context = CosmosStoreContext(storeClient, databaseId, containerId, tipMaxEvents = 100) // Keep up to 100 events in tip before moving events to a new document
+    let context = CosmosStoreContext.Connect(connector, databaseId, containerId, tipMaxEvents = 100) |> Async.RunSynchronously // Keep up to 100 events in tip before moving events to a new document
     let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
 
     let access = AccessStrategy.Snapshot Snapshot.config

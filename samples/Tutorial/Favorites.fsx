@@ -5,7 +5,6 @@
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Equinox.dll"
-#r "Equinox.Core.dll"
 #r "Equinox.MemoryStore.dll"
 #r "FSharp.UMX.dll"
 #r "FSCodec.dll"

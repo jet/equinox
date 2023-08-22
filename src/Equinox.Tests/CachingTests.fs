@@ -33,7 +33,7 @@ type SpyCategory() =
             Interlocked.Increment &loads |> ignore
             do! Task.Delay(x.Delay, ct)
             return struct (mkToken(), Interlocked.Increment &state) }
-        member _.Sync(_log, _cat, _sid, _sn, _ctx, _originToken, originState, events, _ct) = task {
+        member _.Sync(_log, _cat, _sid, _sn, _req, _originToken, originState, events, _ct) = task {
             return Equinox.Core.SyncResult.Written (mkToken(), originState + events.Length) }
 
     interface Equinox.Core.Caching.IReloadable<State> with

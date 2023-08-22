@@ -9,7 +9,6 @@
 #r "Newtonsoft.Json.dll"
 #r "TypeShape.dll"
 #r "Equinox.dll"
-#r "Equinox.Core.dll"
 #r "FSharp.UMX.dll"
 #r "FsCodec.dll"
 #r "FsCodec.SystemTextJson.dll"
@@ -103,8 +102,7 @@ module Store =
     let connector = CosmosStoreConnector(discovery, System.TimeSpan.FromSeconds 5., 2, System.TimeSpan.FromSeconds 5., Microsoft.Azure.Cosmos.ConnectionMode.Gateway)
 
     let databaseId, containerId = read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER"
-    let storeClient = CosmosStoreClient.Connect(connector.CreateAndInitialize, databaseId, containerId) |> Async.RunSynchronously
-    let context = CosmosStoreContext(storeClient, databaseId, containerId, tipMaxEvents = 10)
+    let context = CosmosStoreContext.Connect(connector, databaseId, containerId, tipMaxEvents = 10) |> Async.RunSynchronously
     let cache = Equinox.Cache(appName, 20)
 
 let service = Favorites.Cosmos.category (Store.context, Store.cache) |> Favorites.create

@@ -6,7 +6,6 @@
 #r "Serilog.Sinks.Console.dll"
 #r "Newtonsoft.Json.dll"
 #r "Equinox.dll"
-#r "Equinox.Core.dll"
 #r "FSharp.UMX.dll"
 #r "FsCodec.dll"
 #r "TypeShape.dll"
@@ -138,8 +137,7 @@ module Store =
     let appName = "equinox-tutorial"
     let connector = CosmosStoreConnector(Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"), TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5.)
     let databaseId, containerId = read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER"
-    let storeClient = CosmosStoreClient.Connect(connector.CreateAndInitialize, databaseId, containerId) |> Async.RunSynchronously
-    let context = CosmosStoreContext(storeClient, databaseId, containerId, tipMaxEvents = 256)
+    let context = CosmosStoreContext.Connect(connector, databaseId, containerId, tipMaxEvents = 256) |> Async.RunSynchronously
     let cache = Equinox.Cache(appName, 20)
     let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
 
