@@ -1833,9 +1833,9 @@ let connector: Equinox.CosmosStore.CosmosStoreConnector =
         maxRetryAttemptsOnRateLimitedRequests = 1,
         maxRetryWaitTimeOnRateLimitedRequests = TimeSpan.FromSeconds 3.)
 
-let! storeClient = CosmosStoreContext.Connect(connector, "databaseName", "containerName")
+let! context = CosmosStoreContext.Connect(connector, "databaseName", "containerName")
 
-let ctx = EventsContext(storeClient, gatewayLog)
+let ctx = EventsContext(context, gatewayLog)
 
 //
 // Write an event

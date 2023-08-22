@@ -407,9 +407,9 @@ type private StoreCategory<'event, 'state, 'req>(context: MessageDbContext, code
                 return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, token, state)) }
     interface Caching.IReloadable<'state> with member _.Reload(log, sn, leader, token, state, ct) = reload (log, sn, leader, token, state) ct
 
-    member _.StoreSnapshot(log, category, streamId, ctx, token, snapshotEvent, ct) =
+    member _.StoreSnapshot(log, category, streamId, req, token, snapshotEvent, ct) =
         let encodedWithMeta =
-            let rawEvent = codec.Encode(ctx, snapshotEvent)
+            let rawEvent = codec.Encode(req, snapshotEvent)
             FsCodec.Core.EventData.Create(rawEvent.EventType, rawEvent.Data, meta = Snapshot.meta token)
         context.StoreSnapshot(log, category, streamId, encodedWithMeta, ct)
 
