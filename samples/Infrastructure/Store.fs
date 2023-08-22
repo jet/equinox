@@ -6,7 +6,7 @@ open Serilog
 open System
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
-type Context =
+type Config =
     // For MemoryStore, we keep the events as UTF8 arrays - we could use FsCodec.Codec.Box to remove the JSON encoding, which would improve perf but can conceal problems
     | Memory of MemoryStore.VolatileStore<ReadOnlyMemory<byte>>
     | Cosmos of CosmosStore.CosmosStoreContext * CachingStrategy * unfolds: bool
@@ -22,7 +22,7 @@ module MemoryStore =
             member a.Usage = a |> function
                 | StoreVerbose ->       "Include low level Store logging."
     let config () =
-        Context.Memory (Equinox.MemoryStore.VolatileStore())
+        Config.Memory (Equinox.MemoryStore.VolatileStore())
 
 let [<Literal>] appName = "equinox-tool"
 
@@ -132,7 +132,7 @@ module Cosmos =
         log.Information("CosmosStore Tip thresholds: {maxTipJsonLength}b {maxTipEvents}e Query paging {queryMaxItems} items",
                         a.TipMaxJsonLength, a.TipMaxEvents, a.QueryMaxItems)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
-        Context.Cosmos (context, cacheStrategy, unfolds)
+        Config.Cosmos (context, cacheStrategy, unfolds)
 
 module Dynamo =
 
@@ -216,7 +216,7 @@ module Dynamo =
                                          ?tipMaxEvents = a.TipMaxEvents, ?archiveTableName = a.ArchiveTable)
         context.LogConfiguration(log, "Main", a.Table, ?archiveTableName = a.ArchiveTable)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
-        Context.Dynamo (context, cacheStrategy, unfolds)
+        Config.Dynamo (context, cacheStrategy, unfolds)
 
 /// To establish a local node to run the tests against, follow https://developers.eventstore.com/server/v21.10/installation.html#use-docker-compose
 /// and/or do `docker compose up` in github.com/jet/equinox
@@ -258,7 +258,7 @@ module EventStore =
         log.Information("EventStoreDB {connectionString} {timeout}s", a.ConnectionString, timeout.TotalSeconds)
         let connection = connect a.ConnectionString a.Credentials timeout
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
-        Context.Es (EventStoreContext(connection, batchSize = a.BatchSize), cacheStrategy, unfolds)
+        Config.Es (EventStoreContext(connection, batchSize = a.BatchSize), cacheStrategy, unfolds)
 
 // see https://github.com/jet/equinox#provisioning-mssql
 module Sql =
@@ -293,7 +293,7 @@ module Sql =
         let config (log: ILogger) (cache, unfolds) (p : ParseResults<Parameters>) =
             let a = Arguments(p)
             let connection = connect log (a.ConnectionString, a.Schema, a.Credentials, a.AutoCreate) |> Async.RunSynchronously
-            Context.Sql (SqlStreamStoreContext(connection, batchSize = a.BatchSize), cacheStrategy cache, unfolds)
+            Config.Sql (SqlStreamStoreContext(connection, batchSize = a.BatchSize), cacheStrategy cache, unfolds)
     module My =
         type [<NoEquality; NoComparison>] Parameters =
             | [<AltCommandLine "-c"; Mandatory>] ConnectionString of string
@@ -318,7 +318,7 @@ module Sql =
         let config (log: ILogger) (cache, unfolds) (p : ParseResults<Parameters>) =
             let a = Arguments(p)
             let connection = connect log (a.ConnectionString, a.Credentials, a.AutoCreate) |> Async.RunSynchronously
-            Context.Sql (SqlStreamStoreContext(connection, batchSize = a.BatchSize), cacheStrategy cache, unfolds)
+            Config.Sql (SqlStreamStoreContext(connection, batchSize = a.BatchSize), cacheStrategy cache, unfolds)
      module Pg =
         type [<NoEquality; NoComparison>] Parameters =
             | [<AltCommandLine "-c"; Mandatory>] ConnectionString of string
@@ -346,7 +346,7 @@ module Sql =
         let config (log : ILogger) (cache, unfolds) (p : ParseResults<Parameters>) =
             let a = Arguments(p)
             let connection = connect log (a.ConnectionString, a.Schema, a.Credentials, a.AutoCreate) |> Async.RunSynchronously
-            Context.Sql (SqlStreamStoreContext(connection, batchSize = a.BatchSize), cacheStrategy cache, unfolds)
+            Config.Sql (SqlStreamStoreContext(connection, batchSize = a.BatchSize), cacheStrategy cache, unfolds)
 module MessageDb =
     open Equinox.MessageDb
     type [<NoEquality; NoComparison>] Parameters =
@@ -366,4 +366,4 @@ module MessageDb =
         let a = Arguments(p)
         let connection = connect log a.ConnectionString
         let cache = match cache with Some c -> CachingStrategy.SlidingWindow(c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
-        Context.Mdb (MessageDbContext(connection, batchSize = a.BatchSize), cache)
+        Config.Mdb (MessageDbContext(connection, batchSize = a.BatchSize), cache)

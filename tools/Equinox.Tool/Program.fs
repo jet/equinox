@@ -291,12 +291,12 @@ let resetStats () =
     let _ = Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink.Restart() in ()
 
 let dumpStats log = function
-    | Store.Context.Cosmos _ -> Equinox.CosmosStore.Core.Log.InternalMetrics.dump log
-    | Store.Context.Dynamo _ -> Equinox.DynamoStore.Core.Log.InternalMetrics.dump log
-    | Store.Context.Es _ ->     Equinox.EventStoreDb.Log.InternalMetrics.dump log
-    | Store.Context.Sql _ ->    Equinox.SqlStreamStore.Log.InternalMetrics.dump log
-    | Store.Context.Mdb _ ->    Equinox.MessageDb.Log.InternalMetrics.dump log
-    | Store.Context.Memory _ -> ()
+    | Store.Config.Cosmos _ -> Equinox.CosmosStore.Core.Log.InternalMetrics.dump log
+    | Store.Config.Dynamo _ -> Equinox.DynamoStore.Core.Log.InternalMetrics.dump log
+    | Store.Config.Es _ ->     Equinox.EventStoreDb.Log.InternalMetrics.dump log
+    | Store.Config.Sql _ ->    Equinox.SqlStreamStore.Log.InternalMetrics.dump log
+    | Store.Config.Mdb _ ->    Equinox.MessageDb.Log.InternalMetrics.dump log
+    | Store.Config.Memory _ -> ()
 
 module LoadTest =
 
@@ -321,7 +321,7 @@ module LoadTest =
     let run (log : ILogger) (verbose, verboseConsole, maybeSeq) reportFilename (p : ParseResults<TestParameters>) =
         let createStoreLog storeVerbose = createStoreLog storeVerbose verboseConsole maybeSeq
         let a = TestArguments p
-        let storeLog, storeConfig, httpClient: ILogger * Store.Context option * HttpClient option =
+        let storeLog, storeConfig, httpClient: ILogger * Store.Config option * HttpClient option =
             match p.TryGetSubCommand() with
             | Some (Web p) ->
                 let uri = p.GetResult(WebParameters.Endpoint,"https://localhost:5001") |> Uri
