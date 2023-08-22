@@ -57,7 +57,11 @@ type Decider<'event, 'state>(inner: DeciderCore<'event, 'state>) =
         let inline decide' s ct = task { let! r, es = Async.StartImmediateAsTask(decide s, ct) in return struct (r, es) }
         inner.Transact(decide', ?load = load, ?attempts = attempts, ct = ct)
 
-    (* Ex, Non Async variants *)
+    /// Project from the folded <c>'state</c>, but without executing a decision flow as <c>Transact</c> does
+    member _.Query(render: 'state -> 'view, ?load): Async<'view> = Async.call <| fun ct ->
+        inner.Query(render, ?load = load, ct = ct)
+
+    (* Ex variants *)
 
     /// 1. Invoke the supplied <c>decide</c> function with the current complete context, holding the <c>'result</c>
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
@@ -74,15 +78,11 @@ type Decider<'event, 'state>(inner: DeciderCore<'event, 'state>) =
                         ?load, ?attempts): Async<'view> = Async.call <| fun ct ->
         inner.TransactEx(decide >> ValueTuple.Create, mapResult, ?load = load, ?attempts = attempts, ct = ct)
 
-    /// Project from the folded <c>'state</c>, but without executing a decision flow as <c>Transact</c> does
-    member _.Query(render: 'state -> 'view, ?load): Async<'view> = Async.call <| fun ct ->
-        inner.Query(render, ?load = load, ct = ct)
-
     /// Project from the stream's complete context, but without executing a decision flow as <c>TransactEx<c> does
     member _.QueryEx(render: ISyncContext<'state> -> 'view, ?load): Async<'view> = Async.call <| fun ct ->
         inner.QueryEx(render, ?load = load, ct = ct)
 
-    (* Ex, Async variants *)
+    (* Ex Async variants *)
 
     /// 1. Invoke the supplied <c>Async</c> <c>decide</c> function with the current complete context, holding the <c>'result</c>
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
@@ -147,6 +147,11 @@ and [<NoComparison; NoEquality>]
         let inline mapRes r struct (_, s) = mapResult.Invoke(r, s)
         Stream.transact (stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes, defaultArg ct CancellationToken.None)
 
+    /// Project from the folded <c>'state</c>, but without executing a decision flow as <c>Transact</c> does
+    member _.Query(render: Func<'state, 'view>, [<O; D null>] ?load, [<O; D null>] ?ct): Task<'view> =
+        let render struct (_token, state) = render.Invoke(state)
+        Stream.query (stream, LoadPolicy.Fetch load, render, defaultArg ct CancellationToken.None)
+
     (* Async variants *)
 
     /// 1. Invoke the supplied <c>Async</c> <c>interpret</c> function with the present state
@@ -191,17 +196,12 @@ and [<NoComparison; NoEquality>]
         let inline mapRes r (Context c) = mapResult.Invoke(r, c)
         Stream.transact (stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes, defaultArg ct CancellationToken.None)
 
-    /// Project from the folded <c>'state</c>, but without executing a decision flow as <c>Transact</c> does
-    member _.Query(render: Func<'state, 'view>, [<O; D null>] ?load, [<O; D null>] ?ct): Task<'view> =
-        let render struct (_token, state) = render.Invoke(state)
-        Stream.query (stream, LoadPolicy.Fetch load, render, defaultArg ct CancellationToken.None)
-
     /// Project from the stream's complete context, but without executing a decision flow as <c>TransactEx<c> does
     member _.QueryEx(render: Func<ISyncContext<'state>, 'view>, [<O; D null>] ?load, [<O; D null>] ?ct): Task<'view> =
         let render (Context c) = render.Invoke(c)
         Stream.query (stream, LoadPolicy.Fetch load, render, defaultArg ct CancellationToken.None)
 
-    (* Ex variants, Async *)
+    (* Ex Async variants *)
 
     /// 1. Invoke the supplied <c>Async</c> <c>decide</c> function with the current complete context, holding the <c>'result</c>
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
