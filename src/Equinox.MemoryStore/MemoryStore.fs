@@ -48,18 +48,18 @@ type VolatileStore<'Format>() =
             if succeeded then committed.Trigger(FsCodec.StreamName.Internal.trust streamName, events)
             outcome
 
-type private StoreCategory<'event, 'state, 'context, 'Format>(store: VolatileStore<'Format>, codec, fold, initial) =
+type private StoreCategory<'event, 'state, 'req, 'Format>(store: VolatileStore<'Format>, codec, fold, initial) =
     let fold s xs = (fold : System.Func<'state, 'event[], 'state>).Invoke(s, xs)
     let res version state events = struct ({ value = null; version = version; streamBytes = -1 }, fold state events)
-    let decode events = Array.chooseV (codec : FsCodec.IEventCodec<'event, 'Format, 'context>).TryDecode events
-    interface ICategory<'event, 'state, 'context> with
+    let decode events = Array.chooseV (codec : FsCodec.IEventCodec<'event, 'Format, 'req>).TryDecode events
+    interface ICategory<'event, 'state, 'req> with
         member _.Empty = res 0 initial Array.empty
         member _.Load(_log, _categoryName, _streamId, streamName, _maxAge, _requireLeader, _ct) = task {
             match store.Load(streamName) with
             | null -> return res 0 initial Array.empty
             | xs -> return res xs.Length initial (decode xs) }
-        member _.Sync(_log, categoryName, streamId, streamName, context, token, state, events, _ct) = task {
-            let encoded = events |> Array.mapi (fun i e -> FsCodec.Core.TimelineEvent.Create(token.version + int64 i, codec.Encode(context, e)))
+        member _.Sync(_log, categoryName, streamId, streamName, req, token, state, events, _ct) = task {
+            let encoded = events |> Array.mapi (fun i e -> FsCodec.Core.TimelineEvent.Create(token.version + int64 i, codec.Encode(req, e)))
             match store.TrySync(streamName, categoryName, streamId, int token.version, encoded) with
             | true, streamEvents' ->
                 return SyncResult.Written (res streamEvents'.Length state events)
@@ -67,5 +67,5 @@ type private StoreCategory<'event, 'state, 'context, 'Format>(store: VolatileSto
                 let eventsSinceExpectedVersion = conflictingEvents |> Seq.skip (int token.version) |> decode
                 return SyncResult.Conflict (fun _ct -> task { return res conflictingEvents.Length state eventsSinceExpectedVersion }) }
 
-type MemoryStoreCategory<'event, 'state, 'Format, 'context>(store: VolatileStore<'Format>, name: string, codec, fold, initial) =
-    inherit Equinox.Category<'event, 'state, 'context>(name, StoreCategory(store, codec, fold, initial))
+type MemoryStoreCategory<'event, 'state, 'format, 'req>(store: VolatileStore<'format>, name: string, codec, fold, initial) =
+    inherit Equinox.Category<'event, 'state, 'req>(name, StoreCategory(store, codec, fold, initial))

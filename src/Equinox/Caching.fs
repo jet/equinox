@@ -9,9 +9,9 @@ let private tee f (inner: CancellationToken -> Task<struct (StreamToken * 'state
     f tokenAndState
     return tokenAndState }
 
-type private Decorator<'event, 'state, 'context, 'cat when 'cat :> ICategory<'event, 'state, 'context> and 'cat :> IReloadable<'state> >
+type private Decorator<'event, 'state, 'req, 'cat when 'cat :> ICategory<'event, 'state, 'req> and 'cat :> IReloadable<'state> >
     (category: 'cat, cache: Equinox.Cache, isStale, createKey, createOptions) =
-    interface ICategory<'event, 'state, 'context> with
+    interface ICategory<'event, 'state, 'req> with
         member _.Empty = category.Empty
         member _.Load(log, categoryName, streamId, streamName, maxAge, requireLeader, ct) = task {
             let loadOrReload ct = function
@@ -37,7 +37,7 @@ let private policyFixedTimeSpan (period: System.TimeSpan) () =
     let expirationPoint = let creationDate = System.DateTimeOffset.UtcNow in creationDate.Add period
     System.Runtime.Caching.CacheItemPolicy(AbsoluteExpiration = expirationPoint)
 
-let apply isStale x (cat: 'cat when 'cat :> ICategory<'event, 'state, 'context> and 'cat :> IReloadable<'state>) =
+let apply isStale x (cat: 'cat when 'cat :> ICategory<'event, 'state, 'req> and 'cat :> IReloadable<'state>) =
     match x with
     | Equinox.CachingStrategy.NoCaching ->                                     (cat : ICategory<_, _, _>)
     | Equinox.CachingStrategy.FixedTimeSpan (cache, period) ->                 Decorator(cat, cache, isStale, mkKey null,   policyFixedTimeSpan period)

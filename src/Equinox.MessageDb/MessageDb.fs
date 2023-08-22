@@ -373,7 +373,7 @@ type AccessStrategy<'event, 'state> =
     /// </summary>
     | AdjacentSnapshots of snapshotEventCaseName: string * toSnapshot: ('state -> 'event)
 
-type private StoreCategory<'event, 'state, 'context>(context: MessageDbContext, codec: IEventCodec<_, _, 'context>, fold, initial, access) =
+type private StoreCategory<'event, 'state, 'req>(context: MessageDbContext, codec: IEventCodec<_, _, 'req>, fold, initial, access) =
     let fold s xs = (fold : System.Func<'state, 'event[], 'state>).Invoke(s, xs)
     let loadAlgorithm log category streamId streamName requireLeader ct =
         match access with
@@ -387,7 +387,7 @@ type private StoreCategory<'event, 'state, 'context>(context: MessageDbContext, 
                 return struct(token, state)
             | ValueNone -> return! context.LoadBatched(log, streamName, requireLeader, codec.TryDecode, fold, initial, ct) }
     let reload (log, sn, leader, token, state) ct = context.Reload(log, sn, leader, token, codec.TryDecode, fold, state, ct)
-    interface ICategory<'event, 'state, 'context> with
+    interface ICategory<'event, 'state, 'req> with
         member _.Empty = context.TokenEmpty, initial
         member _.Load(log, categoryName, streamId, streamName, _maxAge, requireLeader, ct) =
             loadAlgorithm log categoryName streamId streamName requireLeader ct
@@ -413,11 +413,11 @@ type private StoreCategory<'event, 'state, 'context>(context: MessageDbContext, 
             FsCodec.Core.EventData.Create(rawEvent.EventType, rawEvent.Data, meta = Snapshot.meta token)
         context.StoreSnapshot(log, category, streamId, encodedWithMeta, ct)
 
-type MessageDbCategory<'event, 'state, 'context>(context: MessageDbContext, name, codec, fold, initial, access,
+type MessageDbCategory<'event, 'state, 'req>(context: MessageDbContext, name, codec, fold, initial, access,
         // For MessageDb, caching is less critical than it is for e.g. CosmosDB.
         // However, while not necessary to control costs, caching can improve the throughput of your application a few times over,
         //   as such you should only skip it if you know what you're doing
         //   e.g. if streams are always short, events are always small, you are absolutely certain there will be no cache hits
         //        (and you have a cheerful but bored DBA)
         caching) =
-    inherit Equinox.Category<'event, 'state, 'context>(name, StoreCategory(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching)
+    inherit Equinox.Category<'event, 'state, 'req>(name, StoreCategory(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching)

@@ -1112,9 +1112,9 @@ type internal StoreClient(table: StoreTable, fallback: StoreTable option, query:
     member _.Prune(log, stream, index, ct) =
         Prune.until log (table, stream) query.MaxItems index ct
 
-type internal StoreCategory<'event, 'state, 'context>
+type internal StoreCategory<'event, 'state, 'req>
     (   store: StoreClient,
-        codec: IEventCodec<'event, EncodedBody, 'context>, fold, initial: 'state, isOrigin: 'event -> bool,
+        codec: IEventCodec<'event, EncodedBody, 'req>, fold, initial: 'state, isOrigin: 'event -> bool,
         checkUnfolds, mapUnfolds: Choice<unit, 'event[] -> 'state -> 'event[], 'event[] -> 'state -> 'event[] * 'event[]>) =
     let fold s xs = (fold : Func<'state, 'event[], 'state>).Invoke(s, xs)
     let fetch state f = task { let! token', events = f in return struct (token', fold state events) }
@@ -1122,7 +1122,7 @@ type internal StoreCategory<'event, 'state, 'context>
         match! store.Reload(log, (streamNam, pos), requireLeader, (codec.TryDecode, isOrigin), ct) with
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
-    interface ICategory<'event, 'state, 'context> with
+    interface ICategory<'event, 'state, 'req> with
         member _.Empty = Token.empty, initial
         member _.Load(log, _categoryName, _streamId, streamName, _maxAge, requireLeader, ct) =
             fetch initial (store.Load(log, (streamName, None), requireLeader, (codec.TryDecode, isOrigin), checkUnfolds, ct))
@@ -1282,8 +1282,8 @@ type AccessStrategy<'event, 'state> =
     /// </remarks>
     | Custom of isOrigin: ('event -> bool) * transmute: ('event[] -> 'state -> 'event[] * 'event[])
 
-type DynamoStoreCategory<'event, 'state, 'context> =
-    inherit Equinox.Category<'event, 'state, 'context>
+type DynamoStoreCategory<'event, 'state, 'req> =
+    inherit Equinox.Category<'event, 'state, 'req>
     new(context: DynamoStoreContext, name, codec, fold, initial, access,
         // For DynamoDB, caching is typically a central aspect of managing RU consumption to maintain performance and capacity.
         // Omitting can make sense in specific cases; if streams are short, or there's always a usable snapshot in the Tip
@@ -1302,9 +1302,9 @@ type DynamoStoreCategory<'event, 'state, 'context> =
             | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         true,  Choice2Of3 (fun _ (state: 'state) -> unfold state)
             | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> Array.empty, toSnapshot state |> Array.singleton)
             | AccessStrategy.Custom (isOrigin, transmute) ->     isOrigin,         true,  Choice3Of3 transmute
-        { inherit Equinox.Category<'event, 'state, 'context>(name,
-            StoreCategory<'event, 'state, 'context>(context.StoreClient, codec, fold, initial, isOrigin, checkUnfolds, mapUnfolds)
-            |> Caching.apply Token.isStale caching) }
+        { inherit Equinox.Category<'event, 'state, 'req>(name,
+            StoreCategory<'event, 'state, 'req>(context.StoreClient, codec, fold, initial, isOrigin, checkUnfolds, mapUnfolds)
+            |> Caching.apply Token.isStale caching); __ = () }; val private __: unit // __ can be removed after Rider 2023.2
 
 module Exceptions =
 

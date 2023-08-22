@@ -438,7 +438,7 @@ type private CompactionContext(eventsLen: int, capacityBeforeCompaction: int) =
     /// Determines whether writing a Compaction event is warranted (based on the existing state and the current accumulated changes)
     member _.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
-type private StoreCategory<'event, 'state, 'context>(context: EventStoreContext, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, access) =
+type private StoreCategory<'event, 'state, 'req>(context: EventStoreContext, codec: FsCodec.IEventCodec<_, _, 'req>, fold, initial, access) =
     let fold s xs = (fold : System.Func<'state, 'event[], 'state>).Invoke(s, xs)
     let tryDecode (e: ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
     let isOrigin =
@@ -457,7 +457,7 @@ type private StoreCategory<'event, 'state, 'context>(context: EventStoreContext,
         | AccessStrategy.RollingSnapshots (isValid, _) -> Some isValid
     let fetch state f = task { let! token', events = f in return struct (token', fold state events) }
     let reload (log, sn, leader, token, state) = fetch state (context.Reload(log, sn, leader, token, tryDecode, compactionPredicate))
-    interface ICategory<'event, 'state, 'context> with
+    interface ICategory<'event, 'state, 'req> with
         member _.Empty = context.TokenEmpty, initial
         member _.Load(log, _categoryName, _streamId, streamName, _maxAge, requireLeader, _ct) =
             fetch initial (loadAlgorithm log streamName requireLeader)
@@ -475,9 +475,9 @@ type private StoreCategory<'event, 'state, 'context>(context: EventStoreContext,
             | GatewaySyncResult.ConflictUnknown _ -> return SyncResult.Conflict (fun _ct -> reload (log, streamName, true, streamToken, state)) }
     interface Caching.IReloadable<'state> with member _.Reload(log, sn, leader, token, state, _ct) = reload (log, sn, leader, token, state)
 
-type EventStoreCategory<'event, 'state, 'context> =
-    inherit Equinox.Category<'event, 'state, 'context>
-    new(context: EventStoreContext, name, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, access,
+type EventStoreCategory<'event, 'state, 'req> =
+    inherit Equinox.Category<'event, 'state, 'req>
+    new(context: EventStoreContext, name, codec: FsCodec.IEventCodec<_, _, 'req>, fold, initial, access,
         // Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
         // e.g., a key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
         caching) =
@@ -486,8 +486,8 @@ type EventStoreCategory<'event, 'state, 'context> =
         | AccessStrategy.LatestKnownEvent, _ ->
             invalidOp "Equinox.EventStore does not support mixing AccessStrategy.LatestKnownEvent with Caching at present."
         | _ -> ()
-        let cat = StoreCategory<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
-        { inherit Equinox.Category<'event, 'state, 'context>(name, cat) }
+        let cat = StoreCategory<'event, 'state, 'req>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
+        { inherit Equinox.Category<'event, 'state, 'req>(name, cat); __ = () }; val private __: unit
 
 type private SerilogAdapter(log: ILogger) =
     interface EventStore.ClientAPI.ILogger with
