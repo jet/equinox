@@ -45,8 +45,8 @@ type Category<'event, 'state, 'req>(categoryName, inner: Core.ICategory<'event, 
 [<AbstractClass; Sealed; System.Runtime.CompilerServices.Extension>]
 type Stream private () =
     [<System.Runtime.CompilerServices.Extension>]
-    static member Resolve(cat: Category<'event, 'state, 'req>, log, context): System.Func<FsCodec.StreamId, DeciderCore<'event, 'state>> =
-         System.Func<_, _>(fun sid -> cat.Stream(log, context, sid) |> DeciderCore<'event, 'state>)
+    static member Resolve(cat: Category<'event, 'state, 'req>, log, req): System.Func<FsCodec.StreamId, DeciderCore<'event, 'state>> =
+         System.Func<_, _>(fun sid -> cat.Stream(log, req, sid) |> DeciderCore<'event, 'state>)
     [<System.Runtime.CompilerServices.Extension>]
     static member Resolve(cat: Category<'event, 'state, unit>, log): System.Func<FsCodec.StreamId, DeciderCore<'event, 'state>> =
         Stream.Resolve(cat, log, ())

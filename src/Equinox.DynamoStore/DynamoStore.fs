@@ -1126,10 +1126,10 @@ type internal StoreCategory<'event, 'state, 'req>
         member _.Empty = Token.empty, initial
         member _.Load(log, _categoryName, _streamId, streamName, _maxAge, requireLeader, ct) =
             fetch initial (store.Load(log, (streamName, None), requireLeader, (codec.TryDecode, isOrigin), checkUnfolds, ct))
-        member _.Sync(log, _categoryName, _streamId, streamName, ctx, (Token.Unpack pos as streamToken), state, events, ct) = task {
+        member _.Sync(log, _categoryName, _streamId, streamName, req, (Token.Unpack pos as streamToken), state, events, ct) = task {
             let state' = fold state events
             let exp, events, eventsEncoded, unfoldsEncoded =
-                let encode e = codec.Encode(ctx, e)
+                let encode e = codec.Encode(req, e)
                 let expVer = Position.toIndex >> Sync.Exp.Version
                 match mapUnfolds with
                 | Choice1Of3 () ->        expVer, events, Array.map encode events, Array.empty

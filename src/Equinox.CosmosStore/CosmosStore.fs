@@ -1079,10 +1079,10 @@ type internal StoreCategory<'event, 'state, 'req>
         member _.Load(log, _categoryName, _streamId, stream, _maxAge, _requireLeader, ct): Task<struct (StreamToken * 'state)> = task {
             let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds, ct)
             return struct (token, fold initial events) }
-        member _.Sync(log, _categoryName, _streamId, streamName, ctx, (Token.Unpack pos as streamToken), state, events, ct) = task {
+        member _.Sync(log, _categoryName, _streamId, streamName, req, (Token.Unpack pos as streamToken), state, events, ct) = task {
             let state' = fold state events
             let exp, events, eventsEncoded, projectionsEncoded =
-                let encode e = codec.Encode(ctx, e)
+                let encode e = codec.Encode(req, e)
                 match mapUnfolds with
                 | Choice1Of3 () ->        SyncExp.Version pos.index, events, Array.map encode events, Seq.empty
                 | Choice2Of3 unfold ->    SyncExp.Version pos.index, events, Array.map encode events, Array.map encode (unfold events state')

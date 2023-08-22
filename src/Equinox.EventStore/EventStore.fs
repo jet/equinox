@@ -461,14 +461,14 @@ type private StoreCategory<'event, 'state, 'req>(context: EventStoreContext, cod
         member _.Empty = context.TokenEmpty, initial
         member _.Load(log, _categoryName, _streamId, streamName, _maxAge, requireLeader, _ct) =
             fetch initial (loadAlgorithm log streamName requireLeader)
-        member _.Sync(log, _categoryName, _streamId, streamName, ctx, (Token.Unpack token as streamToken), state, events, _ct) = task {
+        member _.Sync(log, _categoryName, _streamId, streamName, req, (Token.Unpack token as streamToken), state, events, _ct) = task {
             let events =
                 match access with
                 | AccessStrategy.Unoptimized | AccessStrategy.LatestKnownEvent -> events
                 | AccessStrategy.RollingSnapshots (_, compact) ->
                     let cc = CompactionContext(Array.length events, token.batchCapacityLimit.Value)
                     if cc.IsCompactionDue then Array.append events (fold state events |> compact |> Array.singleton) else events
-            let encode e = codec.Encode(ctx, e)
+            let encode e = codec.Encode(req, e)
             let encodedEvents: EventData[] = events |> Array.map (encode >> UnionEncoderAdapters.eventDataOfEncodedEvent)
             match! context.Sync(log, streamName, streamToken, (events, encodedEvents), compactionPredicate) with
             | GatewaySyncResult.Written token' ->    return SyncResult.Written  (token', fold state events)

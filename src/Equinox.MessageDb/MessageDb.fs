@@ -391,8 +391,8 @@ type private StoreCategory<'event, 'state, 'req>(context: MessageDbContext, code
         member _.Empty = context.TokenEmpty, initial
         member _.Load(log, categoryName, streamId, streamName, _maxAge, requireLeader, ct) =
             loadAlgorithm log categoryName streamId streamName requireLeader ct
-        member x.Sync(log, categoryName, streamId, streamName, ctx, token, state, events, ct) = task {
-            let encode e = codec.Encode(ctx, e)
+        member x.Sync(log, categoryName, streamId, streamName, req, token, state, events, ct) = task {
+            let encode e = codec.Encode(req, e)
             let encodedEvents: IEventData<EventBody>[] = events |> Array.map encode
             match! context.TrySync(log, categoryName, streamId, streamName, token, encodedEvents, ct) with
             | GatewaySyncResult.Written token' ->
@@ -401,7 +401,7 @@ type private StoreCategory<'event, 'state, 'req>(context: MessageDbContext, code
                 | AccessStrategy.Unoptimized | AccessStrategy.LatestKnownEvent -> ()
                 | AccessStrategy.AdjacentSnapshots(_, toSnap) ->
                     if Token.shouldSnapshot context.BatchOptions.BatchSize token token' then
-                        do! x.StoreSnapshot(log, categoryName, streamId, ctx, token', toSnap state', ct)
+                        do! x.StoreSnapshot(log, categoryName, streamId, req, token', toSnap state', ct)
                 return SyncResult.Written (token', state')
             | GatewaySyncResult.ConflictUnknown ->
                 return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, token, state)) }
