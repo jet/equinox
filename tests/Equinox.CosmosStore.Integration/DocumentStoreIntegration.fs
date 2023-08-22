@@ -84,7 +84,7 @@ type Tests(testOutputHelper) =
         let tripRequestCharges = [ for e, c in capture.RequestCharges -> sprintf "%A" e, c ]
         test <@ float rus >= Seq.sum (Seq.map snd tripRequestCharges) @>
 
-    // There's currently a discrepancy between real DynamoDb and the similar wrt whether a continuation token is returned
+    // There's currently a discrepancy between real DynamoDB and the dynamodb-local simulator wrt whether a continuation token is returned
     // when you hit the max count as you read the final item in a stream. Leaving it ugly in the hope we get to delete it.
     let expectFinalExtraPage () =
 #if STORE_DYNAMO

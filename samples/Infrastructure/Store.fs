@@ -97,9 +97,9 @@ module Cosmos =
         member x.TipMaxJsonLength =     p.GetResult(TipMaxJsonLength, 30_000)
         member x.QueryMaxItems =        p.GetResult(QueryMaxItems, 10)
 
-    let logContainer (log: ILogger) name (mode, endpoint, db, container) =
-        log.Information("CosmosDB {name:l} {mode} {connection} Database {database} Container {container}",
-                        name, defaultArg mode Microsoft.Azure.Cosmos.ConnectionMode.Direct, endpoint, db, container)
+    let logContainer (log: ILogger) role (mode, endpoint, db, container) =
+        log.Information("CosmosDB {role:l} {mode} {connection} Database {database} Container {container}",
+                        role, defaultArg mode Microsoft.Azure.Cosmos.ConnectionMode.Direct, endpoint, db, container)
 
     // NOTE: this is a big song and dance, don't blindly copy!
     // - In normal usage, you typically connect to a single container only.
@@ -121,16 +121,16 @@ module Cosmos =
         let context =
             match connect log a with
             | (connector, databaseId, containerId), None ->
-                CosmosStoreContext.Connect(connector, databaseId, containerId, a.TipMaxEvents, queryMaxItems = a.QueryMaxItems, tipMaxJsonLength = a.TipMaxJsonLength)
+                CosmosStoreContext.Connect(connector, databaseId, containerId, a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength, queryMaxItems = a.QueryMaxItems)
                 |> Async.RunSynchronously
             | (connector, databaseId, containerId), Some (aConnector, aDatabaseId, aContainerId) ->
                 let cosmosClient = connector.Connect(databaseId, [| containerId |]) |> Async.RunSynchronously
                 let archiveCosmosClient = aConnector.Connect(aDatabaseId, [| aContainerId |]) |> Async.RunSynchronously
                 let client = CosmosStoreClient(cosmosClient, archiveCosmosClient)
-                CosmosStoreContext(client, databaseId, containerId, a.TipMaxEvents, queryMaxItems = a.QueryMaxItems, tipMaxJsonLength = a.TipMaxJsonLength,
+                CosmosStoreContext(client, databaseId, containerId, a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength, queryMaxItems = a.QueryMaxItems,
                                    archiveDatabaseId = aDatabaseId, archiveContainerId = aContainerId)
-        log.Information("CosmosStore Max Events in Tip: {maxTipEvents}e {maxTipJsonLength}b Items in Query: {queryMaxItems}",
-                        a.TipMaxEvents, a.TipMaxJsonLength, a.QueryMaxItems)
+        log.Information("CosmosStore Tip thresholds: {maxTipJsonLength}b {maxTipEvents}e Query paging {queryMaxItems} items",
+                        a.TipMaxJsonLength, a.TipMaxEvents, a.QueryMaxItems)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
         Context.Cosmos (context, cacheStrategy, unfolds)
 
@@ -139,14 +139,14 @@ module Dynamo =
     type Equinox.DynamoStore.DynamoStoreConnector with
 
         member x.LogConfiguration(log: ILogger) =
-            log.Information("DynamoStore {endpoint} Timeout {timeoutS}s Retries {retries}",
+            log.Information("DynamoDB {endpoint} Timeout {timeoutS}s Retries {retries}",
                             x.Endpoint, (let t = x.Timeout in t.TotalSeconds), x.Retries)
 
     type Equinox.DynamoStore.DynamoStoreContext with
 
         member internal x.LogConfiguration(log: ILogger, role, tableName: string, ?archiveTableName: string) =
             log.Information("DynamoStore {role:l} Table {table} Archive {archive}", role, tableName, Option.toObj archiveTableName)
-            log.Information("DynamoStore Tip thresholds: {maxTipBytes}b {maxTipEvents}e Query Paging {queryMaxItems} items",
+            log.Information("DynamoStore Tip thresholds: {maxTipBytes}b {maxTipEvents}e Query paging {queryMaxItems} items",
                             x.TipOptions.MaxBytes, Option.toNullable x.TipOptions.MaxEvents, x.QueryOptions.MaxItems)
 
     open Equinox.DynamoStore
