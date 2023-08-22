@@ -19,7 +19,6 @@
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Serilog.Sinks.Seq.dll"
-#r "Equinox.Core.dll"
 #r "Newtonsoft.Json.dll"
 #r "FSharp.UMX.dll"
 #r "FsCodec.dll"
@@ -168,8 +167,7 @@ module Cosmos =
     let discovery = Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION")
     let connector = CosmosStoreConnector(discovery, TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5., Microsoft.Azure.Cosmos.ConnectionMode.Gateway)
     let databaseId, containerId = read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER"
-    let storeClient = CosmosStoreClient.Connect(connector.CreateAndInitialize, databaseId, containerId) |> Async.RunSynchronously
-    let context = CosmosStoreContext(storeClient, databaseId, containerId, tipMaxEvents = 10)
+    let context = CosmosStoreContext.Connect(connector, databaseId, containerId, tipMaxEvents = 10) |> Async.RunSynchronously
     let accessStrategy = AccessStrategy.Snapshot (Fold.isValid,Fold.snapshot)
     let cat = CosmosStoreCategory(context, Stream.Category, Events.codecJe, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
     let resolve = Equinox.Decider.forStream Log.log cat

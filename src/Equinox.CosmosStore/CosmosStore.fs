@@ -1,8 +1,8 @@
 namespace Equinox.CosmosStore.Core
 
 open Equinox.Core
-open FsCodec
 open FSharp.Control
+open FsCodec
 open Microsoft.Azure.Cosmos
 open Serilog
 open System
@@ -1167,7 +1167,7 @@ type CosmosClientFactory
         co
 
     /// Creates an instance of CosmosClient without actually validating or establishing the connection
-    /// It's recommended to use <c>Connect()</c> and/or <c>CosmosStoreClient.Connect()</c> in preference to this API
+    /// It's recommended to use <c>CosmosStoreClient.Connect()</c> in preference to this API
     ///   in order to avoid latency spikes, and/or deferring discovery of connectivity or permission issues.
     member x.CreateUninitialized(discovery: Discovery) = discovery |> function
         | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> new CosmosClient(string uri, key, x.Options)
@@ -1211,7 +1211,7 @@ type CosmosStoreConnector
     member _.Endpoint = discovery.Endpoint
 
     /// Creates an instance of CosmosClient without actually validating or establishing the connection
-    /// It's recommended to use <c>Connect()</c> and/or <c>CosmosStoreClient.Connect()</c> in preference to this API
+    /// It's recommended to use <c>Connect</c> and/or <c>CosmosStoreClient.Connect()</c> in preference to this API
     ///   in order to avoid latency spikes, and/or deferring discovery of connectivity or permission issues.
     member _.CreateUninitialized() = factory.CreateUninitialized(discovery)
 

@@ -1,9 +1,9 @@
 namespace Equinox.DynamoStore.Core
 
 open Equinox.Core
-open FsCodec
 open FSharp.AWS.DynamoDB
 open FSharp.Control
+open FsCodec
 open Serilog
 open System
 open System.IO
@@ -1240,7 +1240,7 @@ type DynamoStoreContext(client: DynamoStoreClient, tableName, tipOptions, queryO
             [<O; D null>] ?queryMaxItems, [<O; D null>] ?queryMaxRequests,
             [<O; D null>] ?ignoreMissingEvents, [<O; D null>] ?archiveTableName,
             [<O; D null>] ?mode: ConnectMode): Async<DynamoStoreContext> = async {
-        do! client.Establish(tableName, ?archiveTableName = archiveTableName)
+        do! client.Establish(tableName, ?archiveTableName = archiveTableName, ?mode = mode)
         return DynamoStoreContext(client, tableName,
             ?maxBytes = maxBytes, ?tipMaxEvents = tipMaxEvents,
             ?queryMaxItems = queryMaxItems, ?queryMaxRequests = queryMaxRequests,
