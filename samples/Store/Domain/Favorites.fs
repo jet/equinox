@@ -82,7 +82,8 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
     // NOTE not a real world example - used for an integration test; TODO get a better example where it's actually relevant
     member _.UnfavoriteWithPostVersion(clientId, sku) =
         let decider = resolve clientId
-        decider.TransactEx((fun c -> (), decideUnfavorite sku c.State), fun () c -> c.Version)
+        let mapResult () (c: Equinox.ISyncContext<_>) = c.Version
+        decider.TransactEx((fun c -> (), decideUnfavorite sku c.State), mapResult)
 
 let create resolve =
     Service(Stream.id >> resolve)

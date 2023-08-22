@@ -162,7 +162,7 @@ type Service internal (resolve: CartId -> Equinox.Decider<Events.Event, Fold.Sta
 #endif
         let decider = resolve cartId
         let opt = if optimistic then Equinox.LoadOption.AnyCachedValue else Equinox.LoadOption.RequireLoad
-        decider.TransactAsync(interpret, opt)
+        decider.Transact(interpret, opt)
 
     member x.ExecuteManyAsync(cartId, optimistic, commands: Command seq, ?prepare): Async<unit> =
         x.Run(cartId, optimistic, commands, ?prepare = prepare) |> Async.Ignore

@@ -1318,7 +1318,7 @@ type Service internal (resolve: CartId -> Equinox.Decider<Events.Event, Fold.Sta
     member _.Run(cartId, optimistic, commands: Command seq, ?prepare): Async<Fold.State> =
         let decider = resolve cartId
         let opt = if optimistic then Equinox.AnyCachedValue else Equinox.RequireLoad
-        decider.TransactAsync(fun state -> async {
+        decider.Transact(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
             return interpretMany Fold.fold (Seq.map interpret commands) state }, opt)
 ```

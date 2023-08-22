@@ -424,9 +424,9 @@ type GeneralTests(testOutputHelper) =
         let id = Guid.NewGuid()
         let decider = SimplestThing.decider log context id
 
-        let! before, after = decider.TransactEx(
-            (fun state -> state.Version, [| SimplestThing.StuffHappened |]),
-            mapResult = (fun result ctx-> result, ctx.Version))
+        let! before, after =
+            let mapResult result (ctx: Equinox.ISyncContext<_>) = result, ctx.Version
+            decider.TransactEx((fun state -> state.Version, [| SimplestThing.StuffHappened |]), mapResult)
         test <@ [before; after] = [0L; 1L] @> }
 
 #if STORE_MESSAGEDB

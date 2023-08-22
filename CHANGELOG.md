@@ -10,7 +10,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
-- `Equinox`: `Decider.Transact`, `TransactAsync`, `TransactExAsync` overloads [#325](https://github.com/jet/equinox/pull/325)
+- `Equinox`: `Decider.Transact`, `TransactEx` overloads [#325](https://github.com/jet/equinox/pull/325)
 - `Equinox.LoadOption.RequireLeader`: support for requesting a consistent read of a stream [#341](https://github.com/jet/equinox/pull/341)
 - `Equinox.LoadOption.AllowStale`: Read mode that limits reads to a maximum of one retrieval per the defined time window [#386](https://github.com/jet/equinox/pull/386)
 - `Equinox.Category` base class, with `Decider` and `Stream` helper `module`s [#337](https://github.com/jet/equinox/pull/337)
@@ -40,6 +40,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Equinox.LoadOption`: Rename `AllowStale` to `AnyCachedValue` [#386](https://github.com/jet/equinox/pull/386)
 - `Equinox.Decider`: Replace `'event list` with `'event[]` [#411](https://github.com/jet/equinox/pull/411)
 - `Equinox.Decider`: Replace `maxAttempts` with a default policy and an optional argument on `Transact*` APIs [#337](https://github.com/jet/equinox/pull/337)
+- `Equinox.Decider`: rename `Decider.TransactAsync`, `Decider.TransactExAsync` to `Transact` [#314](https://github.com/jet/equinox/pull/314)
 - `Equinox.Core.AsyncBatchingGate`: renamed to `Batching.Batcher` [#390](https://github.com/jet/equinox/pull/390)
 - `Equinox.Core`: Now a free-standing library that a) does not depend on `Equinox` b) is not depended on by the Stores (though `CosmosStore` inlines `AsyncCacheCell`) [#420](https://github.com/jet/equinox/pull/420)
 - Stores: Change Event Body types, requiring `FsCodec` v `3.0.0`, with [`EventBody` types switching from `byte[]` to `ReadOnlyMemory<byte>` and/or `JsonElement` see FsCodec#75](https://github.com/jet/FsCodec/pull/75) [#323](https://github.com/jet/equinox/pull/323)
