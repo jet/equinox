@@ -15,10 +15,10 @@
 #r "Microsoft.Azure.Cosmos.Client.dll"
 #r "Equinox.CosmosStore.dll"
 #else
-#r "nuget: Equinox.CosmosStore, *-*"
-#r "nuget: FsCodec.SystemTextJson, *-*"
-#r "nuget: Serilog.Sinks.Console"
-#r "nuget: Serilog.Sinks.Seq"
+#r "nuget:Equinox.CosmosStore, *-*"
+#r "nuget:FsCodec.SystemTextJson, *-*"
+#r "nuget:Serilog.Sinks.Console"
+#r "nuget:Serilog.Sinks.Seq"
 #endif
 
 open System
