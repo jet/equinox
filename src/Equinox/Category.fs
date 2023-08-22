@@ -52,7 +52,7 @@ type Stream private () =
         Stream.Resolve(cat, log, ())
 
 module Decider =
-    let forContext log (cat: Category<'event, 'state, 'req>) context streamId =
+    let forRequest log (cat: Category<'event, 'state, 'req>) context streamId =
         Stream.Resolve(cat, log, context).Invoke(streamId) |> Decider<'event, 'state>
     let forStream log (cat: Category<'event, 'state, unit>) streamId =
-        forContext log cat () streamId
+        forRequest log cat () streamId
