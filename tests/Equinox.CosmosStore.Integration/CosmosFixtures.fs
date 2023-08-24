@@ -97,17 +97,17 @@ let createConnector (log: Serilog.ILogger) =
 type DocStoreCollection() =
     do ()
 
-let createPrimaryContextIgnoreMissing connector containerId queryMaxItems tipMaxEvents ignoreMissing =
-    CosmosStoreContext.Connect(connector, databaseId, containerId, tipMaxEvents = tipMaxEvents, queryMaxItems = queryMaxItems, ignoreMissingEvents = ignoreMissing)
-    |> Async.RunSynchronously
+let createPrimaryContextIgnoreMissing (connector: CosmosStoreConnector) containerId queryMaxItems tipMaxEvents ignoreMissing =
+    let client = connector.Connect(databaseId, [| containerId |]) |> Async.RunSynchronously
+    CosmosStoreContext(client, databaseId, containerId, tipMaxEvents = tipMaxEvents, queryMaxItems = queryMaxItems, ignoreMissingEvents = ignoreMissing)
 
 let defaultTipMaxEvents = 10
 let createArchiveContext log queryMaxItems =
-    CosmosStoreContext.Connect(createConnector log, databaseId, containerId, defaultTipMaxEvents, queryMaxItems = queryMaxItems)
-    |> Async.RunSynchronously
+    let client = (createConnector log).Connect(databaseId, [| containerId |]) |> Async.RunSynchronously
+    CosmosStoreContext(client, databaseId, containerId, defaultTipMaxEvents, queryMaxItems = queryMaxItems)
 let createFallbackContext log queryMaxItems =
-    CosmosStoreContext.Connect(createConnector log, databaseId, containerId, defaultTipMaxEvents, queryMaxItems = queryMaxItems, archiveContainerId = archiveContainerId)
-    |> Async.RunSynchronously
+    let client = (createConnector log).Connect(databaseId, [| containerId |]) |> Async.RunSynchronously
+    CosmosStoreContext(client, databaseId, containerId, defaultTipMaxEvents, queryMaxItems = queryMaxItems, archiveContainerId = archiveContainerId)
 
 type StoreContext = CosmosStoreContext
 type StoreCategory<'E, 'S> = CosmosStoreCategory<'E, 'S, unit>

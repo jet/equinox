@@ -137,7 +137,8 @@ module Store =
     let appName = "equinox-tutorial"
     let connector = CosmosStoreConnector(Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"), TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5.)
     let databaseId, containerId = read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER"
-    let context = CosmosStoreContext.Connect(connector, databaseId, containerId, tipMaxEvents = 256) |> Async.RunSynchronously
+    let client = connector.Connect(databaseId, [| containerId |]) |> Async.RunSynchronously
+    let context = CosmosStoreContext(client, databaseId, containerId, tipMaxEvents = 256)
     let cache = Equinox.Cache(appName, 20)
     let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
 

@@ -121,11 +121,11 @@ module Cosmos =
         let context =
             match connect log a with
             | (connector, databaseId, containerId), None ->
-                CosmosStoreContext.Connect(connector, databaseId, containerId, a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength, queryMaxItems = a.QueryMaxItems)
-                |> Async.RunSynchronously
+                let client = connector.Connect(databaseId, [| containerId |]) |> Async.RunSynchronously
+                CosmosStoreContext(client, databaseId, containerId, a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength, queryMaxItems = a.QueryMaxItems)
             | (connector, databaseId, containerId), Some (aConnector, aDatabaseId, aContainerId) ->
-                let cosmosClient = connector.Connect(databaseId, [| containerId |]) |> Async.RunSynchronously
-                let archiveCosmosClient = aConnector.Connect(aDatabaseId, [| aContainerId |]) |> Async.RunSynchronously
+                let cosmosClient = connector.CreateAndInitialize(databaseId, [| containerId |]) |> Async.RunSynchronously
+                let archiveCosmosClient = aConnector.CreateAndInitialize(aDatabaseId, [| aContainerId |]) |> Async.RunSynchronously
                 let client = CosmosStoreClient(cosmosClient, archiveCosmosClient)
                 CosmosStoreContext(client, databaseId, containerId, a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength, queryMaxItems = a.QueryMaxItems,
                                    archiveDatabaseId = aDatabaseId, archiveContainerId = aContainerId)

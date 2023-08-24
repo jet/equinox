@@ -133,7 +133,8 @@ module Store =
     let discovery = Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION")
     let connector = CosmosStoreConnector(discovery, TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5.)
     let databaseId, containerId = read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER"
-    let context = CosmosStoreContext.Connect(connector, databaseId, containerId, tipMaxEvents = 100) |> Async.RunSynchronously // Keep up to 100 events in tip before moving events to a new document
+    let client = connector.Connect(databaseId, [| containerId |]) |> Async.RunSynchronously
+    let context = CosmosStoreContext(client, databaseId, containerId, tipMaxEvents = 100)
     let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
 
     let access = AccessStrategy.Snapshot Snapshot.config

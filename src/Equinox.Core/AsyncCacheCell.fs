@@ -19,7 +19,7 @@ type
         cell.TryCompleted() |> ValueOption.exists isValid
 
     /// Gets or asynchronously recomputes value depending on whether value passes the validity check
-    member _.Await(ct : CancellationToken) = task {
+    member _.Await(ct: CancellationToken) = task {
         // Each concurrent execution takes a copy of the cell, and attempts to reuse the value; later used to ensure only one triggers the workflow
         let current = cell
         match! current.TryAwaitValid() with
@@ -30,3 +30,4 @@ type
             // If there are concurrent executions, the first through the gate wins; everybody else awaits the instance the winner wrote
             let _ = Interlocked.CompareExchange(&cell, newInstance, current)
             return! cell.Await() }
+    member x.Await() = Async.call x.Await

@@ -1167,13 +1167,13 @@ type CosmosClientFactory
         co
 
     /// Creates an instance of CosmosClient without actually validating or establishing the connection
-    /// It's recommended to use <c>CosmosStoreClient.Connect()</c> in preference to this API
+    /// It's recommended to use <c>CreateAndInitializeAsync</c> in preference to this API
     ///   in order to avoid latency spikes, and/or deferring discovery of connectivity or permission issues.
     member x.CreateUninitialized(discovery: Discovery) = discovery |> function
         | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> new CosmosClient(string uri, key, x.Options)
         | Discovery.ConnectionString cs -> new CosmosClient(cs, x.Options)
 
-    /// Creates and validates a Client [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
+    /// Creates and validates a CosmosClient [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
     member x.CreateAndInitializeAsync(discovery: Discovery, containers, ct) = discovery |> function
         | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> CosmosClient.CreateAndInitializeAsync(string uri, key, containers, x.Options, ct)
         | Discovery.ConnectionString cs -> CosmosClient.CreateAndInitializeAsync(cs, containers, x.Options, ct)
@@ -1211,35 +1211,43 @@ type CosmosStoreConnector
     member _.Endpoint = discovery.Endpoint
 
     /// Creates an instance of CosmosClient without actually validating or establishing the connection
-    /// It's recommended to use <c>Connect</c> and/or <c>CosmosStoreClient.Connect()</c> in preference to this API
+    /// It's recommended to use <c>Connect</c> and/or <c>CreateAndInitialize</c> in preference to this API
     ///   in order to avoid latency spikes, and/or deferring discovery of connectivity or permission issues.
     member _.CreateUninitialized() = factory.CreateUninitialized(discovery)
 
-    /// Creates and validates a Client [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
+    /// Creates and validates a CosmosClient [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
     member _.CreateAndInitializeAsync(containers, ct): Task<CosmosClient> = factory.CreateAndInitializeAsync(discovery, containers, ct)
-    /// Creates and validates a Client [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
-    member x.Connect(databaseAndContainerIds: struct (string * string)[]) =
+    /// Creates and validates a CosmosClient [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
+    member x.CreateAndInitialize(databaseAndContainerIds: struct (string * string)[]) =
         Async.call (fun ct -> x.CreateAndInitializeAsync(databaseAndContainerIds, ct))
-    /// Creates and validates a Client [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers within the (single) database
+    /// Creates and validates a CosmosClient [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers within the (single) database
+    member x.CreateAndInitialize(databaseId, containerIds: string[]) =
+        x.CreateAndInitialize[| for containerId in containerIds -> databaseId, containerId |]
+
+    /// Creates and validates a CosmosStoreClient [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
+    member _.ConnectAsync(containers, ct): Task<CosmosStoreClient> = task {
+        let! cosmosClient = factory.CreateAndInitializeAsync(discovery, containers, ct)
+        return CosmosStoreClient(cosmosClient) }
+    /// Creates and validates a CosmosStoreClient [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
+    member x.Connect(databaseAndContainerIds: struct (string * string)[]) =
+        Async.call (fun ct -> x.ConnectAsync(databaseAndContainerIds, ct))
+    /// Creates and validates a CosmosStoreClient [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
     member x.Connect(databaseId, containerIds: string[]) =
         x.Connect[| for containerId in containerIds -> databaseId, containerId |]
 
 /// Holds all relevant state for a Store within a given CosmosDB Database
 /// - The CosmosDB CosmosClient (there should be a single one of these per process, plus an optional fallback one for pruning scenarios)
 /// - The (singleton) per Container Stored Procedure initialization state
-type CosmosStoreClient
+and CosmosStoreClient
     (   client: CosmosClient,
         // Client to use for fallback Containers. Default: use <c>client</c>
+        // Typically created via <c>CosmoStoreConnector.CreateAndInitialize</c>
         [<O; D null>] ?archiveClient: CosmosClient,
         // Admits a hook to enable customization of how <c>Equinox.CosmosStore</c> handles the low level interactions with the underlying Cosmos <c>Container</c>.
         [<O; D null>] ?customize: Func<Container, Container>,
         // Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
         [<O; D null>] ?disableInitialization) =
     let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<struct (string * string), Initialization.ContainerInitializerGuard>()
-    member val CosmosClient = client
-    static member Connect(connector: CosmosStoreConnector, databaseId, containerIds: string[], [<O; D null>] ?customize, [<O; D null>] ?disableInitialization) = async {
-        let! cosmosClient = connector.Connect(databaseId, containerIds)
-        return CosmosStoreClient(cosmosClient, ?customize = customize, ?disableInitialization = disableInitialization) }
     member private x.CreateContainer(client: CosmosClient, struct (databaseId, containerId)) =
         let container = client.GetDatabase(databaseId).GetContainer(containerId)
         match customize with Some f -> f.Invoke container | None -> container
@@ -1280,26 +1288,6 @@ type CosmosStoreContext(client: CosmosStoreClient, databaseId, containerId, tipO
             | None, Some c ->   Some (databaseId, c)
             | Some d, c ->      Some (d, defaultArg c containerId)
         CosmosStoreContext(client, databaseId, containerId, tipOptions, queryOptions, ?archive = archive)
-    static member Connect(connector: CosmosStoreConnector, databaseId, containerId, tipMaxEvents,
-        [<O; D null>] ?otherContainersToInitialize,
-        (* CosmosStoreContext options *)
-        [<O; D null>] ?tipMaxJsonLength, [<O; D null>] ?ignoreMissingEvents,
-        [<O; D null>] ?queryMaxItems, [<O; D null>] ?queryMaxRequests,
-        [<O; D null>] ?archiveDatabaseId, [<O; D null>] ?archiveContainerId,
-        (* CosmosStoreClient options *)
-        [<O; D null>] ?customize, [<O; D null>] ?disableInitialization): Async<CosmosStoreContext> = async {
-        let mainDb c = struct (databaseId, c)
-        let ids = [| yield mainDb containerId
-                     match archiveDatabaseId, archiveContainerId with
-                     | None, Some c -> yield mainDb c
-                     | Some d, Some c -> yield d, c
-                     | _ -> ()
-                     match otherContainersToInitialize with Some xs when not (isNull xs) -> yield! Seq.map mainDb xs | _ -> () |]
-        let! cosmosClient = connector.Connect(ids)
-        let client = CosmosStoreClient(cosmosClient, ?customize = customize, ?disableInitialization = disableInitialization)
-        return CosmosStoreContext(client, databaseId, containerId, tipMaxEvents, ?tipMaxJsonLength = tipMaxJsonLength,
-            ?queryMaxItems = queryMaxItems, ?queryMaxRequests = queryMaxRequests,
-            ?ignoreMissingEvents = ignoreMissingEvents, ?archiveContainerId = archiveContainerId) }
     member val internal StoreClient =
         let fallback = archive |> Option.map client.CreateFallbackContainer
         StoreClient(containerGuard.Container, fallback, queryOptions, tipOptions)
