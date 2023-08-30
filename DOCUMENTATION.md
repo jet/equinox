@@ -319,7 +319,7 @@ module private Stream =
     let [<Literal>] Category = "category"
     let id = FsCodec.StreamId.gen Id.toString
 
-(* Optionally, Rarely, Helpers/Types *)
+(* Optionally (rarely) Helpers/Types *)
 
 // NOTE - these types and the union case names reflect the actual storage
 //        formats and hence need to be versioned with care
@@ -417,6 +417,19 @@ module Decisions =
   public and top-level for use in unit tests (often unit tests will `open` the
   `module Fold` to use `initial` and `fold`)
 
+In some cases, where surfacing the state in some way makes sense (it doesn't always; see [CQRS](https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs)), you'll have a:
+
+```fsharp
+module Queries =
+
+    type XzyInfo = { ... }
+
+    let renderXyz (s: State): XzyInfo =
+        { ... }
+```
+
+The above functions can all be unit tested directly. All other tests should use the `Service` with a `MemoryStore` via the `member`s on that:
+
 ```fsharp
 type Service internal (resolve: Id -> Equinox.Decider<Events.Event, Fold.State) = ...`
 
@@ -427,6 +440,13 @@ type Service internal (resolve: Id -> Equinox.Decider<Events.Event, Fold.State) 
     member _.Decide(id, inputs): Async<Decision> =
         let decider = resolve id
         decider.Transact(Decisions.decideX inputs)
+
+    member private _.Query(maxAge, render): Async<Queries.XyzInfo> =
+        let decider = resolve id
+        decider.Query(render, Equinox.LoadOption.AllowStale maxAge)
+
+    member x.ReadCachedXyz(id): Async<Queries.XyzInfo> =
+        x.Query(TimeSpan.FromSeconds 10, Queries.renderXyz)
 
 let create category = Service(Stream.id >> Equinox.Decider.forStream Serilog.Log.Logger category)
 ```
