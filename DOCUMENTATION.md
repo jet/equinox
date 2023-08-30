@@ -319,7 +319,7 @@ module private Stream =
     let [<Literal>] Category = "category"
     let id = FsCodec.StreamId.gen Id.toString
 
-(* Optionally (rarely) Helpers/Types *)
+(* Optionally, Rarely, Helpers/Types *)
 
 // NOTE - these types and the union case names reflect the actual storage
 //        formats and hence need to be versioned with care
@@ -402,13 +402,15 @@ module Fold =
         | Events.Y -> (state update)
     let fold = Array.fold evolve
 
-let interpretX ... (state: Fold.State): Events list = ...
+module Decisions =
 
-type Decision =
-    | Accepted
-    | Failed of Reason
+    let interpretX ... (state: Fold.State): Events list = ...
 
-let decideY ... (state: Fold.State): Decision * Events list = ...
+    type Decision =
+        | Accepted
+        | Failed of Reason
+
+    let decideY ... (state: Fold.State): Decision * Events list = ...
 ```
 
 - `interpret`, `decide` _and related input and output types / interfaces_ are
@@ -420,11 +422,11 @@ type Service internal (resolve: Id -> Equinox.Decider<Events.Event, Fold.State) 
 
     member _.Execute(id, command): Async<unit> =
         let decider = resolve id
-        decider.Transact(interpretX command)
+        decider.Transact(Decisions.interpretX command)
 
     member _.Decide(id, inputs): Async<Decision> =
         let decider = resolve id
-        decider.Transact(decideX inputs)
+        decider.Transact(Decisions.decideX inputs)
 
 let create category = Service(Stream.id >> Equinox.Decider.forStream Serilog.Log.Logger category)
 ```
