@@ -388,13 +388,11 @@ module Fold =
 
     module Snapshot =
         
-        let generate (state: State): Event =
+        let generate (state: State): Events.Event =
             Events.Snapshotted { ... }
-        let isOrigin = function
-            | Events.Snapshotted -> true
-            | _ -> false
+        let isOrigin = function Events.Snapshotted -> true | _ -> false
         let config = isOrigin, generate
-        let hydrate (e: Snapshotted): State = ...
+        let hydrate (e: Events.Snapshotted): State = ...
         
     let private evolve state = function
         | Events.Snapshotted e -> Snapshot.hydrate e
@@ -404,13 +402,13 @@ module Fold =
 
 module Decisions =
 
-    let interpretX ... (state: Fold.State): Events list = ...
+    let interpretX ... (state: Fold.State): Events.Event[] = ...
 
     type Decision =
         | Accepted
         | Failed of Reason
 
-    let decideY ... (state: Fold.State): Decision * Events list = ...
+    let decideY ... (state: Fold.State): Decision * Events.Event[] = ...
 ```
 
 - `interpret`, `decide` _and related input and output types / interfaces_ are
