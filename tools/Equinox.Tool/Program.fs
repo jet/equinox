@@ -450,10 +450,9 @@ module CosmosStats =
             let inParallel = p.Contains Parallel
             let connector, dName, cName = CosmosInit.connect log sp
             let container = connector.CreateUninitialized().GetContainer(dName, cName)
-            let ops =
-                [   if doS then yield "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """
-                    if doD then yield "Documents", """SELECT VALUE COUNT(1) FROM c"""
-                    if doE then yield "Events",    """SELECT VALUE SUM(c.n) FROM c WHERE c.id="-1" """ ]
+            let ops = [| if doS then "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """
+                         if doD then "Documents", """SELECT VALUE COUNT(1) FROM c"""
+                         if doE then "Events",    """SELECT VALUE SUM(c.n) FROM c WHERE c.id="-1" """ |]
             log.Information("Computing {measures} ({mode})", Seq.map fst ops, (if inParallel then "in parallel" else "serially"))
             ops |> Seq.map (fun (name, sql) -> async {
                     log.Debug("Running query: {sql}", sql)

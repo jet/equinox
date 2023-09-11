@@ -45,8 +45,8 @@ type Event =
         causationId: string option }
     interface ITimelineEvent<InternalBody> with
         member x.Index = x.i
-        member x.IsUnfold = false
-        member x.Context = null
+        member _.IsUnfold = false
+        member _.Context = null
         member x.Size = Event.Bytes x
         member x.EventType = x.c
         member x.Data = x.d
@@ -80,15 +80,15 @@ type Unfold =
         m: InternalBody }
     interface ITimelineEvent<InternalBody> with
         member x.Index = x.i
-        member x.IsUnfold = true
-        member x.Context = null
+        member _.IsUnfold = true
+        member _.Context = null
         member x.Size = Unfold.Bytes x
         member x.EventType = x.c
         member x.Data = x.d
         member x.Meta = x.m
         member _.EventId = Guid.Empty
-        member x.CorrelationId = null
-        member x.CausationId = null
+        member _.CorrelationId = null
+        member _.CausationId = null
         member x.Timestamp = x.t
     static member Bytes(x: Unfold) = x.c.Length + InternalBody.bytes x.d + InternalBody.bytes x.m + 50
 module Unfold =
@@ -426,21 +426,21 @@ module private Async =
 type internal BatchIndices = { isTip: bool; index: int64; n: int64 }
 type StoreTable(name, createContext: (RequestMetrics -> unit) -> TableContext<Batch.Schema>) =
 
-    member _.Context(collector) = createContext collector
-    member _.Name = name
+    member _.CreateContext(collector) = createContext collector
+    member val Name = name
 
     /// As per Equinox.CosmosStore, we assume the table to be provisioned correctly (see DynamoStoreContext.Establish(ConnectMode) re validating on startup)
     static member Create(client, tableName) =
         let createContext collector = TableContext<Batch.Schema>(client, tableName, metricsCollector = collector)
         StoreTable(tableName, createContext)
 
-    member x.TryGetTip(stream: string, consistentRead, ct): Task<Batch option * RequestConsumption> = task {
+    member _.TryGetTip(stream: string, consistentRead, ct): Task<Batch option * RequestConsumption> = task {
         let rm = Metrics()
         let context = createContext rm.Add
         let pk = Batch.tableKeyForStreamTip stream
         let! item = context.TryGetItemAsync(pk, consistentRead) |> Async.executeAsTask ct
         return item |> Option.map Batch.ofSchema, rm.Consumed }
-    member x.TryUpdateTip(stream: string, updateExpr: Quotations.Expr<Batch.Schema -> Batch.Schema>, ct, ?precondition): Task<Batch * RequestConsumption> = task {
+    member _.TryUpdateTip(stream: string, updateExpr: Quotations.Expr<Batch.Schema -> Batch.Schema>, ct, ?precondition): Task<Batch * RequestConsumption> = task {
         let rm = Metrics()
         let context = createContext rm.Add
         let pk = Batch.tableKeyForStreamTip stream
@@ -479,7 +479,7 @@ type StoreTable(name, createContext: (RequestMetrics -> unit) -> TableContext<Ba
             | None -> ()
             | le -> yield! aux (index + 1, le) }
         aux (0, None)
-    member x.DeleteItem(stream: string, i, ct): Task<RequestConsumption> = task {
+    member _.DeleteItem(stream: string, i, ct): Task<RequestConsumption> = task {
         let rm = Metrics()
         let context = createContext rm.Add
         let pk = TableKey.Combined(stream, i)
@@ -567,7 +567,7 @@ module internal Sync =
         let etag' = let g = Guid.NewGuid() in g.ToString "N"
         let actions = generateRequests stream requestArgs etag'
         let rm = Metrics()
-        try do! let context = table.Context(rm.Add)
+        try do! let context = table.CreateContext(rm.Add)
                 match actions with
                 | [ TransactWrite.Put (item, Some cond) ] -> context.PutItemAsync(item, cond) |> Async.Ignore
                 | [ TransactWrite.Update (key, Some cond, updateExpr) ] -> context.UpdateItemAsync(key, updateExpr, cond) |> Async.Ignore
@@ -1148,6 +1148,23 @@ open Equinox.Core
 open Equinox.DynamoStore.Core
 open System
 
+type ProvisionedThroughput = FSharp.AWS.DynamoDB.ProvisionedThroughput
+type Throughput = FSharp.AWS.DynamoDB.Throughput
+
+type StreamViewType = Amazon.DynamoDBv2.StreamViewType
+type Streaming = FSharp.AWS.DynamoDB.Streaming
+
+[<NoComparison; NoEquality>]
+type ConnectMode =
+    | SkipVerify
+    | Verify
+    | CreateIfNotExists of Throughput
+module internal ConnectMode =
+    let apply client tableName = function
+        | SkipVerify -> async { () }
+        | Verify -> Initialization.verify client tableName
+        | CreateIfNotExists throughput -> Initialization.createIfNotExists client tableName (throughput, Initialization.StreamingMode.New)
+
 type [<RequireQualifiedAccess>] ConnectionMode = AwsEnvironment of systemName: string | AwsKeyCredentials of serviceUrl: string
 
 /// Manages Creation and configuration of an IAmazonDynamoDB connection
@@ -1184,26 +1201,10 @@ type DynamoStoreConnector(clientConfig: Amazon.DynamoDBv2.AmazonDynamoDBConfig, 
         | None -> new Amazon.DynamoDBv2.AmazonDynamoDBClient(clientConfig) // this uses credentials=FallbackCredentialsFactory.GetCredentials()
         | Some credentials -> new Amazon.DynamoDBv2.AmazonDynamoDBClient(credentials, clientConfig)
         :> Amazon.DynamoDBv2.IAmazonDynamoDB
-
-type ProvisionedThroughput = FSharp.AWS.DynamoDB.ProvisionedThroughput
-type Throughput = FSharp.AWS.DynamoDB.Throughput
-
-type StreamViewType = Amazon.DynamoDBv2.StreamViewType
-type Streaming = FSharp.AWS.DynamoDB.Streaming
-
-[<NoComparison; NoEquality>]
-type ConnectMode =
-    | SkipVerify
-    | Verify
-    | CreateIfNotExists of Throughput
-module internal ConnectMode =
-    let apply client tableName = function
-        | SkipVerify -> async { () }
-        | Verify -> Initialization.verify client tableName
-        | CreateIfNotExists throughput -> Initialization.createIfNotExists client tableName (throughput, Initialization.StreamingMode.New)
+    member x.CreateDynamoStoreClient() = x.CreateDynamoDbClient() |> DynamoStoreClient
 
 /// Holds the DynamoDB Client(s). There should not need to be more than a single instance per process
-type DynamoStoreClient(client: Amazon.DynamoDBv2.IAmazonDynamoDB,
+and DynamoStoreClient(client: Amazon.DynamoDBv2.IAmazonDynamoDB,
         // Client to use for fallback tables.
         // Events that have been archived and purged (and hence are missing from the primary) are retrieved from this Table
         [<O; D null>] ?fallbackClient: Amazon.DynamoDBv2.IAmazonDynamoDB) =
@@ -1298,8 +1299,8 @@ type DynamoStoreCategory<'event, 'state, 'req> =
             match access with
             | AccessStrategy.Unoptimized ->                      (fun _ -> false), false, Choice1Of3 ()
             | AccessStrategy.LatestKnownEvent ->                 (fun _ -> true),  true,  Choice2Of3 (fun events _ -> events |> Array.last |> Array.singleton)
-            | AccessStrategy.Snapshot (isOrigin, toSnapshot) ->  isOrigin,         true,  Choice2Of3 (fun _ state  -> toSnapshot state |> Array.singleton<'event>)
-            | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         true,  Choice2Of3 (fun _ (state: 'state) -> unfold state)
+            | AccessStrategy.Snapshot (isOrigin, toSnapshot) ->  isOrigin,         true,  Choice2Of3 (fun _ -> toSnapshot >> Array.singleton<'event>)
+            | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         true,  Choice2Of3 (fun _ -> unfold)
             | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> Array.empty, toSnapshot state |> Array.singleton)
             | AccessStrategy.Custom (isOrigin, transmute) ->     isOrigin,         true,  Choice3Of3 transmute
         { inherit Equinox.Category<'event, 'state, 'req>(name,
@@ -1383,7 +1384,7 @@ type EventsContext
     /// Callers should implement appropriate idempotent handling, or use Equinox.Decider for that purpose
     member x.Sync(streamName, position, events: IEventData<_>[]): Async<AppendResult<Position>> = async {
         let store, stream = resolve streamName
-        match! store.Sync(log, stream, Some position, Position.toIndex >> Sync.Exp.Version, position.index, events, Seq.empty) with
+        match! x.Sync(log, stream, Some position, Position.toIndex >> Sync.Exp.Version, position.index, events, Seq.empty) with
         | InternalSyncResult.Written (Token.Unpack pos) -> return AppendResult.Ok (Position.flatten pos)
         | InternalSyncResult.ConflictUnknown -> return AppendResult.ConflictUnknown }
 #endif

@@ -16,7 +16,7 @@ open Equinox.CosmosStore.Integration.CosmosFixtures
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
 #if STORE_DYNAMO
-    let codec = Cart.Events.codec |> FsCodec.Deflate.EncodeTryDeflate
+    let codec = Cart.Events.codec |> FsCodec.Compression.EncodeTryCompress
 #else
     let codec = Cart.Events.codecJe
 #endif
@@ -48,7 +48,7 @@ module Cart =
 module ContactPreferences =
     let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
 #if STORE_DYNAMO
-    let codec = ContactPreferences.Events.codec |> FsCodec.Deflate.EncodeTryDeflate
+    let codec = ContactPreferences.Events.codec |> FsCodec.Compression.EncodeTryCompress
 #else
     let codec = ContactPreferences.Events.codecJe
 #endif
