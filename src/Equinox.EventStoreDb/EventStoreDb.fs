@@ -449,23 +449,21 @@ type ConnectionStrategy =
 type EventStoreConnector
     (   reqTimeout: TimeSpan,
         [<O; D null>] ?readRetryPolicy, [<O; D null>] ?writeRetryPolicy, [<O; D null>] ?tags,
-        [<O; D null>] ?customize: EventStoreClientSettings -> unit) =
+        [<O; D null>] ?customize: Action<EventStoreClientSettings>) =
 
     member _.Connect
         (   // Name should be sufficient to uniquely identify this connection within a single app instance's logs
             name, discovery: Discovery, ?clusterNodePreference): EventStoreClient =
-        let settings =
-            match discovery with
-            | Discovery.ConnectionString s -> EventStoreClientSettings.Create(s)
         if name = null then nullArg "name"
         let name = String.concat ";" <| seq {
             name
             string clusterNodePreference
             match tags with None -> () | Some tags -> for key, value in tags do sprintf "%s=%s" key value }
         let sanitizedName = name.Replace('\'','_').Replace(':','_') // ES internally uses `:` and `'` as separators in log messages and ... people regex logs
+        let settings = discovery |> function Discovery.ConnectionString s -> EventStoreClientSettings.Create s
         settings.ConnectionName <- sanitizedName
         match clusterNodePreference with None -> () | Some np -> settings.ConnectivitySettings.NodePreference <- np
-        match customize with None -> () | Some f -> f settings
+        match customize with None -> () | Some f -> f.Invoke settings
         settings.DefaultDeadline <- reqTimeout
         // TODO implement reqRetries
         new EventStoreClient(settings)
