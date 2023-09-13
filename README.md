@@ -681,6 +681,10 @@ NOTE There's [no Apple Silicon emulator available as yet](https://github.com/Azu
 NOTE Have not tested with the Windows Emulator, but it should work with analogous steps.
 
 ```bash
+# magic connection string value that CosmosStoreConnector supports to
+# a) avoid having to copy values around
+# b) having to add code to trust cert and/or assent to elevation primpts
+export EQUINOX_COSMOS_CONNECTION="TrustLocalEmulator=true"
 docker compose up equinox-cosmos -d
 bash docker-compose-cosmos.sh
 ```
