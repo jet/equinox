@@ -13,7 +13,7 @@ services:
       - AZURE_COSMOS_EMULATOR_IP_ADDRESS_OVERRIDE=127.0.0.1
     ports:
       - "8081:8081" # so docker-cosmos-init.sh can get the cert and/or humans can use https://localhost:8081/_explorer/index.html
-      - "10250-10256:10250-10256" # tests connect using Direct mode
+      - "10250-10255:10250-10255" # tests connect using Direct mode
 
   equinox-mssql:
     container_name: equinox-mssql

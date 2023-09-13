@@ -80,7 +80,7 @@ let private databaseId = tryRead "EQUINOX_COSMOS_DATABASE" |> Option.defaultValu
 let private containerId = tryRead "EQUINOX_COSMOS_CONTAINER" |> Option.defaultValue "equinox-test"
 let private archiveContainerId = tryRead "EQUINOX_COSMOS_CONTAINER_ARCHIVE" |> Option.defaultValue "equinox-test-archive"
 
-// see https://github.com/jet/equinox-provisioning-cosmosdb for details of what's expected in terms of provisioned containers etc
+// see https://github.com/jet/equinox#provisioning-cosmosdb for details of what's expected in terms of provisioned containers etc
 let discoverConnection () =
     match tryRead "EQUINOX_COSMOS_CONNECTION" with
     | None -> "localDocDbSim", Discovery.AccountUriAndKey(Uri "https://localhost:8081", "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==")
@@ -90,7 +90,7 @@ let createConnector (log: Serilog.ILogger) =
     let name, discovery = discoverConnection ()
     let connector = CosmosStoreConnector(discovery, requestTimeout = TimeSpan.FromSeconds 3.,
                                          maxRetryAttemptsOnRateLimitedRequests = 2, maxRetryWaitTimeOnRateLimitedRequests = TimeSpan.FromMinutes 1.)
-    log.Information("CosmosStore {name} {endpoint}", name, discovery.Endpoint)
+    log.Information("CosmosStore {name} {endpoint}", name, connector.Endpoint)
     connector
 
 [<Xunit.CollectionDefinition "DocStore">]
