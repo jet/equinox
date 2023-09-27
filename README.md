@@ -665,12 +665,14 @@ For more complete instructions, follow https://developers.eventstore.com/server/
 
 #### Using Azure Cosmos DB Service
 
-    dotnet run --project tools/Equinox.Tool -- init -ru 400 `
-        cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
-    # Same for a Archive Container for integration testing of the archive store fallback mechanism
-    $env:EQUINOX_COSMOS_CONTAINER_ARCHIVE="equinox-test-archive"
-    dotnet run --project tools/Equinox.Tool -- init -ru 400 `
-        cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER_ARCHIVE
+```bash
+dotnet run --project tools/Equinox.Tool -- init -ru 400 `
+    cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
+# Same for a Archive Container for integration testing of the archive store fallback mechanism
+$env:EQUINOX_COSMOS_CONTAINER_ARCHIVE="equinox-test-archive"
+dotnet run --project tools/Equinox.Tool -- init -ru 400 `
+    cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER_ARCHIVE
+```
 
 #### Using Cosmos Emulator on an Intel Mac 
 
@@ -678,8 +680,10 @@ NOTE There's [no Apple Silicon emulator available as yet](https://github.com/Azu
 
 NOTE Have not tested with the Windows Emulator, but it should work with analogous steps.
 
-    docker compose up equinox-cosmos -d
-    bash docker-compose-cosmos.sh
+```bash
+docker compose up equinox-cosmos -d
+bash docker-compose-cosmos.sh
+```
 
 ### Provisioning SqlStreamStore
 

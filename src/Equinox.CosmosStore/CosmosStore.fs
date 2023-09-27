@@ -1107,6 +1107,35 @@ module ConnectionString =
         | true, (:? string as s) when not (String.IsNullOrEmpty s) -> s
         | _ -> invalidOp "Connection string does not contain an \"AccountEndpoint\""
 
+[<RequireQualifiedAccess; NoComparison>]
+type DiscoveryMode =
+    | AccountUriAndKey of accountUri: string * key: string
+    | ConnectionString of connectionString: string
+    member x.Endpoint = x |> function
+        | DiscoveryMode.AccountUriAndKey (u, _k) -> u
+        | DiscoveryMode.ConnectionString (ConnectionString.AccountEndpoint e) -> e
+
+/// Manages establishing a CosmosClient, which is used by CosmosStoreClient to read from the underlying Cosmos DB Container.
+type CosmosClientFactory(options) =
+    static member CreateDefaultOptions(requestTimeout: TimeSpan, maxRetryAttemptsOnRateLimitedRequests: int, maxRetryWaitTimeOnRateLimitedRequests: TimeSpan) =
+        CosmosClientOptions(
+            MaxRetryAttemptsOnRateLimitedRequests = maxRetryAttemptsOnRateLimitedRequests,
+            MaxRetryWaitTimeOnRateLimitedRequests = maxRetryWaitTimeOnRateLimitedRequests,
+            RequestTimeout = requestTimeout,
+            Serializer = CosmosJsonSerializer(JsonSerializerOptions()))
+    /// CosmosClientOptions for this CosmosClientFactory as configured (NOTE while the Options object is not immutable, it should not have setters called on it)
+    member val Options = options
+    /// Creates an instance of CosmosClient without actually validating or establishing the connection
+    /// It's recommended to use <c>CreateAndInitializeAsync</c> in preference to this API
+    ///   in order to avoid latency spikes, and/or deferring discovery of connectivity or permission issues.
+    member x.CreateUninitialized(discovery: DiscoveryMode) = discovery |> function
+        | DiscoveryMode.AccountUriAndKey (accountUri = uri; key = key) -> new CosmosClient(uri, key, x.Options)
+        | DiscoveryMode.ConnectionString cs -> new CosmosClient(cs, x.Options)
+    /// Creates and validates a CosmosClient [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
+    member x.CreateAndInitializeAsync(discovery: DiscoveryMode, containers, ct) = discovery |> function
+        | DiscoveryMode.AccountUriAndKey (accountUri = uri; key = key) -> CosmosClient.CreateAndInitializeAsync(uri, key, containers, x.Options, ct)
+        | DiscoveryMode.ConnectionString cs -> CosmosClient.CreateAndInitializeAsync(cs, containers, x.Options, ct)
+
 namespace Equinox.CosmosStore
 
 open Equinox.Core
@@ -1120,63 +1149,9 @@ type Discovery =
     | AccountUriAndKey of accountUri: Uri * key: string
     /// Cosmos SDK Connection String
     | ConnectionString of connectionString: string
-    member x.Endpoint: Uri = x |> function
-        | Discovery.AccountUriAndKey (u, _k) -> u
-        | Discovery.ConnectionString (ConnectionString.AccountEndpoint e) -> Uri e
-
-/// Manages establishing a CosmosClient, which is used by CosmosStoreClient to read from the underlying Cosmos DB Container.
-[<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
-type CosmosClientFactory
-    (   // Timeout to apply to individual reads/write round-trips going to CosmosDB. CosmosDB Default: 1m.
-        requestTimeout: TimeSpan,
-        // Maximum number of times to attempt when failure reason is a 429 from CosmosDB, signifying RU limits have been breached. CosmosDB default: 9
-        maxRetryAttemptsOnRateLimitedRequests: int,
-        // Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDB in the 429 response). CosmosDB default: 30s
-        maxRetryWaitTimeOnRateLimitedRequests: TimeSpan,
-        // Connection mode (default: ConnectionMode.Direct (best performance, same as Microsoft.Azure.Cosmos SDK default)
-        // NOTE: default for Equinox.Cosmos.Connector (i.e. V2) was Gateway (worst performance, least trouble, Microsoft.Azure.DocumentDb SDK default)
-        [<O; D null>] ?mode: ConnectionMode,
-        // Connection limit for Gateway Mode. CosmosDB default: 50
-        [<O; D null>] ?gatewayModeMaxConnectionLimit,
-        // consistency mode (default: ConsistencyLevel.Session)
-        [<O; D null>] ?defaultConsistencyLevel: ConsistencyLevel,
-        // Inhibits certificate verification when set to <c>true</c>, i.e. for working with the CosmosDB Emulator (default <c>false</c>)
-        [<O; D null>] ?bypassCertificateValidation: bool) =
-
-    /// CosmosClientOptions for this CosmosClientFactory as configured
-    member val Options =
-        let co = CosmosClientOptions(
-            MaxRetryAttemptsOnRateLimitedRequests = maxRetryAttemptsOnRateLimitedRequests,
-            MaxRetryWaitTimeOnRateLimitedRequests = maxRetryWaitTimeOnRateLimitedRequests,
-            RequestTimeout = requestTimeout,
-            Serializer = CosmosJsonSerializer(System.Text.Json.JsonSerializerOptions()))
-        match mode with
-        | None | Some ConnectionMode.Direct -> co.ConnectionMode <- ConnectionMode.Direct
-        | Some ConnectionMode.Gateway | Some _ (* enum total match :( *) -> co.ConnectionMode <- ConnectionMode.Gateway // only supports Https
-        match gatewayModeMaxConnectionLimit with
-        | Some _ when co.ConnectionMode = ConnectionMode.Direct -> invalidArg "gatewayModeMaxConnectionLimit" "Not admissible in Direct mode"
-        | x -> if co.ConnectionMode = ConnectionMode.Gateway then co.GatewayModeMaxConnectionLimit <- defaultArg x 50
-        match defaultConsistencyLevel with
-        | Some x -> co.ConsistencyLevel <- x
-        | None -> ()
-        // https://github.com/Azure/azure-cosmos-dotnet-v3/blob/1ef6e399f114a0fd580272d4cdca86b9f8732cf3/Microsoft.Azure.Cosmos.Samples/Usage/HttpClientFactory/Program.cs#L96
-        if bypassCertificateValidation = Some true && co.ConnectionMode = ConnectionMode.Gateway then
-            let cb = System.Net.Http.HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-            let ch = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = cb)
-            co.HttpClientFactory <- fun () -> new System.Net.Http.HttpClient(ch)
-        co
-
-    /// Creates an instance of CosmosClient without actually validating or establishing the connection
-    /// It's recommended to use <c>CreateAndInitializeAsync</c> in preference to this API
-    ///   in order to avoid latency spikes, and/or deferring discovery of connectivity or permission issues.
-    member x.CreateUninitialized(discovery: Discovery) = discovery |> function
-        | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> new CosmosClient(string uri, key, x.Options)
-        | Discovery.ConnectionString cs -> new CosmosClient(cs, x.Options)
-
-    /// Creates and validates a CosmosClient [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
-    member x.CreateAndInitializeAsync(discovery: Discovery, containers, ct) = discovery |> function
-        | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> CosmosClient.CreateAndInitializeAsync(string uri, key, containers, x.Options, ct)
-        | Discovery.ConnectionString cs -> CosmosClient.CreateAndInitializeAsync(cs, containers, x.Options, ct)
+    member x.ToDiscoveryMode() = x |> function
+        | Discovery.AccountUriAndKey (u, k) -> DiscoveryMode.AccountUriAndKey (string u, k)
+        | Discovery.ConnectionString c -> DiscoveryMode.ConnectionString c
 
 /// Manages establishing a CosmosClient, which is used by CosmosStoreClient to read from the underlying Cosmos DB Container.
 type CosmosStoreConnector
@@ -1191,32 +1166,37 @@ type CosmosStoreConnector
         // Connection mode (default: ConnectionMode.Direct (best performance, same as Microsoft.Azure.Cosmos SDK default)
         // NOTE: default for Equinox.Cosmos.Connector (i.e. V2) was Gateway (worst performance, least trouble, Microsoft.Azure.DocumentDb SDK default)
         [<O; D null>] ?mode: ConnectionMode,
-        // Connection limit for Gateway Mode. CosmosDB default: 50
-        [<O; D null>] ?gatewayModeMaxConnectionLimit,
-        // consistency mode (default: ConsistencyLevel.Session)
+        // consistency mode (default: use configuration specified for Database)
         [<O; D null>] ?defaultConsistencyLevel: ConsistencyLevel,
-        // Inhibits certificate verification when set to <c>true</c>, i.e. for working with the CosmosDB Emulator (default <c>false</c>)
-        [<O; D null>] ?bypassCertificateValidation: bool) =
-
+        // Inhibits certificate verification when set to `true`. Default: false.
+        [<O; D null>] ?bypassCertificateValidation: bool,
+        [<O; D null>] ?customize: Action<CosmosClientOptions>) =
+    let discoveryMode = discovery.ToDiscoveryMode()
     let factory =
-        CosmosClientFactory
-          ( requestTimeout, maxRetryAttemptsOnRateLimitedRequests, maxRetryWaitTimeOnRateLimitedRequests, ?mode = mode,
-            ?gatewayModeMaxConnectionLimit = gatewayModeMaxConnectionLimit, ?defaultConsistencyLevel = defaultConsistencyLevel,
-            ?bypassCertificateValidation = bypassCertificateValidation)
+        let o = CosmosClientFactory.CreateDefaultOptions(requestTimeout, maxRetryAttemptsOnRateLimitedRequests, maxRetryWaitTimeOnRateLimitedRequests)
+        mode |> Option.iter (fun x -> o.ConnectionMode <- x)
+        defaultConsistencyLevel |> Option.iter (fun x -> o.ConsistencyLevel <- x)
+        // https://github.com/Azure/azure-cosmos-dotnet-v3/blob/1ef6e399f114a0fd580272d4cdca86b9f8732cf3/Microsoft.Azure.Cosmos.Samples/Usage/HttpClientFactory/Program.cs#L96
+        if defaultArg bypassCertificateValidation false then
+            let cb = System.Net.Http.HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+            let ch = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = cb)
+            o.HttpClientFactory <- fun () -> new System.Net.Http.HttpClient(ch)
+        customize |> Option.iter (fun c -> c.Invoke o)
+        CosmosClientFactory o
 
     /// The <c>CosmosClientOptions</c> used when connecting to CosmosDB
     member _.Options = factory.Options
 
     /// The Endpoint Uri for the target CosmosDB
-    member _.Endpoint = discovery.Endpoint
+    member val Endpoint = discoveryMode.Endpoint |> Uri
 
     /// Creates an instance of CosmosClient without actually validating or establishing the connection
     /// It's recommended to use <c>Connect</c> and/or <c>CreateAndInitialize</c> in preference to this API
     ///   in order to avoid latency spikes, and/or deferring discovery of connectivity or permission issues.
-    member _.CreateUninitialized() = factory.CreateUninitialized(discovery)
+    member _.CreateUninitialized() = factory.CreateUninitialized(discoveryMode)
 
     /// Creates and validates a CosmosClient [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
-    member _.CreateAndInitializeAsync(containers, ct): Task<CosmosClient> = factory.CreateAndInitializeAsync(discovery, containers, ct)
+    member _.CreateAndInitializeAsync(containers, ct): Task<CosmosClient> = factory.CreateAndInitializeAsync(discoveryMode, containers, ct)
     /// Creates and validates a CosmosClient [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
     member x.CreateAndInitialize(databaseAndContainerIds: struct (string * string)[]) =
         Async.call (fun ct -> x.CreateAndInitializeAsync(databaseAndContainerIds, ct))
@@ -1226,7 +1206,7 @@ type CosmosStoreConnector
 
     /// Creates and validates a CosmosStoreClient [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
     member _.ConnectAsync(containers, ct): Task<CosmosStoreClient> = task {
-        let! cosmosClient = factory.CreateAndInitializeAsync(discovery, containers, ct)
+        let! cosmosClient = factory.CreateAndInitializeAsync(discoveryMode, containers, ct)
         return CosmosStoreClient(cosmosClient) }
     /// Creates and validates a CosmosStoreClient [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
     member x.Connect(databaseAndContainerIds: struct (string * string)[]) =

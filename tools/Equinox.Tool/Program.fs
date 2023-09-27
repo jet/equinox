@@ -384,13 +384,13 @@ module CosmosInit =
             match a.ProvisioningMode with
             | CosmosInit.Provisioning.Container throughput ->
                 let modeStr = "Container"
-                log.Information("Provisioning `Equinox.CosmosStore` Store at {mode:l} level for {rus:n0} RU/s", modeStr, throughput)
+                log.Information("CosmosStore provisioning at {mode:l} level for {rus:n0} RU/s", modeStr, throughput)
             | CosmosInit.Provisioning.Database throughput ->
                 let modeStr = "Database"
-                log.Information("Provisioning `Equinox.CosmosStore` Store at {mode:l} level for {rus:n0} RU/s", modeStr, throughput)
+                log.Information("CosmosStore provisioning at {mode:l} level for {rus:n0} RU/s", modeStr, throughput)
             | CosmosInit.Provisioning.Serverless ->
                 let modeStr = "Serverless"
-                log.Information("Provisioning `Equinox.CosmosStore` Store in {mode:l} mode with automatic RU/s as configured in account", modeStr)
+                log.Information("CosmosStore provisioning in {mode:l} mode with automatic RU/s as configured in account", modeStr)
             CosmosInit.init log (connector.CreateUninitialized()) (dName, cName) a.ProvisioningMode a.SkipStoredProc
         | x -> Store.missingArg $"unexpected subcommand %A{x}"
 

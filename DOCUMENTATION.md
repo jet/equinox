@@ -1840,7 +1840,6 @@ following key benefits:
 ### Example Code
 
 ```fsharp
-
 open Equinox.CosmosStore.Core
 // open MyCodecs.Json // example of using specific codec which can yield UTF-8
                       // byte arrays from a type using `Json.toBytes` via Fleece
@@ -1852,22 +1851,20 @@ type EventData with
 
 // Load connection string from your Key Vault (example here is the CosmosDB
 // simulator's well known key)
-// see https://github.com/jet/equinox-provisioning-cosmosdb
+// see https://github.com/jet/equinox#provisioning-cosmosdb
 let connectionString: string =
     "AccountEndpoint=https://localhost:8081;AccountKey=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==;"
 
-// Forward to Log (you can use `Log.Logger` and/or `Log.ForContext` if your app
-// uses Serilog already)
-let outputLog = LoggerConfiguration().WriteTo.NLog().CreateLogger()
+// Forward to Log (use `Log.Logger` if your app already uses Serilog)
+let outputLog = LoggerConfiguration().WriteTo.Console().CreateLogger()
 // Serilog has a `ForContext<T>()`, but if you are using a `module` for the
 // wiring, you might create a tagged logger like this:
 let gatewayLog =
     outputLog.ForContext(Serilog.Core.Constants.SourceContextPropertyName, "Equinox")
 
-let discovery = Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION")
 let connector: Equinox.CosmosStore.CosmosStoreConnector =
     CosmosStoreConnector(
-        discovery,
+        Equinox.CosmosStore.Discovery.ConnectionString connectionString,
         requestTimeout = TimeSpan.FromSeconds 5.,
         maxRetryAttemptsOnRateLimitedRequests = 1,
         maxRetryWaitTimeOnRateLimitedRequests = TimeSpan.FromSeconds 3.)
