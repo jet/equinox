@@ -2136,6 +2136,7 @@ Further information:
 - [DynamoDB Transactions: Use Cases and Examples](https://www.alexdebrie.com/posts/dynamodb-transactions/) by Alex DeBrie
   provides a thorough review of the `TransactWriteItems` facility (TL;DR: it's far more general than the stream level atomic
   transactions afforded by CosmosDB's Stored Procedures)
+- while it doesn't provide deeper insight into the API from a usage perspective, [Distributed Transactions at Scale in Amazon DynamoDB](https://www.infoq.com/articles/amazon-dynamodb-transactions) is a great deep dive into how the facility is implemented.
 
 ### Differences in read and resync paths
 
