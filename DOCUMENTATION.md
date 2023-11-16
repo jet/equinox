@@ -1363,7 +1363,7 @@ which can then summarize the overall transaction.
 ### Idiomatic approach - composed method based on side-effect free functions
 
 There's an example of such a case in the
-[Cart's Domain Service](https://github.com/jet/equinox/blob/master/samples/Store/Domain/Cart.fs#L128):
+[Cart's Domain Service](https://github.com/jet/equinox/blob/master/samples/Store/Domain/Cart.fs#L106):
 
 ```fsharp
 let interpretMany fold interpreters (state: 'state): 'state * 'event[] =
@@ -1392,9 +1392,7 @@ _NOTE: This is an example of an alternate approach provided as a counterpoint -
 there's no need to read it as the preceding approach is the recommended one is
 advised as a default strategy to use_
 
-As illustrated in [Cart's Domain
-Service](https://github.com/jet/equinox/blob/master/samples/Store/Domain/Cart.fs#L99),
-an alternate approach is to encapsulate the folding (Equinox in V1 exposed an
+An alternate approach is to encapsulate the folding (Equinox in V1 exposed an
 interface that encouraged such patterns; this was removed in two steps, as code
 written using the idiomatic approach is [intrinsically simpler, even if it
 seems not as Easy](https://www.infoq.com/presentations/Simple-Made-Easy/) at
