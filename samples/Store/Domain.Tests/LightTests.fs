@@ -3,7 +3,7 @@ module Domain.Tests.LightTests
 open Domain.Light
 open Swensen.Unquote
 
-type Cases = Off | On | After3Cycles
+type Case = Off | On | After3Cycles
 let establish = function
     | Off ->          initial
     | On ->           fold initial [| SwitchedOn |]
@@ -24,4 +24,4 @@ let [<FsCheck.Xunit.Property>] props case cmd =
     | After3Cycles, true ->  events =! [| Broke |]
     | After3Cycles, false -> events =! [||]
 
-    [||] = decideSwitch cmd state // all commands are idempotent
+    [||] =! decideSwitch cmd state // all commands are idempotent
