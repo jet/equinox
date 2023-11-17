@@ -28,12 +28,12 @@ type SimpleDu =
     interface IUnionContract
 
 let render = function
-    | EventA { id = id } -> sprintf """{"id":"%O"}""" id
-    | EventB { age = None } -> sprintf "{\"age\":null}"
-    | EventB { age = Some age } -> sprintf """{"age":%d}""" age
-    | EventC { value = I { i = i } } -> sprintf """{"value":{"case":"I","i":%d}}""" i
-    | EventC { value = S { maybeI = None } } -> sprintf """{"value":{"case":"S","maybeI":null}}"""
-    | EventC { value = S { maybeI = Some i } } -> sprintf """{"value":{"case":"S","maybeI":%d}}""" i
+    | EventA { id = id } -> $"""{{"id":"{id}"}}"""
+    | EventB { age = None } -> "{\"age\":null}"
+    | EventB { age = Some age } -> $"""{{"age":%d{age}}}"""
+    | EventC { value = I { i = i } } -> $"""{{"value":{{"case":"I","i":%d{i}}}}}"""
+    | EventC { value = S { maybeI = None } } -> """{"value":{"case":"S","maybeI":null}}"""
+    | EventC { value = S { maybeI = Some i } } -> $"""{{"value":{{"case":"S","maybeI":%d{i}}}}}"""
     | EventD -> null
     //| EventE i -> string i
     //| EventF s ->  Newtonsoft.Json.JsonConvert.SerializeObject s
@@ -46,5 +46,5 @@ let ``Can roundtrip, rendering correctly`` (x: SimpleDu) =
     let d = serialized.Data
     render x =! if d.IsEmpty then null else System.Text.Encoding.UTF8.GetString(d.Span)
     let adapted = FsCodec.Core.TimelineEvent.Create(-1L, serialized)
-    let deserialized = codec.TryDecode adapted |> ValueOption.get
+    let deserialized = codec.Decode adapted |> ValueOption.get
     deserialized =! x

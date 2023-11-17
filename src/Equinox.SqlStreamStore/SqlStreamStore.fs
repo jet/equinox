@@ -416,7 +416,7 @@ type private CompactionContext(eventsLen: int, capacityBeforeCompaction: int) =
 
 type private StoreCategory<'event, 'state, 'req>(context: SqlStreamStoreContext, codec: FsCodec.IEventCodec<_, _, 'req>, fold, initial, access) =
     let fold s xs = (fold : System.Func<'state, 'event[], 'state>).Invoke(s, xs)
-    let tryDecode (e: ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
+    let tryDecode (e: ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.Decode
     let isOrigin =
         match access with
         | AccessStrategy.Unoptimized | AccessStrategy.LatestKnownEvent -> fun _ -> true
@@ -464,7 +464,7 @@ type SqlStreamStoreCategory<'event, 'state, 'req> =
         | _ -> ()
         { inherit Equinox.Category<'event, 'state, 'req>(name,
             StoreCategory<'event, 'state, 'req>(context, codec, fold, initial, access)
-            |> Caching.apply Token.isStale caching); __ = () }; val private __: unit // __ can be removed after Rider 2023.2
+            |> Caching.apply Token.isStale caching) }
 
 [<AbstractClass>]
 type ConnectorBase([<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =

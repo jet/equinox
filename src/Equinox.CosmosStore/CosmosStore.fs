@@ -1071,13 +1071,13 @@ type internal StoreCategory<'event, 'state, 'req>
         checkUnfolds, compressUnfolds, mapUnfolds: Choice<unit, 'event[] -> 'state -> 'event[], 'event[] -> 'state -> 'event[] * 'event[]>) =
     let fold s xs = (fold : Func<'state, 'event[], 'state>).Invoke(s, xs)
     let reload (log, streamName, (Token.Unpack pos as streamToken), state) preloaded ct: Task<struct (StreamToken * 'state)> = task {
-        match! store.Reload(log, (streamName, pos), (codec.TryDecode, isOrigin), ct, ?preview = preloaded) with
+        match! store.Reload(log, (streamName, pos), (codec.Decode, isOrigin), ct, ?preview = preloaded) with
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
     interface ICategory<'event, 'state, 'req> with
         member _.Empty = Token.create Position.fromKnownEmpty, initial
         member _.Load(log, _categoryName, _streamId, stream, _maxAge, _requireLeader, ct): Task<struct (StreamToken * 'state)> = task {
-            let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds, ct)
+            let! token, events = store.Load(log, (stream, None), (codec.Decode, isOrigin), checkUnfolds, ct)
             return struct (token, fold initial events) }
         member _.Sync(log, _categoryName, _streamId, streamName, req, (Token.Unpack pos as streamToken), state, events, ct) = task {
             let state' = fold state events

@@ -42,7 +42,7 @@ type Base64ZipUtf8Tests() =
                 else ser.Contains("\"d\":{") @>
         let des = System.Text.Json.JsonSerializer.Deserialize<Core.Unfold>(ser)
         let d = FsCodec.Core.TimelineEvent.Create(-1L, des.c, des.d)
-        let decoded = eventCodec.TryDecode d |> ValueOption.get
+        let decoded = eventCodec.Decode d |> ValueOption.get
         test <@ value = decoded @>
 
     [<Theory; InlineData false; InlineData true>]

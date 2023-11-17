@@ -377,16 +377,16 @@ type private StoreCategory<'event, 'state, 'req>(context: MessageDbContext, code
     let fold s xs = (fold : System.Func<'state, 'event[], 'state>).Invoke(s, xs)
     let loadAlgorithm log category streamId streamName requireLeader ct =
         match access with
-        | AccessStrategy.Unoptimized -> context.LoadBatched(log, streamName, requireLeader, codec.TryDecode, fold, initial, ct)
-        | AccessStrategy.LatestKnownEvent -> context.LoadLast(log, streamName, requireLeader, codec.TryDecode, fold, initial, ct)
+        | AccessStrategy.Unoptimized -> context.LoadBatched(log, streamName, requireLeader, codec.Decode, fold, initial, ct)
+        | AccessStrategy.LatestKnownEvent -> context.LoadLast(log, streamName, requireLeader, codec.Decode, fold, initial, ct)
         | AccessStrategy.AdjacentSnapshots (snapshotType, _) -> task {
-            match! context.LoadSnapshot(log, category, streamId, requireLeader, codec.TryDecode, snapshotType, ct) with
+            match! context.LoadSnapshot(log, category, streamId, requireLeader, codec.Decode, snapshotType, ct) with
             | ValueSome (pos, snapshotEvent) ->
                 let state = fold initial [| snapshotEvent |]
-                let! token, state = context.Reload(log, streamName, requireLeader, pos, codec.TryDecode, fold, state, ct)
+                let! token, state = context.Reload(log, streamName, requireLeader, pos, codec.Decode, fold, state, ct)
                 return struct(token, state)
-            | ValueNone -> return! context.LoadBatched(log, streamName, requireLeader, codec.TryDecode, fold, initial, ct) }
-    let reload (log, sn, leader, token, state) ct = context.Reload(log, sn, leader, token, codec.TryDecode, fold, state, ct)
+            | ValueNone -> return! context.LoadBatched(log, streamName, requireLeader, codec.Decode, fold, initial, ct) }
+    let reload (log, sn, leader, token, state) ct = context.Reload(log, sn, leader, token, codec.Decode, fold, state, ct)
     interface ICategory<'event, 'state, 'req> with
         member _.Empty = context.TokenEmpty, initial
         member _.Load(log, categoryName, streamId, streamName, _maxAge, requireLeader, ct) =

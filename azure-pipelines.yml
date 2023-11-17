@@ -48,11 +48,6 @@ jobs:
   pool:
     vmImage: 'macOS-latest'
   steps:
-  - task: UseDotNet@2
-    displayName: 'Install .NET Core sdk'
-    inputs:
-      packageType: sdk
-      version: 6.x
   - script: dotnet test build.proj -v n
     displayName: dotnet test build.proj
     env:

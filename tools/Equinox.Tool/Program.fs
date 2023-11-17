@@ -104,11 +104,11 @@ and [<NoComparison; NoEquality>] StatsParameters =
     | [<CliPrefix(CliPrefix.None)>]         Dynamo of ParseResults<Store.Dynamo.Parameters>
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | Events _ ->                   "Count the number of Events in the store."
-            | Streams _ ->                  "Count the number of Streams in the store. (Default action if no others supplied)"
-            | Documents _ ->                "Count the number of Documents in the store."
-            | All _ ->                      "Request all available stats (equivalent to -ESD)"
-            | Parallel _ ->                 "Run in Parallel (CAREFUL! can overwhelm RU allocations)."
+            | Events ->                     "Count the number of Events in the store."
+            | Streams ->                    "Count the number of Streams in the store. (Default action if no others supplied)"
+            | Documents ->                  "Count the number of Documents in the store."
+            | All ->                        "Request all available stats (equivalent to -ESD)"
+            | Parallel ->                   "Run in Parallel (CAREFUL! can overwhelm RU allocations)."
             | Cosmos _ ->                   "Cosmos Connection parameters."
             | Dynamo _ ->                   "Dynamo Connection parameters."
 and [<NoComparison; NoEquality>] DumpParameters =

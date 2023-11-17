@@ -2,10 +2,10 @@
   <PropertyGroup>
     <Authors>@jet @moneylion @bartelink @eiriktsarpalis and contributors</Authors>
     <Company>Jet.com</Company>
-    <Description>Sleek, composable event sourcing componentry</Description>
+    <Description>Efficient event sourced decisions and data</Description>
     <PackageProjectUrl>https://github.com/jet/equinox</PackageProjectUrl>
     <PackageTags>eventsourcing eventstore fsharp fscodec cosmosdb dynamodb eventstoredb postgres sqlserver</PackageTags>
-    <PackageLicense>Apache-2.0</PackageLicense>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <Copyright>Copyright © 2016-23</Copyright>
 
     <WarningLevel>5</WarningLevel>

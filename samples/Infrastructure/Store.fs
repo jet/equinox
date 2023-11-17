@@ -278,7 +278,7 @@ module Sql =
                     | ConnectionString _ -> "Database connection string"
                     | Schema _ ->           "Database schema name"
                     | Credentials _ ->      "Database credentials"
-                    | AutoCreate _ ->       "AutoCreate schema"
+                    | AutoCreate ->         "AutoCreate schema"
                     | BatchSize _ ->        "Maximum number of Events to request per batch. Default 500."
         type Arguments(p : ParseResults<Parameters>) =
             member _.ConnectionString =     p.GetResult ConnectionString
@@ -304,7 +304,7 @@ module Sql =
                 member a.Usage = a |> function
                     | ConnectionString _ -> "Database connection string"
                     | Credentials _ ->      "Database credentials"
-                    | AutoCreate _ ->       "AutoCreate schema"
+                    | AutoCreate ->         "AutoCreate schema"
                     | BatchSize _ ->        "Maximum number of Events to request per batch. Default 500."
         type Arguments(p : ParseResults<Parameters>) =
             member _.ConnectionString =     p.GetResult ConnectionString
@@ -331,7 +331,7 @@ module Sql =
                     | ConnectionString _ -> "Database connection string"
                     | Schema _ ->           "Database schema name"
                     | Credentials _ ->      "Database credentials"
-                    | AutoCreate _ ->       "AutoCreate schema"
+                    | AutoCreate ->         "AutoCreate schema"
                     | BatchSize _ ->        "Maximum number of Events to request per batch. Default 500."
         type Arguments(p : ParseResults<Parameters>) =
             member _.ConnectionString =     p.GetResult ConnectionString

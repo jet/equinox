@@ -440,7 +440,7 @@ type private CompactionContext(eventsLen: int, capacityBeforeCompaction: int) =
 
 type private StoreCategory<'event, 'state, 'req>(context: EventStoreContext, codec: FsCodec.IEventCodec<_, _, 'req>, fold, initial, access) =
     let fold s xs = (fold : System.Func<'state, 'event[], 'state>).Invoke(s, xs)
-    let tryDecode (e: ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
+    let tryDecode (e: ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.Decode
     let isOrigin =
         match access with
         | AccessStrategy.Unoptimized | AccessStrategy.LatestKnownEvent -> fun _ -> true

@@ -1119,13 +1119,13 @@ type internal StoreCategory<'event, 'state, 'req>
     let fold s xs = (fold : Func<'state, 'event[], 'state>).Invoke(s, xs)
     let fetch state f = task { let! token', events = f in return struct (token', fold state events) }
     let reload (log, streamNam, requireLeader, (Token.Unpack pos as streamToken), state) ct: Task<struct (StreamToken * 'state)> = task {
-        match! store.Reload(log, (streamNam, pos), requireLeader, (codec.TryDecode, isOrigin), ct) with
+        match! store.Reload(log, (streamNam, pos), requireLeader, (codec.Decode, isOrigin), ct) with
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
     interface ICategory<'event, 'state, 'req> with
         member _.Empty = Token.empty, initial
         member _.Load(log, _categoryName, _streamId, streamName, _maxAge, requireLeader, ct) =
-            fetch initial (store.Load(log, (streamName, None), requireLeader, (codec.TryDecode, isOrigin), checkUnfolds, ct))
+            fetch initial (store.Load(log, (streamName, None), requireLeader, (codec.Decode, isOrigin), checkUnfolds, ct))
         member _.Sync(log, _categoryName, _streamId, streamName, req, (Token.Unpack pos as streamToken), state, events, ct) = task {
             let state' = fold state events
             let exp, events, eventsEncoded, unfoldsEncoded =
