@@ -1333,7 +1333,7 @@ type CosmosStoreCategory<'event, 'state, 'req> =
             | AccessStrategy.Custom (isOrigin, transmute) ->     isOrigin,         true,  Choice3Of3 transmute
         { inherit Equinox.Category<'event, 'state, 'req>(name,
             StoreCategory<'event, 'state, 'req>(context.StoreClient, context.EnsureStoredProcedureInitialized, codec, fold, initial, isOrigin, checkUnfolds, compressUnfolds, mapUnfolds)
-            |> Caching.apply Token.isStale caching); __ = () }; val private __: unit // __ can be removed after Rider 2023.2
+            |> Caching.apply Token.isStale caching) }
 
 module Exceptions =
 

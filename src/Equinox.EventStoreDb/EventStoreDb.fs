@@ -431,7 +431,7 @@ type EventStoreCategory<'event, 'state, 'req> =
         | _ -> ()
         { inherit Equinox.Category<'event, 'state, 'req>(name,
             StoreCategory<'event, 'state, 'req>(context, codec, fold, initial, access)
-            |> Caching.apply Token.isStale caching); __ = () }; val private __: unit // __ can be removed after Rider 2023.2
+            |> Caching.apply Token.isStale caching) }
 
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =
