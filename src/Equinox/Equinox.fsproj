@@ -24,7 +24,7 @@
     <!-- Also avoids Rider search finding stuff in FSharp.Core.xml -->
     <PackageReference Include="FSharp.Core" Version="6.0.7"><ExcludeAssets>contentfiles</ExcludeAssets></PackageReference>
     
-    <PackageReference Include="FsCodec" Version="3.0.0-rc.14" />
+    <PackageReference Include="FsCodec" Version="3.0.0-rc.14.1" />
     <PackageReference Include="Serilog" Version="2.12.0" />
     <PackageReference Include="System.Runtime.Caching" Version="6.0.0" />
 
