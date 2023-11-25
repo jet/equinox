@@ -1,4 +1,4 @@
-﻿module Equinox.Core.Tests.AsyncCacheCellTests
+﻿module Equinox.Core.Tests.TaskCellTests
 
 open Equinox.Core
 open Swensen.Unquote
@@ -6,11 +6,11 @@ open System
 open Xunit
 
 [<Fact>]
-let ``AsyncCacheCell correctness`` () = async {
+let ``TaskCell correctness`` () = async {
     // ensure that the encapsulated computation fires only once and that expiry functions as expected
     let mutable state = 0
     let mutable expectedValue = 1
-    let cell = AsyncCacheCell((fun _ct -> task { return Interlocked.Increment &state }), fun value -> value <> expectedValue)
+    let cell = TaskCell((fun _ct -> task { return Interlocked.Increment &state }), fun value -> value <> expectedValue)
 
     false =! cell.IsValid()
 
@@ -26,7 +26,7 @@ let ``AsyncCacheCell correctness`` () = async {
 }
 
 [<Theory; InlineData false; InlineData true>]
-let ``AsyncCacheCell correctness with throwing`` initiallyThrowing = async {
+let ``TaskCell correctness with throwing`` initiallyThrowing = async {
     // ensure that the encapsulated computation fires only once and that expiry functions as expected
     let mutable state = 0
     let mutable expectedValue = 1
@@ -39,7 +39,7 @@ let ``AsyncCacheCell correctness with throwing`` initiallyThrowing = async {
         return r
     }
 
-    let cell = AsyncCacheCell(update, fun value -> value <> expectedValue)
+    let cell = TaskCell(update, fun value -> value <> expectedValue)
     false =! cell.IsValid()
 
     // If the runner is throwing, we want to be sure it doesn't place us in a failed state forever, per the semantics of Lazy<T>

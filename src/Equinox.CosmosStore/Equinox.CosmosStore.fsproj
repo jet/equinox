@@ -6,8 +6,8 @@
 
   <ItemGroup>
     <Compile Include="..\Equinox\Infrastructure.fs" />
-    <Compile Include="..\Equinox\AsyncLazy.fs" />
-    <Compile Include="..\Equinox.Core\AsyncCacheCell.fs" />
+    <Compile Include="..\Equinox\LazyTask.fs" />
+    <Compile Include="..\Equinox.Core\TaskCell.fs" />
     <Compile Include="..\Equinox.Core\Internal.fs" />
     <Compile Include="CosmosStoreSerialization.fs" />
     <Compile Include="CosmosStore.fs" />

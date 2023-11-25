@@ -6,8 +6,8 @@
 
   <ItemGroup>
     <Compile Include="..\..\src\Equinox\Infrastructure.fs" />
-    <Compile Include="AsyncLazyTests.fs" />
-    <Compile Include="AsyncCacheCellTests.fs" />
+    <Compile Include="LazyTaskTests.fs" />
+    <Compile Include="TaskCellTests.fs" />
     <Compile Include="BatchingTests.fs" />
   </ItemGroup>
 

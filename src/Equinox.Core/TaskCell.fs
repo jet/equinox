@@ -9,10 +9,10 @@ type
     // PUBLIC in Equinox.Core (it can also be used independent of Equinox)
     internal
 #endif
-    AsyncCacheCell<'T>(startWorkflow : System.Func<CancellationToken, Task<'T>>, [<O; D null>]?isExpired: System.Func<'T, bool>) =
+    TaskCell<'T>(startWorkflow : System.Func<CancellationToken, Task<'T>>, [<O; D null>]?isExpired: System.Func<'T, bool>) =
 
     let isValid = match isExpired with Some f -> not << f.Invoke | None -> fun _ -> true
-    let mutable cell = AsyncLazy<'T>.Empty
+    let mutable cell = LazyTask<'T>.Empty
 
     /// Synchronously check the value remains valid (to enable short-circuiting an Await step where value not required)
     member _.IsValid() =
@@ -26,7 +26,7 @@ type
         | ValueSome res when isValid res -> return res
         | _ ->
             // Prepare a new instance, with cancellation under our control (it won't start until the first Await on the LazyTask triggers it though)
-            let newInstance = AsyncLazy<'T>(fun () -> startWorkflow.Invoke ct)
+            let newInstance = LazyTask<'T>(fun () -> startWorkflow.Invoke ct)
             // If there are concurrent executions, the first through the gate wins; everybody else awaits the instance the winner wrote
             let _ = Interlocked.CompareExchange(&cell, newInstance, current)
             return! cell.Await() }

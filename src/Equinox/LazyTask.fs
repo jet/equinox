@@ -4,11 +4,11 @@ namespace Equinox.Core
 type
 #if !EQUINOX_CORE
     // NOT PUBLIC in Equinox library - used internally in the impl of CacheEntry
-    // PUBLIC in Equinox.Core (which also uses it in the impl of AsyncCacheCell)
+    // PUBLIC in Equinox.Core (which also uses it in the impl of TaskCell)
     internal
 #endif
-      AsyncLazy<'T>(startTask: System.Func<Task<'T>>) =
-    // NOTE due to `Lazy<T>` semantics, failed attempts will cache any exception; AsyncCacheCell compensates for this by rolling over to a new instance
+      LazyTask<'T>(startTask: System.Func<Task<'T>>) =
+    // NOTE due to `Lazy<T>` semantics, failed attempts will cache any exception; TaskCell compensates for this by rolling over to a new instance
     let workflow = lazy startTask.Invoke()
 
     /// Synchronously peek at what's been previously computed (if it's not Empty, or the last attempt Faulted).
@@ -33,4 +33,4 @@ type
     member _.Await() = workflow.Value
 
     /// Singleton Empty value
-    static member val Empty = AsyncLazy(fun () -> Task.FromException<'T>(System.InvalidOperationException "Uninitialized AsyncLazy"))
+    static member val Empty = LazyTask(fun () -> Task.FromException<'T>(System.InvalidOperationException "Uninitialized LazyTask"))

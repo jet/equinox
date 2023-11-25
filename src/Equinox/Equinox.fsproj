@@ -11,7 +11,7 @@
     <Compile Include="Stream.fs" />
     <Compile Include="Decider.fs" />
     <Compile Include="Category.fs" />
-    <Compile Include="AsyncLazy.fs" />
+    <Compile Include="LazyTask.fs" />
     <Compile Include="Cache.fs" />
     <Compile Include="Caching.fs" />
   </ItemGroup>
