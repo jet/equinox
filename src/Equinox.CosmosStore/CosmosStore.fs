@@ -577,7 +577,7 @@ module Initialization =
 
     /// Per Container, we need to ensure the stored procedure has been created exactly once (per process lifetime)
     type internal ContainerInitializerGuard(container: Container, ?initContainer: Container -> CancellationToken -> Task<unit>) =
-        let initGuard = initContainer |> Option.map (fun init -> AsyncCacheCell<unit>(init container))
+        let initGuard = initContainer |> Option.map (fun init -> TaskCell<unit>(init container))
         member val Container = container
         /// Coordinates max of one in flight call to the init logic, retrying on next request if it fails. Calls after it has succeeded noop
         member _.Initialize(ct): System.Threading.Tasks.ValueTask =

@@ -15,7 +15,7 @@ type private CacheEntry<'state>(initialToken: StreamToken, initialState: 'state,
     let tryGet () =
         if verifiedTimestamp = 0L then ValueNone // 0 => Null cache entry
         else ValueSome (struct (currentToken, currentState))
-    let mutable cell = AsyncLazy<struct(int64 * (struct (StreamToken * 'state)))>.Empty
+    let mutable cell = LazyTask<struct(int64 * (struct (StreamToken * 'state)))>.Empty
     static member CreateEmpty() =
         new CacheEntry<'state>(Unchecked.defaultof<StreamToken>, Unchecked.defaultof<'state>, 0L) // 0 => Null cache entry signifies token and state both invalid
     /// Attempt to retrieve the cached state, and associated token (ValueNone if this is a placeholder entry that's yet to complete its first Load operation)
@@ -31,7 +31,7 @@ type private CacheEntry<'state>(initialToken: StreamToken, initialState: 'state,
                 if verifiedTimestamp < timestamp then // Don't count attempts to overwrite with stale state as verification
                     verifiedTimestamp <- timestamp
     /// Coordinates having a max of one in-flight request across all staleness-tolerant loads at all times
-    // Follows high level flow of AsyncCacheCell.Await - read the comments there, and the AsyncCacheCell tests first!
+    // Follows high level flow of TaskCell.Await - read the comments there, and the TaskCell tests first!
     member x.ReadThrough(maxAge: TimeSpan, isStale, load: Func<_, _>) = task {
         let cacheEntryValidityCheckTimestamp = System.Diagnostics.Stopwatch.GetTimestamp()
         let isWithinMaxAge cachedValueTimestamp = Stopwatch.TicksToSeconds(cacheEntryValidityCheckTimestamp - cachedValueTimestamp) <= maxAge.TotalSeconds
@@ -47,7 +47,7 @@ type private CacheEntry<'state>(initialToken: StreamToken, initialState: 'state,
         | _ ->
 
         // .. it wasn't; join the race to dispatch a request (others following us will share our fate via the TryAwaitValid)
-        let newInstance = AsyncLazy(fun () -> load.Invoke maybeBaseState)
+        let newInstance = LazyTask(fun () -> load.Invoke maybeBaseState)
         let _ = Interlocked.CompareExchange(&cell, newInstance, ourInitialCellState)
         let! timestamp, (token, state as res) = cell.Await()
         x.MergeUpdates(isStale, timestamp, token, state) // merge observed result into the cache
