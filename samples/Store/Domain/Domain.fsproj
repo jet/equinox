@@ -12,6 +12,7 @@
     <Compile Include="SavedForLater.fs" />
     <Compile Include="InventoryItem.fs" />
     <Compile Include="Retries.fs" />
+    <Compile Include="Light.fs" />
   </ItemGroup>
 
   <ItemGroup>

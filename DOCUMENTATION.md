@@ -388,13 +388,11 @@ module Fold =
 
     module Snapshot =
         
-        let generate (state: State): Event =
+        let generate (state: State): Events.Event =
             Events.Snapshotted { ... }
-        let isOrigin = function
-            | Events.Snapshotted -> true
-            | _ -> false
+        let isOrigin = function Events.Snapshotted -> true | _ -> false
         let config = isOrigin, generate
-        let hydrate (e: Snapshotted): State = ...
+        let hydrate (e: Events.Snapshotted): State = ...
         
     let private evolve state = function
         | Events.Snapshotted e -> Snapshot.hydrate e
@@ -402,29 +400,51 @@ module Fold =
         | Events.Y -> (state update)
     let fold = Array.fold evolve
 
-let interpretX ... (state: Fold.State): Events list = ...
+module Decisions =
 
-type Decision =
-    | Accepted
-    | Failed of Reason
+    let interpretX ... (state: Fold.State): Events.Event[] = ...
 
-let decideY ... (state: Fold.State): Decision * Events list = ...
+    type Decision =
+        | Accepted
+        | Failed of Reason
+
+    let decideY ... (state: Fold.State): Decision * Events.Event[] = ...
 ```
 
 - `interpret`, `decide` _and related input and output types / interfaces_ are
   public and top-level for use in unit tests (often unit tests will `open` the
   `module Fold` to use `initial` and `fold`)
 
+In some cases, where surfacing the state in some way makes sense (it doesn't always; see [CQRS](https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs)), you'll have a:
+
+```fsharp
+module Queries =
+
+    type XzyInfo = { ... }
+
+    let renderXyz (s: State): XzyInfo =
+        { ... }
+```
+
+The above functions can all be unit tested directly. All other tests should use the `Service` with a `MemoryStore` via the `member`s on that:
+
 ```fsharp
 type Service internal (resolve: Id -> Equinox.Decider<Events.Event, Fold.State) = ...`
 
     member _.Execute(id, command): Async<unit> =
         let decider = resolve id
-        decider.Transact(interpretX command)
+        decider.Transact(Decisions.interpretX command)
 
     member _.Decide(id, inputs): Async<Decision> =
         let decider = resolve id
-        decider.Transact(decideX inputs)
+        decider.Transact(Decisions.decideX inputs)
+
+    member private _.Query(maxAge, render): Async<Queries.XyzInfo> =
+        let decider = resolve id
+        decider.Query(render, Equinox.LoadOption.AllowStale maxAge)
+
+    member x.ReadCachedXyz(id): Async<Queries.XyzInfo> =
+        x.Query(TimeSpan.FromSeconds 10, Queries.renderXyz)
 
 let create category = Service(Stream.id >> Equinox.Decider.forStream Serilog.Log.Logger category)
 ```
@@ -1343,7 +1363,7 @@ which can then summarize the overall transaction.
 ### Idiomatic approach - composed method based on side-effect free functions
 
 There's an example of such a case in the
-[Cart's Domain Service](https://github.com/jet/equinox/blob/master/samples/Store/Domain/Cart.fs#L128):
+[Cart's Domain Service](https://github.com/jet/equinox/blob/master/samples/Store/Domain/Cart.fs#L106):
 
 ```fsharp
 let interpretMany fold interpreters (state: 'state): 'state * 'event[] =
@@ -1372,9 +1392,7 @@ _NOTE: This is an example of an alternate approach provided as a counterpoint -
 there's no need to read it as the preceding approach is the recommended one is
 advised as a default strategy to use_
 
-As illustrated in [Cart's Domain
-Service](https://github.com/jet/equinox/blob/master/samples/Store/Domain/Cart.fs#L99),
-an alternate approach is to encapsulate the folding (Equinox in V1 exposed an
+An alternate approach is to encapsulate the folding (Equinox in V1 exposed an
 interface that encouraged such patterns; this was removed in two steps, as code
 written using the idiomatic approach is [intrinsically simpler, even if it
 seems not as Easy](https://www.infoq.com/presentations/Simple-Made-Easy/) at
@@ -2116,6 +2134,7 @@ Further information:
 - [DynamoDB Transactions: Use Cases and Examples](https://www.alexdebrie.com/posts/dynamodb-transactions/) by Alex DeBrie
   provides a thorough review of the `TransactWriteItems` facility (TL;DR: it's far more general than the stream level atomic
   transactions afforded by CosmosDB's Stored Procedures)
+- while it doesn't provide deeper insight into the API from a usage perspective, [Distributed Transactions at Scale in Amazon DynamoDB](https://www.infoq.com/articles/amazon-dynamodb-transactions) is a great deep dive into how the facility is implemented.
 
 ### Differences in read and resync paths
 
