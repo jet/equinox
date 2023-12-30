@@ -1247,6 +1247,7 @@ and CosmosStoreClient
 /// Defines the policies for accessing a given Container (And optional fallback Container for retrieval of archived data).
 type CosmosStoreContext(client: CosmosStoreClient, databaseId, containerId, tipOptions, queryOptions, ?archive) =
     let containerGuard = client.GetOrAddPrimaryContainer(databaseId, containerId)
+    member val Container = containerGuard.Container
     member val QueryOptions = queryOptions
     member val TipOptions = tipOptions
     new(client: CosmosStoreClient, databaseId, containerId,
