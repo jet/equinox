@@ -6,12 +6,11 @@ open FsCodec
 open FSharp.Control
 open Newtonsoft.Json.Linq
 open Swensen.Unquote
-open Serilog
 open System
 
 type TestEvents() =
     static member private Create(i, ?eventType, ?json) =
-        EventData.FromUtf8Bytes
+        FsCodec.Core.EventData.Create
             (   sprintf "%s:%d" (defaultArg eventType "test_event") i,
                 System.Text.Json.JsonSerializer.SerializeToElement (defaultArg json "{\"d\":\"d\"}"),
                 System.Text.Json.JsonSerializer.SerializeToElement "{\"m\":\"m\"}")

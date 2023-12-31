@@ -1859,13 +1859,10 @@ following key benefits:
 
 ```fsharp
 open Equinox.CosmosStore.Core
-// open MyCodecs.Json // example of using specific codec which can yield UTF-8
-                      // byte arrays from a type using `Json.toBytes` via Fleece
-                      // or similar
 
 type EventData with
     static member FromT eventType value =
-        EventData.FromUtf8Bytes(eventType, Json.toBytes value)
+        FsCodec.Core.EventData.Create(eventType, Json.toBytes value)
 
 // Load connection string from your Key Vault (example here is the CosmosDB
 // simulator's well known key)

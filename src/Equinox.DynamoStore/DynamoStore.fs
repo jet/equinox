@@ -1393,11 +1393,6 @@ type EventsContext
         let store, stream = resolve streamName
         store.Prune(log, stream, index, ct)
 
-/// Provides mechanisms for building `EventData` records to be supplied to the `Events` API
-type EventData() =
-    /// Creates an Event record, suitable for supplying to Append et al
-    static member FromUtf8Bytes(eventType, data, ?meta): IEventData<_> = FsCodec.Core.EventData.Create(eventType, data, ?meta = meta) :> _
-
 /// Api as defined in the Equinox Specification
 /// Note the DynamoContext APIs can yield better performance due to the fact that a Position tracks the etag of the Stream's Tip
 module Events =

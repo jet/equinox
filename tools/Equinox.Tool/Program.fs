@@ -85,7 +85,7 @@ and DynamoInitArguments(p : ParseResults<TableParameters>) =
     member val Throughput =                 if not onDemand then Throughput.Provisioned (ProvisionedThroughput(p.GetResult ReadCu, p.GetResult WriteCu))
                                             elif onDemand && (p.Contains ReadCu || p.Contains WriteCu) then Store.missingArg "CUs are not applicable in On-Demand mode"
                                             else Throughput.OnDemand
-and [<NoComparison; NoEquality>] ConfigParameters =
+and [<NoComparison; NoEquality; RequireSubcommand>] ConfigParameters =
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Store.Sql.Ms.Parameters>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">] MySql    of ParseResults<Store.Sql.My.Parameters>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">] Postgres of ParseResults<Store.Sql.Pg.Parameters>
@@ -94,7 +94,7 @@ and [<NoComparison; NoEquality>] ConfigParameters =
             | MsSql _ ->                    "Configure Sql Server Store."
             | MySql _ ->                    "Configure MySql Store."
             | Postgres _ ->                 "Configure Postgres Store."
-and [<NoComparison; NoEquality>] StatsParameters =
+and [<NoComparison; NoEquality; RequireSubcommand>] StatsParameters =
     | [<AltCommandLine "-E"; Unique>]       Events
     | [<AltCommandLine "-S"; Unique>]       Streams
     | [<AltCommandLine "-D"; Unique>]       Documents
@@ -111,7 +111,7 @@ and [<NoComparison; NoEquality>] StatsParameters =
             | Parallel ->                   "Run in Parallel (CAREFUL! can overwhelm RU allocations)."
             | Cosmos _ ->                   "Cosmos Connection parameters."
             | Dynamo _ ->                   "Dynamo Connection parameters."
-and [<NoComparison; NoEquality>] DumpParameters =
+and [<NoComparison; NoEquality; RequireSubcommand>] DumpParameters =
     | [<AltCommandLine "-s"; MainCommand>]  Stream of FsCodec.StreamName
     | [<AltCommandLine "-C"; Unique>]       Correlation
     | [<AltCommandLine "-B"; Unique>]       Blobs
@@ -177,7 +177,7 @@ and [<NoComparison>] WebParameters =
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Endpoint _ ->                 "Target address. Default: https://localhost:5001"
-and [<NoComparison; NoEquality>] TestParameters =
+and [<NoComparison; NoEquality; RequireSubcommand>] TestParameters =
     | [<AltCommandLine "-t"; Unique>]       Name of Test
     | [<AltCommandLine "-s">]               Size of int
     | [<AltCommandLine "-C">]               Cached

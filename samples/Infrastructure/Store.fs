@@ -79,11 +79,12 @@ module Cosmos =
                 | TipMaxJsonLength _ -> "specify maximum length of JSON (as measured by JSON.stringify) to hold in Tip before calving off to a frozen Batch. Default: 30,000"
                 | QueryMaxItems _ ->    "specify maximum number of batches of events to retrieve in per query response. Default: 10"
     type Arguments(p : ParseResults<Parameters>) =
-        member _.Mode =                 p.TryGetResult ConnectionMode
-        member _.Connection =           p.TryGetResult Connection |> defaultWithEnvVar "EQUINOX_COSMOS_CONNECTION" "Connection"
-        member _.Database =             p.TryGetResult Database   |> defaultWithEnvVar "EQUINOX_COSMOS_DATABASE"   "Database"
-        member _.Container =            p.TryGetResult Container  |> defaultWithEnvVar "EQUINOX_COSMOS_CONTAINER"  "Container"
-        member private _.ArchiveConnection = p.TryGetResult ArchiveConnection
+        member val Verbose =            p.Contains StoreVerbose
+        member val Mode =               p.TryGetResult ConnectionMode
+        member val Connection =         p.TryGetResult Connection |> defaultWithEnvVar "EQUINOX_COSMOS_CONNECTION" "Connection"
+        member val Database =           p.TryGetResult Database   |> defaultWithEnvVar "EQUINOX_COSMOS_DATABASE"   "Database"
+        member val Container =          p.TryGetResult Container  |> defaultWithEnvVar "EQUINOX_COSMOS_CONTAINER"  "Container"
+        member val private ArchiveConnection = p.TryGetResult ArchiveConnection
         member private x.ArchiveDatabase = p.TryGetResult ArchiveDatabase  |> Option.defaultWith (fun () -> x.Database)
         member private x.ArchiveContainer = p.TryGetResult ArchiveContainer |> Option.defaultWith (fun () -> x.Container)
         member x.Archive =              if p.Contains ArchiveConnection || p.Contains ArchiveDatabase || p.Contains ArchiveContainer
