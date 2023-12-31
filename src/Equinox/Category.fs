@@ -42,7 +42,7 @@ type Category<'event, 'state, 'req>(categoryName, inner: Core.ICategory<'event, 
                 let log = if attempt = 1 then log else log.ForContext("attempts", attempt)
                 return! inner.Sync(log, categoryName, streamId, streamName, req, token, originState, events, ct) } }
 
-[<AbstractClass; Sealed; System.Runtime.CompilerServices.Extension>]
+[<AbstractClass; Sealed>]
 type Stream private () =
     [<System.Runtime.CompilerServices.Extension>]
     static member Resolve(cat: Category<'event, 'state, 'req>, log, req): System.Func<FsCodec.StreamId, DeciderCore<'event, 'state>> =

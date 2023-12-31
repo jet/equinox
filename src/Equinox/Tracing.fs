@@ -4,7 +4,7 @@ open System.Diagnostics
 
 let source = new ActivitySource("Equinox")
 
-[<AbstractClass; Sealed; System.Runtime.CompilerServices.Extension>]
+[<AbstractClass; Sealed>]
 type ActivityExtensions private () =
 
     [<System.Runtime.CompilerServices.Extension>]
