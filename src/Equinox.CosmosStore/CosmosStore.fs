@@ -633,6 +633,12 @@ module internal Tip =
                 stack.Insert(0, e) // WalkResult always renders events ordered correctly - here we're aiming to align with Enum.EventsAndUnfolds
                 isOrigin e
         xs |> Seq.tryFindBack isOrigin', stack.ToArray()
+    let tryHydrate (tryDecode: ITimelineEvent<EventBody> -> 'event voption, isOrigin: 'event -> bool) (unfolds: Unfold[], etag: string voption) =
+        match Enum.Unfolds unfolds |> tryFindOrigin (tryDecode, isOrigin) with
+        | Some u, events ->
+            let pos = match etag with ValueSome etag -> Position.fromEtagAndIndex (etag, u.Index) | ValueNone -> Position.readOnly
+            ValueSome (pos, events)
+        | None, _ -> ValueNone
 
 module internal Query =
 
@@ -1123,7 +1129,7 @@ type internal StoreCategory<'event, 'state, 'req>
                 return SyncResult.Conflict (reload (log, streamName, streamToken, state) (Some (pos', pos.index, tipEvents))) }
     interface Caching.IReloadable<'state> with member _.Reload(log, sn, _leader, token, state, ct) = reload (log, sn, token, state) None ct
     member _.TryHydrateTip(u, ?etag) =
-        match Query.tryHydrate (codec.Decode, isOrigin) (u, match etag with Some etag -> ValueSome etag | None -> ValueNone) with
+        match Tip.tryHydrate (codec.Decode, isOrigin) (u, match etag with Some etag -> ValueSome etag | None -> ValueNone) with
         | ValueNone -> ValueNone
         | ValueSome (pos, events) -> ValueSome (Token.create pos, fold initial events)
 

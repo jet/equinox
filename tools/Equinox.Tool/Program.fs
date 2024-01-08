@@ -149,7 +149,7 @@ and QueryArguments(p: ParseResults<QueryParameters>) =
     member val CosmosArgs =
         match p.GetSubCommand() with
         | QueryParameters.Cosmos p -> Store.Cosmos.Arguments p
-        | x -> Store.missingArg $"unexpected subcommand %A{x}"
+        | x -> p.Raise $"unexpected subcommand %A{x}"
     member x.ConfigureStore(log: ILogger) =
         let storeConfig = None, true
         Store.Cosmos.config log storeConfig x.CosmosArgs
