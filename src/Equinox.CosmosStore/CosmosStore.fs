@@ -132,6 +132,9 @@ module internal Position =
     let fromKnownEmpty = fromIndex 0L
     /// Blind append mode
     let fromAppendAtEnd = fromIndex -1L // sic - needs to yield value -1 to trigger stored proc logic
+    /// Sentinel value we assign so we can reject attempts to sync without having known the context
+    let readOnly = { index = -2L; etag = None }
+    let isReadOnly (x: Position) = x.index = -2L && Option.isNone x.etag
     /// If we encounter the tip (id=-1) item/document, we're interested in its etag so we can re-sync for 1 RU
     let tryFromBatch (x: Batch) =
         if x.id <> Tip.WellKnownDocumentId then None
@@ -706,6 +709,21 @@ module internal Query =
             if x.Index = stopIndex then found <- true
         used, dropped
 
+    // Attempts to hydrate a stream's state from the unfolds
+    let tryHydrate (tryDecode: ITimelineEvent<EventBody> -> 'event voption, isOrigin: 'event -> bool) (unfolds: Unfold[], etag: string voption) =
+        let stack = ResizeArray()
+        let isOrigin' (u: ITimelineEvent<EventBody>) =
+            match tryDecode u with
+            | ValueNone -> false
+            | ValueSome e ->
+                stack.Insert(0, e) // WalkResult always renders events ordered correctly - here we're aiming to align with Enum.EventsAndUnfolds
+                isOrigin e
+        match Enum.Unfolds unfolds |> Seq.tryFindBack isOrigin' with
+        | Some u ->
+            let pos = match etag with ValueSome etag -> Position.fromEtagAndIndex (etag, u.Index) | ValueNone -> Position.readOnly
+            ValueSome (pos, stack.ToArray())
+        | None -> ValueNone
+
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
     type ScanResult<'event> = { found: bool; minIndex: int64; next: int64; maybeTipPos: Position option; events: 'event[] }
 
@@ -1104,6 +1122,10 @@ type internal StoreCategory<'event, 'state, 'req>
             | InternalSyncResult.Conflict (pos', tipEvents) ->
                 return SyncResult.Conflict (reload (log, streamName, streamToken, state) (Some (pos', pos.index, tipEvents))) }
     interface Caching.IReloadable<'state> with member _.Reload(log, sn, _leader, token, state, ct) = reload (log, sn, token, state) None ct
+    member _.TryHydrateTip(u, ?etag) =
+        match Query.tryHydrate (codec.Decode, isOrigin) (u, match etag with Some etag -> ValueSome etag | None -> ValueNone) with
+        | ValueNone -> ValueNone
+        | ValueSome (pos, events) -> ValueSome (Token.create pos, fold initial events)
 
 module ConnectionString =
 
@@ -1312,7 +1334,7 @@ type AccessStrategy<'event, 'state> =
     /// </remarks>
     | Custom of isOrigin: ('event -> bool) * transmute: ('event[] -> 'state -> 'event[] * 'event[])
 
-type CosmosStoreCategory<'event, 'state, 'req> private (name, inner) =
+type CosmosStoreCategory<'event, 'state, 'req> private (name, inner, tryHydrateTip) =
     inherit Equinox.Category<'event, 'state, 'req>(name, inner)
     new(context: CosmosStoreContext, name, codec, fold, initial, access,
         // For CosmosDB, caching is typically a central aspect of managing RU consumption to maintain performance and capacity.
@@ -1337,7 +1359,12 @@ type CosmosStoreCategory<'event, 'state, 'req> private (name, inner) =
             | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> Array.empty, toSnapshot state |> Array.singleton)
             | AccessStrategy.Custom (isOrigin, transmute) ->     isOrigin,         true,  Choice3Of3 transmute
         let sc = StoreCategory<'event, 'state, 'req>(context.StoreClient, context.EnsureStoredProcedureInitialized, codec, fold, initial, isOrigin, checkUnfolds, shouldCompress, mapUnfolds)
-        CosmosStoreCategory<'event, 'state, 'req>(name, sc |> Caching.apply Token.isStale caching)
+        CosmosStoreCategory<'event, 'state, 'req>(name, sc |> Caching.apply Token.isStale caching, fun u e -> sc.TryHydrateTip(u, ?etag = e))
+    /// Parses the Unfolds (the `u` field of the Item with `id = "-1"`) into a form that can be passed to `Decider.Query` or `Decider.Transact` via `load = LoadOption.FromMemento`
+    member _.TryHydrateTip(u, [<O; D null>] ?etag: string) =
+        match tryHydrateTip u etag with
+        | ValueSome (t, s) -> Some (Equinox.LoadOption.FromMemento struct (t, s))
+        | ValueNone -> None
 
 module Exceptions =
 
