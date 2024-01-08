@@ -49,7 +49,7 @@ type CosmosJsonSerializer(options : JsonSerializerOptions) =
 
 /// Manages inflating of the UTF-8 json bytes to make the index record minimal from the perspective of the writer stored proc
 /// Only relevant for unfolds in the Tip
-and JsonCompressedBase64Converter() =
+type JsonCompressedBase64Converter() =
     inherit System.Text.Json.Serialization.JsonConverter<JsonElement>()
 
     override _.Read(reader, _typeToConvert, options) =
