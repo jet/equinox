@@ -1366,11 +1366,13 @@ type CosmosStoreCategory<'event, 'state, 'req> private (name, inner, tryHydrateT
             | AccessStrategy.Custom (isOrigin, transmute) ->     isOrigin,         true,  Choice3Of3 transmute
         let sc = StoreCategory<'event, 'state, 'req>(context.StoreClient, context.EnsureStoredProcedureInitialized, codec, fold, initial, isOrigin, checkUnfolds, shouldCompress, mapUnfolds)
         CosmosStoreCategory<'event, 'state, 'req>(name, sc |> Caching.apply Token.isStale caching, fun u e -> sc.TryHydrateTip(u, ?etag = e))
-    /// Parses the Unfolds (the `u` field of the Item with `id = "-1"`) into a form that can be passed to `Decider.Query` or `Decider.Transact` via `load = LoadOption.FromMemento`
+    /// Parses the Unfolds (the `u` field of the Item with `id = "-1"`) into a form that can be passed to `Decider.Query` or `Decider.Transact` via `, ?load = <result>>`
     member _.TryHydrateTip(u, [<O; D null>] ?etag: string) =
         match tryHydrateTip u etag with
         | ValueSome (t, s) -> Some (Equinox.LoadOption.FromMemento struct (t, s))
         | ValueNone -> None
+    /// Derives from the supplied `u`nfolds. Yields `None` if there is no relevant `origin` event within the supplied array.
+    member x.TryLoad u = x.TryHydrateTip u |> Option.bind (function Equinox.LoadOption.FromMemento (_, s) -> Some s | _ -> None)
 
 module Exceptions =
 
