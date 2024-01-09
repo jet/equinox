@@ -625,7 +625,8 @@ module internal Query =
         let mutable i = 0
         while query.HasMoreResults do
             let! t, (res: FeedResponse<'t>) = (fun ct -> query.ReadNextAsync(ct)) |> Stopwatch.time ct
-            yield map i t res }
+            yield map i t res
+            i <- i + 1 }
     let private mkQuery (log: ILogger) (container: Container, stream: string) includeTip (maxItems: int) (direction: Direction, minIndex, maxIndex): FeedIterator<Batch> =
         let order = if direction = Direction.Forward then "ASC" else "DESC"
         let query =
