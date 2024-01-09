@@ -295,7 +295,9 @@ module UnionEncoderAdapters =
         let map (x: EventBody): byte[] = x.ToArray()
         EventData(x.EventId, x.EventType, isJson = true, data = map x.Data, metadata = map x.Meta)
 
+[<NoComparison; NoEquality>]
 type Position = { streamVersion: int64; compactionEventNumber: int64 option; batchCapacityLimit: int option }
+[<NoComparison; NoEquality>]
 type Token = { pos: Position }
 
 module Token =

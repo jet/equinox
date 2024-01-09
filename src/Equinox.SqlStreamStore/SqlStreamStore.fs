@@ -291,7 +291,9 @@ module UnionEncoderAdapters =
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
         NewStreamMessage(x.EventId, x.EventType, mapData x.Data, mapMeta x.Meta)
 
+[<NoComparison; NoEquality>]
 type Position = { streamVersion: int64; compactionEventNumber: int64 option; batchCapacityLimit: int option }
+[<NoComparison; NoEquality>]
 type Token = { pos: Position }
 
 module Token =

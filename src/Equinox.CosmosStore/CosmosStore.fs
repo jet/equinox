@@ -121,7 +121,7 @@ type Tip = // TODO for STJ v5: All fields required unless explicitly optional
     static member internal WellKnownDocumentId = "-1"
 
 /// Position and Etag to which an operation is relative
-[<NoComparison>]
+[<NoComparison; NoEquality>]
 type Position = { index: int64; etag: string option }
 module internal Position =
     /// NB very inefficient compared to FromDocument or using one already returned to you
