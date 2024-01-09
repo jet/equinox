@@ -531,9 +531,7 @@ module Dump =
                 else log.Information("{i,4}@{t:u}+{d,9} Corr {corr} Cause {cause} {u:l} {e:l} {data:l} {meta:l}",
                          x.Index, x.Timestamp, interval, x.CorrelationId, x.CausationId, ty, x.EventType, render x.Data, render x.Meta)
             match streamBytes with ValueNone -> () | ValueSome x -> log.Information("ISyncContext.StreamEventBytes {kib:n1}KiB", float x / 1024.) }
-
         resetStats ()
-
         let streams = p.GetResults DumpParameters.Stream
         log.ForContext("streams",streams).Information("Reading...")
         streams

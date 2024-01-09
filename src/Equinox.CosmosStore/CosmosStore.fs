@@ -124,19 +124,18 @@ type Tip = // TODO for STJ v5: All fields required unless explicitly optional
 [<NoComparison; NoEquality>]
 type Position = { index: int64; etag: string option }
 module internal Position =
-    /// NB very inefficient compared to FromDocument or using one already returned to you
-    let fromI (i: int64) = { index = i; etag = None }
+    let fromEtagOnly (value: string) = { index = -2; etag = Some value }
+    let fromEtagAndIndex (etag, n) = { index = n; etag = Some etag }
+    /// NB a token without an etag is inefficient compared to fromEtagAndIndex, so paths to this should be minimized
+    let fromIndex (x: int64) = { index = x; etag = None }
     /// If we have strong reason to suspect a stream is empty, we won't have an etag (and Writer Stored Procedure special cases this)
-    let fromKnownEmpty = fromI 0L
-    /// Just Do It mode
-    let fromAppendAtEnd = fromI -1L // sic - needs to yield -1
-    let fromEtag (value: string) = { fromI -2L with etag = Some value }
-    /// Create Position from Tip record context (facilitating 1 RU reads)
-    let fromTip (x: Tip) = { index = x.n; etag = match x._etag with null -> None | x -> Some x }
+    let fromKnownEmpty = fromIndex 0L
+    /// Blind append mode
+    let fromAppendAtEnd = fromIndex -1L // sic - needs to yield value -1 to trigger stored proc logic
     /// If we encounter the tip (id=-1) item/document, we're interested in its etag so we can re-sync for 1 RU
     let tryFromBatch (x: Batch) =
         if x.id <> Tip.WellKnownDocumentId then None
-        else Some { index = x.n; etag = match x._etag with null -> None | x -> Some x }
+        else Some { index = x.n; etag = Option.ofObj x._etag }
 
 [<RequireQualifiedAccess>]
 type Direction = Forward | Backward override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
@@ -439,7 +438,15 @@ function sync(req, expIndex, expEtag, maxEventsInTip, maxStringifyLen) {
 }"""
 
 [<RequireQualifiedAccess>]
-type internal SyncExp = Version of int64 | Etag of string | Any
+type internal SyncExp private = Version of int64 | Etag of string | Any
+module internal SyncExp =
+    let fromVersion i =
+        if i < 0L then raise <| ArgumentOutOfRangeException(nameof i, i, "must be >= 0")
+        SyncExp.Version i
+    let fromVersionOrAppendAtEnd = function -1L -> SyncExp.Any | i -> fromVersion i
+    let fromEtag etag =
+        if isNull etag then invalidArg (nameof etag) "must be non-null"
+        SyncExp.Etag etag
 
 module internal Sync =
 
@@ -454,8 +461,8 @@ module internal Sync =
         : Task<float*Result> = task {
         let ep =
             match exp with
-            | SyncExp.Version ev -> Position.fromI ev
-            | SyncExp.Etag et -> Position.fromEtag et
+            | SyncExp.Version ev -> Position.fromIndex ev
+            | SyncExp.Etag et -> Position.fromEtagOnly et
             | SyncExp.Any -> Position.fromAppendAtEnd
         let args = [| box req; box ep.index; box (Option.toObj ep.etag); box maxEventsInTip; box maxStringifyLen |]
         let! (res: Scripts.StoredProcedureExecuteResponse<SyncResponse>) =
@@ -615,7 +622,18 @@ module internal Tip =
         | ReadResult.NotFound -> return Result.NotFound
         | ReadResult.Found tip ->
             let minIndex = maybePos |> Option.map (fun x -> x.index)
-            return Result.Found (Position.fromTip tip, tip.i, Enum.EventsAndUnfolds(tip, ?maxIndex = maxIndex, ?minIndex = minIndex) |> Array.ofSeq) }
+            return Result.Found (Position.fromEtagAndIndex (tip._etag, tip.n), tip.i, Enum.EventsAndUnfolds(tip, ?maxIndex = maxIndex, ?minIndex = minIndex) |> Array.ofSeq) }
+    let tryFindOrigin (tryDecode: ITimelineEvent<EventBody> -> 'event voption, isOrigin: 'event -> bool) xs =
+        let stack = ResizeArray()
+        let isOrigin' (u: ITimelineEvent<EventBody>) =
+            match tryDecode u with
+            | ValueNone -> false
+            | ValueSome e ->
+                stack.Insert(0, e) // WalkResult always renders events ordered correctly - here we're aiming to align with Enum.EventsAndUnfolds
+                isOrigin e
+        match xs |> Seq.tryFindBack isOrigin' with
+        | Some x -> ValueSome (x, stack.ToArray())
+        | None -> ValueNone
 
 module internal Query =
 
@@ -695,16 +713,11 @@ module internal Query =
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
     type ScanResult<'event> = { found: bool; minIndex: int64; next: int64; maybeTipPos: Position option; events: 'event[] }
 
-    let scanTip (tryDecode: #IEventData<EventBody> -> 'event voption, isOrigin: 'event -> bool) (pos: Position, i: int64, xs: #ITimelineEvent<EventBody>[]): ScanResult<'event> =
-        let items = ResizeArray()
-        let isOrigin' e =
-            match tryDecode e with
-            | ValueNone -> false
-            | ValueSome e ->
-                items.Insert(0, e) // WalkResult always renders events ordered correctly - here we're aiming to align with Enum.EventsAndUnfolds
-                isOrigin e
-        let f, e = xs |> Seq.tryFindBack isOrigin' |> Option.isSome, items.ToArray()
-        { found = f; maybeTipPos = Some pos; minIndex = i; next = pos.index + 1L; events = e }
+    let scanTip (tryDecode, isOrigin) (pos: Position, i: int64, xs: #ITimelineEvent<EventBody>[]): ScanResult<'event> =
+        let ok, e = xs |> Tip.tryFindOrigin (tryDecode, isOrigin) |> function
+            | ValueSome (_, events) -> true, events
+            | ValueNone -> false, Array.empty
+        { found = ok; maybeTipPos = Some pos; minIndex = i; next = pos.index + 1L; events = e }
 
     // Yields events in ascending Index order
     let scan<'event> (log: ILogger) (container, stream) includeTip (maxItems: int) maxRequests direction
@@ -825,7 +838,7 @@ module internal Query =
         let events, pos =
             match primary with
             | None -> events, pos |> Option.defaultValue Position.fromKnownEmpty
-            | Some p -> Array.append p.events events, pos |> Option.orElse p.maybeTipPos |> Option.defaultValue (Position.fromI p.next)
+            | Some p -> Array.append p.events events, pos |> Option.orElse p.maybeTipPos |> Option.defaultValue (Position.fromIndex p.next)
         let inline logMissing (minIndex, maxIndex) message =
             if log.IsEnabled Events.LogEventLevel.Debug then
                 (log|> fun log -> match minIndex with None -> log | Some mi -> log |> Log.prop "minIndex" mi
@@ -1083,10 +1096,10 @@ type internal StoreCategory<'event, 'state, 'req>
                 let encode e = codec.Encode(req, e)
                 let encodeU e = (if shouldCompress.Invoke e then JsonElement.undefinedToNull >> JsonElement.deflate else JsonElement.undefinedToNull), encode e
                 match mapUnfolds with
-                | Choice1Of3 () ->        SyncExp.Version pos.index, events, Array.map encode events, Seq.empty
-                | Choice2Of3 unfold ->    SyncExp.Version pos.index, events, Array.map encode events, Seq.map encodeU (unfold events state')
+                | Choice1Of3 () ->        SyncExp.fromVersion pos.index, events, Array.map encode events, Seq.empty
+                | Choice2Of3 unfold ->    SyncExp.fromVersion pos.index, events, Array.map encode events, Seq.map encodeU (unfold events state')
                 | Choice3Of3 transmute -> let events', unfolds = transmute events state'
-                                          SyncExp.Etag (defaultArg pos.etag null), events', Array.map encode events', Seq.map encodeU unfolds
+                                          SyncExp.fromEtag (defaultArg pos.etag null), events', Array.map encode events', Seq.map encodeU unfolds
             let baseIndex = pos.index + int64 (Array.length events)
             let projections = projectionsEncoded |> Seq.map (Sync.mkUnfold baseIndex) |> Array.ofSeq
             let batch = Sync.mkBatch streamName eventsEncoded projections
@@ -1304,8 +1317,8 @@ type AccessStrategy<'event, 'state> =
     /// </remarks>
     | Custom of isOrigin: ('event -> bool) * transmute: ('event[] -> 'state -> 'event[] * 'event[])
 
-type CosmosStoreCategory<'event, 'state, 'req> =
-    inherit Equinox.Category<'event, 'state, 'req>
+type CosmosStoreCategory<'event, 'state, 'req> private (name, inner) =
+    inherit Equinox.Category<'event, 'state, 'req>(name, inner)
     new(context: CosmosStoreContext, name, codec, fold, initial, access,
         // For CosmosDB, caching is typically a central aspect of managing RU consumption to maintain performance and capacity.
         // The cache holds the Tip document's etag, which enables use of etag-contingent Reads (which cost only 1RU in the case where the document is unchanged)
@@ -1328,9 +1341,8 @@ type CosmosStoreCategory<'event, 'state, 'req> =
             | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         true,  Choice2Of3 (fun _ -> unfold)
             | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> Array.empty, toSnapshot state |> Array.singleton)
             | AccessStrategy.Custom (isOrigin, transmute) ->     isOrigin,         true,  Choice3Of3 transmute
-        { inherit Equinox.Category<'event, 'state, 'req>(name,
-            StoreCategory<'event, 'state, 'req>(context.StoreClient, context.EnsureStoredProcedureInitialized, codec, fold, initial, isOrigin, checkUnfolds, shouldCompress, mapUnfolds)
-            |> Caching.apply Token.isStale caching) }
+        let sc = StoreCategory<'event, 'state, 'req>(context.StoreClient, context.EnsureStoredProcedureInitialized, codec, fold, initial, isOrigin, checkUnfolds, shouldCompress, mapUnfolds)
+        CosmosStoreCategory<'event, 'state, 'req>(name, sc |> Caching.apply Token.isStale caching)
 
 module Exceptions =
 
@@ -1424,7 +1436,7 @@ type EventsContext
         do! context.EnsureStoredProcedureInitialized ct
         let store, stream = resolve streamName
         let batch = Sync.mkBatch stream events Array.empty
-        match! store.Sync(log, stream, SyncExp.Version position.index, batch, ct) with
+        match! store.Sync(log, stream, SyncExp.fromVersionOrAppendAtEnd position.index, batch, ct) with
         | InternalSyncResult.Written (Token.Unpack pos) -> return AppendResult.Ok pos
         | InternalSyncResult.Conflict (pos, events) -> return AppendResult.Conflict (pos, events)
         | InternalSyncResult.ConflictUnknown (Token.Unpack pos) -> return AppendResult.ConflictUnknown pos }
@@ -1458,10 +1470,10 @@ module Events =
         return xs }
     let (|MinPosition|) = function
         | 0L -> None
-        | i -> Some (Position.fromI i)
+        | i -> Some (Position.fromIndex i)
     let (|MaxPosition|) = function
         | int64.MaxValue -> None
-        | i -> Some (Position.fromI (i + 1L))
+        | i -> Some (Position.fromIndex (i + 1L))
 
     /// Returns an async sequence of events in the stream starting at the specified sequence number,
     /// reading in batches of the specified size.
@@ -1482,7 +1494,7 @@ module Events =
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
     let append (ctx: EventsContext) (streamName: StreamName) (index: int64) (events: IEventData<_>[]): Async<AppendResult<int64>> =
-        Async.call (fun ct -> ctx.Sync(streamName, Position.fromI index, events, ct) |> stripSyncResult)
+        Async.call (fun ct -> ctx.Sync(streamName, Position.fromIndex index, events, ct) |> stripSyncResult)
 
     /// Appends a batch of events to a stream at the the present Position without any conflict checks.
     /// NB typically, it is recommended to ensure idempotency of operations by using the `append` and related API as
