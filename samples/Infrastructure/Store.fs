@@ -26,16 +26,10 @@ module MemoryStore =
 
 let [<Literal>] appName = "equinox-tool"
 
-exception MissingArg of string
-let missingArg msg = raise (MissingArg msg)
-
 let private envVarTryGet varName = Environment.GetEnvironmentVariable varName |> Option.ofObj
-let private getEnvVarForArgumentOrThrow varName argName =
+let private envVarOrThrow varName argName =
     match envVarTryGet varName with
-    | None -> missingArg (sprintf "Please provide a %s, either as an argument or via the %s environment variable" argName varName)
-    | Some x -> x
-let private defaultWithEnvVar varName argName = function
-    | None -> getEnvVarForArgumentOrThrow varName argName
+    | None -> failwith $"Please provide a %s{argName}, either as an argument or via the %s{varName} environment variable"
     | Some x -> x
 
 // Standing up an Equinox instance is necessary to run for test purposes; You'll need to either:
@@ -79,13 +73,14 @@ module Cosmos =
                 | TipMaxJsonLength _ -> "specify maximum length of JSON (as measured by JSON.stringify) to hold in Tip before calving off to a frozen Batch. Default: 30,000"
                 | QueryMaxItems _ ->    "specify maximum number of batches of events to retrieve in per query response. Default: 10"
     type Arguments(p : ParseResults<Parameters>) =
-        member _.Mode =                 p.TryGetResult ConnectionMode
-        member _.Connection =           p.TryGetResult Connection |> defaultWithEnvVar "EQUINOX_COSMOS_CONNECTION" "Connection"
-        member _.Database =             p.TryGetResult Database   |> defaultWithEnvVar "EQUINOX_COSMOS_DATABASE"   "Database"
-        member _.Container =            p.TryGetResult Container  |> defaultWithEnvVar "EQUINOX_COSMOS_CONTAINER"  "Container"
-        member private _.ArchiveConnection = p.TryGetResult ArchiveConnection
-        member private x.ArchiveDatabase = p.TryGetResult ArchiveDatabase  |> Option.defaultWith (fun () -> x.Database)
-        member private x.ArchiveContainer = p.TryGetResult ArchiveContainer |> Option.defaultWith (fun () -> x.Container)
+        member val Verbose =            p.Contains StoreVerbose
+        member val Mode =               p.TryGetResult ConnectionMode
+        member val Connection =         p.GetResult(Connection, fun () -> envVarOrThrow "EQUINOX_COSMOS_CONNECTION" "Connection")
+        member val Database =           p.GetResult(Database, fun () -> envVarOrThrow "EQUINOX_COSMOS_DATABASE"   "Database")
+        member val Container =          p.GetResult(Container, fun () -> envVarOrThrow "EQUINOX_COSMOS_CONTAINER"  "Container")
+        member val private ArchiveConnection = p.TryGetResult ArchiveConnection
+        member private x.ArchiveDatabase = p.GetResult(ArchiveDatabase, fun () -> x.Database)
+        member private x.ArchiveContainer = p.GetResult(ArchiveContainer, fun () -> x.Container)
         member x.Archive =              if p.Contains ArchiveConnection || p.Contains ArchiveDatabase || p.Contains ArchiveContainer
                                         then Some (x.ArchiveConnection, x.ArchiveDatabase, x.ArchiveContainer)
                                         else None
@@ -193,16 +188,16 @@ module Dynamo =
                                         | Some systemName ->
                                             Choice1Of2 systemName
                                         | None ->
-                                            let serviceUrl =  p.TryGetResult ServiceUrl |> defaultWithEnvVar SERVICE_URL   "ServiceUrl"
-                                            let accessKey =   p.TryGetResult AccessKey  |> defaultWithEnvVar ACCESS_KEY    "AccessKey"
-                                            let secretKey =   p.TryGetResult SecretKey  |> defaultWithEnvVar SECRET_KEY    "SecretKey"
+                                            let serviceUrl =  p.GetResult(ServiceUrl, fun () -> envVarOrThrow SERVICE_URL "ServiceUrl")
+                                            let accessKey =   p.GetResult(AccessKey,  fun () -> envVarOrThrow ACCESS_KEY  "AccessKey")
+                                            let secretKey =   p.GetResult(SecretKey,  fun () -> envVarOrThrow SECRET_KEY  "SecretKey")
                                             Choice2Of2 (serviceUrl, accessKey, secretKey)
         let retries =                   p.GetResult(Retries, 1)
         let timeout =                   p.GetResult(RetriesTimeoutS, 5.) |> TimeSpan.FromSeconds
         member val Connector =          match conn with
                                         | Choice1Of2 systemName -> DynamoStoreConnector(systemName, timeout, retries)
                                         | Choice2Of2 (serviceUrl, accessKey, secretKey) -> DynamoStoreConnector(serviceUrl, accessKey, secretKey, timeout, retries)
-        member val Table =              p.TryGetResult Table        |> defaultWithEnvVar TABLE "Table"
+        member val Table =              p.GetResult(Table, fun () -> envVarOrThrow TABLE "Table")
         member val ArchiveTable =       p.TryGetResult ArchiveTable |> Option.orElseWith (fun () -> envVarTryGet ARCHIVE_TABLE)
 
         member val TipMaxEvents =       p.TryGetResult TipMaxEvents

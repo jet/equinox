@@ -42,7 +42,7 @@ type Arguments =
             | Config _ ->                   "Initialize Database Schema (supports `mssql`/`mysql`/`postgres` SqlStreamStore stores)."
             | Stats _ ->                    "inspect store to determine numbers of streams/documents/events and/or config (supports `cosmos` and `dynamo` stores)."
             | Dump _ ->                     "Load and show events in a specified stream (supports all stores)."
-and [<NoComparison; NoEquality>] InitParameters =
+and [<NoComparison; NoEquality; RequireSubcommand>] InitParameters =
     | [<AltCommandLine "-ru"; Unique>]      Rus of int
     | [<AltCommandLine "-A"; Unique>]       Autoscale
     | [<AltCommandLine "-m"; Unique>]       Mode of CosmosModeType
@@ -57,16 +57,16 @@ and [<NoComparison; NoEquality>] InitParameters =
             | Cosmos _ ->                   "Cosmos Connection parameters."
 and CosmosModeType = Container | Db | Serverless
 and CosmosInitArguments(p : ParseResults<InitParameters>) =
-    let rusOrDefault value = p.GetResult(Rus, value)
+    let rusOrDefault (value: int) = p.GetResult(Rus, value)
     let throughput auto = if auto then CosmosInit.Throughput.Autoscale (rusOrDefault 4000) else CosmosInit.Throughput.Manual (rusOrDefault 400)
     member val ProvisioningMode =
         match p.GetResult(Mode, CosmosModeType.Container), p.Contains Autoscale with
         | CosmosModeType.Container, auto -> CosmosInit.Provisioning.Container (throughput auto)
         | CosmosModeType.Db, auto ->        CosmosInit.Provisioning.Database (throughput auto)
-        | CosmosModeType.Serverless, auto when auto || p.Contains Rus -> Store.missingArg "Cannot specify RU/s or Autoscale in Serverless mode"
+        | CosmosModeType.Serverless, auto when auto || p.Contains Rus -> p.Raise "Cannot specify RU/s or Autoscale in Serverless mode"
         | CosmosModeType.Serverless, _ ->   CosmosInit.Provisioning.Serverless
     member val SkipStoredProc =             p.Contains InitParameters.SkipStoredProc
-and [<NoComparison; NoEquality>] TableParameters =
+and [<NoComparison; NoEquality; RequireSubcommand>] TableParameters =
     | [<AltCommandLine "-D"; Unique>]       OnDemand
     | [<AltCommandLine "-s"; Mandatory>]    Streaming of Equinox.DynamoStore.Core.Initialization.StreamingMode
     | [<AltCommandLine "-r"; Unique>]       ReadCu of int64
@@ -83,9 +83,9 @@ and DynamoInitArguments(p : ParseResults<TableParameters>) =
     let onDemand =                          p.Contains OnDemand
     member val StreamingMode =              p.GetResult Streaming
     member val Throughput =                 if not onDemand then Throughput.Provisioned (ProvisionedThroughput(p.GetResult ReadCu, p.GetResult WriteCu))
-                                            elif onDemand && (p.Contains ReadCu || p.Contains WriteCu) then Store.missingArg "CUs are not applicable in On-Demand mode"
+                                            elif onDemand && (p.Contains ReadCu || p.Contains WriteCu) then p.Raise "CUs are not applicable in On-Demand mode"
                                             else Throughput.OnDemand
-and [<NoComparison; NoEquality>] ConfigParameters =
+and [<NoComparison; NoEquality; RequireSubcommand>] ConfigParameters =
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Store.Sql.Ms.Parameters>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">] MySql    of ParseResults<Store.Sql.My.Parameters>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">] Postgres of ParseResults<Store.Sql.Pg.Parameters>
@@ -94,7 +94,7 @@ and [<NoComparison; NoEquality>] ConfigParameters =
             | MsSql _ ->                    "Configure Sql Server Store."
             | MySql _ ->                    "Configure MySql Store."
             | Postgres _ ->                 "Configure Postgres Store."
-and [<NoComparison; NoEquality>] StatsParameters =
+and [<NoComparison; NoEquality; RequireSubcommand>] StatsParameters =
     | [<AltCommandLine "-E"; Unique>]       Events
     | [<AltCommandLine "-S"; Unique>]       Streams
     | [<AltCommandLine "-D"; Unique>]       Documents
@@ -111,7 +111,7 @@ and [<NoComparison; NoEquality>] StatsParameters =
             | Parallel ->                   "Run in Parallel (CAREFUL! can overwhelm RU allocations)."
             | Cosmos _ ->                   "Cosmos Connection parameters."
             | Dynamo _ ->                   "Dynamo Connection parameters."
-and [<NoComparison; NoEquality>] DumpParameters =
+and [<NoComparison; NoEquality; RequireSubcommand>] DumpParameters =
     | [<AltCommandLine "-s"; MainCommand>]  Stream of FsCodec.StreamName
     | [<AltCommandLine "-C"; Unique>]       Correlation
     | [<AltCommandLine "-B"; Unique>]       Blobs
@@ -171,13 +171,13 @@ and DumpArguments(p: ParseResults<DumpParameters>) =
         | DumpParameters.Mdb p ->
             let storeLog = createStoreLog false
             storeLog, Store.MessageDb.config log None p
-        | x -> Store.missingArg $"unexpected subcommand %A{x}"
+        | x -> p.Raise $"unexpected subcommand %A{x}"
 and [<NoComparison>] WebParameters =
     | [<AltCommandLine "-u">]               Endpoint of string
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Endpoint _ ->                 "Target address. Default: https://localhost:5001"
-and [<NoComparison; NoEquality>] TestParameters =
+and [<NoComparison; NoEquality; RequireSubcommand>] TestParameters =
     | [<AltCommandLine "-t"; Unique>]       Name of Test
     | [<AltCommandLine "-s">]               Size of int
     | [<AltCommandLine "-C">]               Cached
@@ -253,7 +253,7 @@ and TestArguments(p : ParseResults<TestParameters>) =
                         storeLog, Store.MessageDb.config log cache p
         | Memory _ ->   log.Warning("Running transactions in-process against Volatile Store with storage options: {options:l}", x.Options)
                         createStoreLog false, Store.MemoryStore.config ()
-        | x ->          Store.missingArg $"unexpected subcommand %A{x}"
+        | x ->          p.Raise $"unexpected subcommand %A{x}"
     member _.Tests =    match p.GetResult(Name, Favorite) with
                         | Favorite ->     Tests.Favorite
                         | SaveForLater -> Tests.SaveForLater
@@ -322,8 +322,8 @@ module LoadTest =
         let createStoreLog storeVerbose = createStoreLog storeVerbose verboseConsole maybeSeq
         let a = TestArguments p
         let storeLog, storeConfig, httpClient: ILogger * Store.Config option * HttpClient option =
-            match p.TryGetSubCommand() with
-            | Some (Web p) ->
+            match p.GetSubCommand() with
+            | Web p ->
                 let uri = p.GetResult(WebParameters.Endpoint,"https://localhost:5001") |> Uri
                 log.Information("Running web test targeting: {url}", uri)
                 createStoreLog false, None, new HttpClient(BaseAddress = uri) |> Some
@@ -392,7 +392,7 @@ module CosmosInit =
                 let modeStr = "Serverless"
                 log.Information("CosmosStore provisioning in {mode:l} mode with automatic RU/s as configured in account", modeStr)
             CosmosInit.init log (connector.CreateUninitialized()) (dName, cName) a.ProvisioningMode a.SkipStoredProc
-        | x -> Store.missingArg $"unexpected subcommand %A{x}"
+        | x -> p.Raise $"unexpected subcommand %A{x}"
 
 module DynamoInit =
 
@@ -416,7 +416,7 @@ module DynamoInit =
             let client = sa.Connector.CreateDynamoDbClient()
             let! t = Core.Initialization.provision client sa.Table (t, a.StreamingMode)
             log.Information("DynamoStore DynamoDB Streams ARN {streamArn}", Core.Initialization.tryGetActiveStreamsArn t)
-        | x -> return Store.missingArg $"unexpected subcommand %A{x}" }
+        | x -> p.Raise $"unexpected subcommand %A{x}" }
 
 module SqlInit =
 
@@ -473,7 +473,7 @@ module CosmosStats =
                 log.Information("DynamoStore Table {table} Provisioned with On-Demand capacity management; Streams ARN {streaming}", sa.Table, streamsArn)
             | _, _, streamsArn ->
                 log.Information("DynamoStore Table {table} Provisioning Unknown; Streams ARN {streaming}", sa.Table, streamsArn) }
-        | x -> Store.missingArg $"unexpected subcommand %A{x}"
+        | x -> p.Raise $"unexpected subcommand %A{x}"
 
 module Dump =
 
@@ -563,10 +563,9 @@ let main argv =
                 | Run a ->      let n = p.GetResult(LogFile, Arguments.programName () + ".log")
                                 let reportFilename = System.IO.FileInfo(n).FullName
                                 LoadTest.run log (verbose, verboseConsole, maybeSeq) reportFilename a
-                | x ->          Store.missingArg $"unexpected subcommand %A{x}"
+                | x ->          p.Raise $"unexpected subcommand %A{x}"
                 0
-            with e when not (e :? Store.MissingArg || e :? ArguParseException) -> Log.Fatal(e, "Exiting"); 2
+            with e when not (e :? ArguParseException) -> Log.Fatal(e, "Exiting"); 2
         finally Log.CloseAndFlush()
-    with :? ArguParseException as e -> eprintfn "%s" e.Message; 1
-        | Store.MissingArg msg -> eprintfn "ERROR: %s" msg; 1
-        | e -> eprintfn "EXCEPTION: %O" e; 1
+    with :? ArguParseException as e -> eprintfn $"%s{e.Message}"; 1
+        | e -> eprintfn $"EXCEPTION: {e}"; 1

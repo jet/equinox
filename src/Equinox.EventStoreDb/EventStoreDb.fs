@@ -238,7 +238,9 @@ module ClientCodec =
         // https://developers.eventstore.com/server/v21.10/streams.html#reserved-names
         EventData(Uuid.FromGuid x.EventId, x.EventType, contentType = "application/json", data = x.Data, metadata = x.Meta)
 
+[<NoComparison; NoEquality>]
 type Position = { streamVersion: int64; compactionEventNumber: int64 option; batchCapacityLimit: int option }
+[<NoComparison; NoEquality>]
 type Token = { pos: Position }
 
 module Token =

@@ -47,9 +47,9 @@ type CosmosJsonSerializer(options : JsonSerializerOptions) =
         memoryStream.Position <- 0L
         memoryStream :> Stream
 
-/// Manages zipping of the UTF-8 json bytes to make the index record minimal from the perspective of the writer stored proc
-/// Only applied to snapshots in the Tip
-and JsonCompressedBase64Converter() =
+/// Manages inflating of the UTF-8 json bytes to make the index record minimal from the perspective of the writer stored proc
+/// Only relevant for unfolds in the Tip
+type JsonCompressedBase64Converter() =
     inherit System.Text.Json.Serialization.JsonConverter<JsonElement>()
 
     override _.Read(reader, _typeToConvert, options) =

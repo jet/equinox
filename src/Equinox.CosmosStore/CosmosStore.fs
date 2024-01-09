@@ -30,9 +30,7 @@ type Event = // TODO for STJ v5: All fields required unless explicitly optional
         correlationId: string // TODO for STJ v5: Optional, not serialized if missing
 
         /// Optional causationId
-        causationId: string // TODO for STJ v5: Optional, not serialized if missing
-    }
-
+        causationId: string } // TODO for STJ v5: Optional, not serialized if missing
     interface IEventData<EventBody> with
         member x.EventType = x.c
         member x.Data = x.d
@@ -91,16 +89,14 @@ type Unfold =
 
         /// Optional metadata, same encoding as `d` (can be null; not written if missing)
         [<Serialization.JsonConverter(typeof<JsonCompressedBase64Converter>)>]
-        m: EventBody // TODO for STJ v5: Optional, not serialized if missing
-    }
+        m: EventBody } // TODO for STJ v5: Optional, not serialized if missing
 
 /// The special-case 'Pending' Batch Format used to read the currently active (and mutable) document
 /// Stored representation has the following diffs vs a 'normal' (frozen/completed) Batch: a) `id` = `-1` b) contains unfolds (`u`)
 /// NB the type does double duty as a) model for when we read it b) encoding a batch being sent to the stored proc
 [<NoEquality; NoComparison>]
 type Tip = // TODO for STJ v5: All fields required unless explicitly optional
-    {
-        /// Partition key, as per Batch
+    {   /// Partition key, as per Batch
         p: string // "{streamName}" TODO for STJ v5: Optional, not requested in queries
 
         /// Document Id within partition, as per Batch
@@ -125,9 +121,8 @@ type Tip = // TODO for STJ v5: All fields required unless explicitly optional
     static member internal WellKnownDocumentId = "-1"
 
 /// Position and Etag to which an operation is relative
-[<NoComparison>]
+[<NoComparison; NoEquality>]
 type Position = { index: int64; etag: string option }
-
 module internal Position =
     /// NB very inefficient compared to FromDocument or using one already returned to you
     let fromI (i: int64) = { index = i; etag = None }
@@ -146,7 +141,8 @@ module internal Position =
 [<RequireQualifiedAccess>]
 type Direction = Forward | Backward override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
 
-type internal Enum() =
+[<AbstractClass; Sealed>]
+type internal Enum private () =
     static member Events(i: int64, e: Event[], ?minIndex, ?maxIndex): ITimelineEvent<EventBody> seq = seq {
         let indexMin, indexMax = defaultArg minIndex 0L, defaultArg maxIndex Int64.MaxValue
         for offset in 0..e.Length-1 do
@@ -176,9 +172,9 @@ module Log =
 
     [<NoEquality; NoComparison>]
     type Measurement =
-       {   database: string; container: string; stream: string
-           interval: StopwatchInterval; bytes: int; count: int; ru: float }
-       member x.Category = x.stream |> StreamName.Internal.trust |> StreamName.Category.ofStreamName
+        {   database: string; container: string; stream: string
+            interval: StopwatchInterval; bytes: int; count: int; ru: float }
+        member x.Category = x.stream |> StreamName.Internal.trust |> StreamName.Category.ofStreamName
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
     type Metric =
         /// Individual read request for the Tip
@@ -361,6 +357,7 @@ module private MicrosoftAzureCosmosWrappers =
 type SyncResponse = { etag: string; n: int64; conflicts: Unfold[]; e: Event[] }
 
 module internal SyncStoredProc =
+
     let [<Literal>] name = "EquinoxEventsInTip4"  // NB need to rename/number for any breaking change
     let [<Literal>] body = """
 // Manages the merging of the supplied Request Batch into the stream, potentially storing events in the Tip
@@ -952,9 +949,9 @@ module Prune =
                         "Prune", eventsDeleted, batches, lwm, pt.ElapsedMilliseconds, queryCharges, delCharges, trimCharges)
         return eventsDeleted, eventsDeferred, lwm }
 
-type [<NoComparison>] Token = { pos: Position }
+[<NoComparison; NoEquality>]
+type Token = { pos: Position }
 module Token =
-
     // TOCONSIDER Could implement accumulating the streamBytes as it's loaded (but should stop counting when it hits the origin event)
     //            Should probably be optional as computing the UTF8/16 size from the JsonElement is not cheap
     //            Alternately, can mirror DynamoStore scheme where the size is maintained in the Tip, and updated as batches are calved
@@ -1011,7 +1008,6 @@ type TipOptions
     member val WriteRetryPolicy = writeRetryPolicy
 
 type StoreClient(container: Container, fallback: Container option, query: QueryOptions, tip: TipOptions) =
-
     let loadTip log stream pos = Tip.tryLoad log tip.ReadRetryPolicy (container, stream) (pos, None)
     let ignoreMissing = tip.IgnoreMissingEvents
 
@@ -1319,8 +1315,7 @@ type CosmosStoreCategory<'event, 'state, 'req> =
         // NOTE Unless <c>LoadOption.AnyCachedValue</c> or <c>AllowStale</c> are used, cache hits still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
         // NOTE re SlidingWindowPrefixed: the recommended approach is to track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the `u`nfolds in Tip
         caching,
-        // Compress Unfolds in Tip. Default: <c>true</c>.
-        // NOTE when set to <c>false</c>, requires Equinox.CosmosStore or Equinox.Cosmos Version >= 2.3.0 to be able to read
+        // Compress Unfolds in Tip. Default: <c>true</c>. NOTE reading uncompressed values requires Version >= 2.3.0
         [<O; D null>] ?compressUnfolds) =
         let compressUnfolds = defaultArg compressUnfolds true
         let isOrigin, checkUnfolds, mapUnfolds =
@@ -1426,7 +1421,7 @@ type EventsContext
     member x.Sync(streamName, position, events: IEventData<_>[], ct): Task<AppendResult<Position>> = task {
         do! context.EnsureStoredProcedureInitialized ct
         let store, stream = resolve streamName
-        let batch = Sync.mkBatch stream events Seq.empty
+        let batch = Sync.mkBatch stream events Array.empty
         match! store.Sync(log, stream, SyncExp.Version position.index, batch, ct) with
         | InternalSyncResult.Written (Token.Unpack pos) -> return AppendResult.Ok pos
         | InternalSyncResult.Conflict (pos, events) -> return AppendResult.Conflict (pos, events)
@@ -1442,11 +1437,6 @@ type EventsContext
     member _.Prune(streamName, index, ct): Task<int * int * int64> =
         let store, stream = resolve streamName
         store.Prune(log, stream, index, ct)
-
-/// Provides mechanisms for building `EventData` records to be supplied to the `Events` API
-type EventData() =
-    /// Creates an Event record, suitable for supplying to Append et al
-    static member FromUtf8Bytes(eventType, data, ?meta): IEventData<_> = FsCodec.Core.EventData.Create(eventType, data, ?meta = meta) :> _
 
 /// Api as defined in the Equinox Specification
 /// Note the CosmosContext APIs can yield better performance due to the fact that a Position tracks the etag of the Stream's Tip
