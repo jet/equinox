@@ -28,7 +28,7 @@ module Projection =
             quick_surveys bool not null default false
         )") |> ignore
 
-    let project (conn: Npgsql.NpgsqlConnection) streamId (state: ContactPreferences.Fold.State) = task {
+    let project streamId (state: ContactPreferences.Fold.State) (conn: Npgsql.NpgsqlConnection) = task {
         let! _ = conn.ExecuteAsync(
             "insert into public.contact_preferences (id, many_promotions, little_promotions, product_review, quick_surveys)
              values (@id, @many_promotions, @little_promotions, @product_review, @quick_surveys)",
