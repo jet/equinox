@@ -42,7 +42,7 @@ type Arguments =
             | Config _ ->                   "Initialize Database Schema (supports `mssql`/`mysql`/`postgres` SqlStreamStore stores)."
             | Stats _ ->                    "inspect store to determine numbers of streams/documents/events and/or config (supports `cosmos` and `dynamo` stores)."
             | Dump _ ->                     "Load and show events in a specified stream (supports all stores)."
-and [<NoComparison; NoEquality>] InitParameters =
+and [<NoComparison; NoEquality; RequireSubcommand>] InitParameters =
     | [<AltCommandLine "-ru"; Unique>]      Rus of int
     | [<AltCommandLine "-A"; Unique>]       Autoscale
     | [<AltCommandLine "-m"; Unique>]       Mode of CosmosModeType
@@ -66,7 +66,7 @@ and CosmosInitArguments(p : ParseResults<InitParameters>) =
         | CosmosModeType.Serverless, auto when auto || p.Contains Rus -> Store.missingArg "Cannot specify RU/s or Autoscale in Serverless mode"
         | CosmosModeType.Serverless, _ ->   CosmosInit.Provisioning.Serverless
     member val SkipStoredProc =             p.Contains InitParameters.SkipStoredProc
-and [<NoComparison; NoEquality>] TableParameters =
+and [<NoComparison; NoEquality; RequireSubcommand>] TableParameters =
     | [<AltCommandLine "-D"; Unique>]       OnDemand
     | [<AltCommandLine "-s"; Mandatory>]    Streaming of Equinox.DynamoStore.Core.Initialization.StreamingMode
     | [<AltCommandLine "-r"; Unique>]       ReadCu of int64
