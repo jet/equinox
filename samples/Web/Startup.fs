@@ -99,7 +99,7 @@ type Startup() =
             | Memory _ ->
                 log.Fatal("Web App is using Volatile Store; Storage options: {options:l}", options)
                 Store.MemoryStore.config (), log
-            | x -> Store.missingArg (sprintf "unexpected subcommand %A" x)
+            | x -> p.Raise $"unexpected subcommand %A{x}"
         Services.register(services, storeConfig, storeLog)
 
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

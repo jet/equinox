@@ -57,13 +57,13 @@ and [<NoComparison; NoEquality; RequireSubcommand>] InitParameters =
             | Cosmos _ ->                   "Cosmos Connection parameters."
 and CosmosModeType = Container | Db | Serverless
 and CosmosInitArguments(p : ParseResults<InitParameters>) =
-    let rusOrDefault value = p.GetResult(Rus, value)
+    let rusOrDefault (value: int) = p.GetResult(Rus, value)
     let throughput auto = if auto then CosmosInit.Throughput.Autoscale (rusOrDefault 4000) else CosmosInit.Throughput.Manual (rusOrDefault 400)
     member val ProvisioningMode =
         match p.GetResult(Mode, CosmosModeType.Container), p.Contains Autoscale with
         | CosmosModeType.Container, auto -> CosmosInit.Provisioning.Container (throughput auto)
         | CosmosModeType.Db, auto ->        CosmosInit.Provisioning.Database (throughput auto)
-        | CosmosModeType.Serverless, auto when auto || p.Contains Rus -> Store.missingArg "Cannot specify RU/s or Autoscale in Serverless mode"
+        | CosmosModeType.Serverless, auto when auto || p.Contains Rus -> p.Raise "Cannot specify RU/s or Autoscale in Serverless mode"
         | CosmosModeType.Serverless, _ ->   CosmosInit.Provisioning.Serverless
     member val SkipStoredProc =             p.Contains InitParameters.SkipStoredProc
 and [<NoComparison; NoEquality; RequireSubcommand>] TableParameters =
@@ -83,7 +83,7 @@ and DynamoInitArguments(p : ParseResults<TableParameters>) =
     let onDemand =                          p.Contains OnDemand
     member val StreamingMode =              p.GetResult Streaming
     member val Throughput =                 if not onDemand then Throughput.Provisioned (ProvisionedThroughput(p.GetResult ReadCu, p.GetResult WriteCu))
-                                            elif onDemand && (p.Contains ReadCu || p.Contains WriteCu) then Store.missingArg "CUs are not applicable in On-Demand mode"
+                                            elif onDemand && (p.Contains ReadCu || p.Contains WriteCu) then p.Raise "CUs are not applicable in On-Demand mode"
                                             else Throughput.OnDemand
 and [<NoComparison; NoEquality; RequireSubcommand>] ConfigParameters =
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Store.Sql.Ms.Parameters>
@@ -171,7 +171,7 @@ and DumpArguments(p: ParseResults<DumpParameters>) =
         | DumpParameters.Mdb p ->
             let storeLog = createStoreLog false
             storeLog, Store.MessageDb.config log None p
-        | x -> Store.missingArg $"unexpected subcommand %A{x}"
+        | x -> p.Raise $"unexpected subcommand %A{x}"
 and [<NoComparison>] WebParameters =
     | [<AltCommandLine "-u">]               Endpoint of string
     interface IArgParserTemplate with
@@ -253,7 +253,7 @@ and TestArguments(p : ParseResults<TestParameters>) =
                         storeLog, Store.MessageDb.config log cache p
         | Memory _ ->   log.Warning("Running transactions in-process against Volatile Store with storage options: {options:l}", x.Options)
                         createStoreLog false, Store.MemoryStore.config ()
-        | x ->          Store.missingArg $"unexpected subcommand %A{x}"
+        | x ->          p.Raise $"unexpected subcommand %A{x}"
     member _.Tests =    match p.GetResult(Name, Favorite) with
                         | Favorite ->     Tests.Favorite
                         | SaveForLater -> Tests.SaveForLater
@@ -392,7 +392,7 @@ module CosmosInit =
                 let modeStr = "Serverless"
                 log.Information("CosmosStore provisioning in {mode:l} mode with automatic RU/s as configured in account", modeStr)
             CosmosInit.init log (connector.CreateUninitialized()) (dName, cName) a.ProvisioningMode a.SkipStoredProc
-        | x -> Store.missingArg $"unexpected subcommand %A{x}"
+        | x -> p.Raise $"unexpected subcommand %A{x}"
 
 module DynamoInit =
 
@@ -416,7 +416,7 @@ module DynamoInit =
             let client = sa.Connector.CreateDynamoDbClient()
             let! t = Core.Initialization.provision client sa.Table (t, a.StreamingMode)
             log.Information("DynamoStore DynamoDB Streams ARN {streamArn}", Core.Initialization.tryGetActiveStreamsArn t)
-        | x -> return Store.missingArg $"unexpected subcommand %A{x}" }
+        | x -> p.Raise $"unexpected subcommand %A{x}" }
 
 module SqlInit =
 
@@ -473,7 +473,7 @@ module CosmosStats =
                 log.Information("DynamoStore Table {table} Provisioned with On-Demand capacity management; Streams ARN {streaming}", sa.Table, streamsArn)
             | _, _, streamsArn ->
                 log.Information("DynamoStore Table {table} Provisioning Unknown; Streams ARN {streaming}", sa.Table, streamsArn) }
-        | x -> Store.missingArg $"unexpected subcommand %A{x}"
+        | x -> p.Raise $"unexpected subcommand %A{x}"
 
 module Dump =
 
@@ -563,10 +563,9 @@ let main argv =
                 | Run a ->      let n = p.GetResult(LogFile, Arguments.programName () + ".log")
                                 let reportFilename = System.IO.FileInfo(n).FullName
                                 LoadTest.run log (verbose, verboseConsole, maybeSeq) reportFilename a
-                | x ->          Store.missingArg $"unexpected subcommand %A{x}"
+                | x ->          p.Raise $"unexpected subcommand %A{x}"
                 0
-            with e when not (e :? Store.MissingArg || e :? ArguParseException) -> Log.Fatal(e, "Exiting"); 2
+            with e when not (e :? ArguParseException) -> Log.Fatal(e, "Exiting"); 2
         finally Log.CloseAndFlush()
-    with :? ArguParseException as e -> eprintfn "%s" e.Message; 1
-        | Store.MissingArg msg -> eprintfn "ERROR: %s" msg; 1
-        | e -> eprintfn "EXCEPTION: %O" e; 1
+    with :? ArguParseException as e -> eprintfn $"%s{e.Message}"; 1
+        | e -> eprintfn $"EXCEPTION: {e}"; 1
