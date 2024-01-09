@@ -1,11 +1,14 @@
 ﻿module Domain.ContactPreferences
 
 type ClientId = ClientId of email: string
-module ClientId = let toString (ClientId email) = email
+module ClientId =
+    let toString (ClientId email) = email
+    let parse = ClientId
 
 module Stream =
     let [<Literal>] Category = "ContactPreferences"
     let id = FsCodec.StreamId.gen ClientId.toString // TODO hash >> base64
+    let decodeId = FsCodec.StreamId.dec ClientId.parse
     let name = id >> FsCodec.StreamName.create Category
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care

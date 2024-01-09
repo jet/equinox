@@ -125,18 +125,18 @@ module Log =
 
 module private Write =
 
-    let private writeEventsAsync (writer: MessageDbWriter) streamName version events ct: Task<MdbSyncResult> =
-        writer.WriteMessages(streamName, events, version, ct)
+    let private writeEventsAsync (writer: MessageDbWriter) streamName version events project ct: Task<MdbSyncResult> =
+        writer.WriteMessages(streamName, events, version, project, ct)
     let inline len (bytes: EventBody) = bytes.Length
     let private eventDataLen (x: IEventData<EventBody>) = len x.Data + len x.Meta
     let private eventDataBytes events = events |> Array.sumBy eventDataLen
-    let private writeEventsLogged writer streamName version events (log: ILogger) ct: Task<MdbSyncResult> = task {
+    let private writeEventsLogged writer streamName version events project (log: ILogger) ct: Task<MdbSyncResult> = task {
         let act = Activity.Current
         let log = if not (log.IsEnabled Events.LogEventLevel.Debug) then log else log |> Log.propEventData "Json" events
         let bytes, count = eventDataBytes events, events.Length
         let log = log |> Log.prop "bytes" bytes
         if act <> null then act.AddExpectedVersion(version).IncMetric(count, bytes) |> ignore
-        let! t, result = writeEventsAsync writer streamName version events |> Stopwatch.time ct
+        let! t, result = writeEventsAsync writer streamName version events project |> Stopwatch.time ct
         let reqMetric: Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let resultLog, evt =
             match result with
@@ -153,8 +153,8 @@ module private Write =
         (resultLog |> Log.event evt).Information("Mdb{action:l} count={count} conflict={conflict}",
                                                  "Write", count, match evt with Log.WriteConflict _ -> true | _ -> false)
         return result }
-    let writeEvents log retryPolicy writer (category, streamId, streamName) version events ct: Task<MdbSyncResult> = task {
-        let call = writeEventsLogged writer streamName version events
+    let writeEvents log retryPolicy writer (category, streamId, streamName) version events project ct: Task<MdbSyncResult> = task {
+        let call = writeEventsLogged writer streamName version events project
         return! Log.withLoggedRetries retryPolicy "writeAttempt" call log ct }
 
 module Read =
@@ -338,9 +338,9 @@ type MessageDbContext(client: MessageDbClient, batchOptions: BatchOptions) =
         let! version, state = Read.loadForwardsFrom log fold initial tryDecode client.ReadRetryPolicy client.Reader batchOptions.BatchSize batchOptions.MaxBatches streamName startPos requireLeader ct
         return struct(Token.create (max streamVersion version), state) }
 
-    member internal _.TrySync(log, category, streamId, streamName, token, encodedEvents: IEventData<EventBody>[], ct): Task<GatewaySyncResult> = task {
+    member internal _.TrySync(log, category, streamId, streamName, token, encodedEvents: IEventData<EventBody>[], project, ct): Task<GatewaySyncResult> = task {
         let streamVersion = Token.streamVersion token
-        match! Write.writeEvents log client.WriteRetryPolicy client.Writer (category, streamId, streamName) (StreamVersion streamVersion) encodedEvents ct with
+        match! Write.writeEvents log client.WriteRetryPolicy client.Writer (category, streamId, streamName) (StreamVersion streamVersion) encodedEvents project ct with
         | MdbSyncResult.Written version' ->
             let token = Token.create version'
             return GatewaySyncResult.Written token
@@ -352,7 +352,7 @@ type MessageDbContext(client: MessageDbClient, batchOptions: BatchOptions) =
         let category = Snapshot.snapshotCategory category
         let act = Activity.Current
         if act <> null then act.SetTag("eqx.snapshot_written", true) |> ignore
-        do! Write.writeEvents log None client.Writer (category, streamId, snapshotStream) Any [| event |] ct :> Task }
+        do! Write.writeEvents log None client.Writer (category, streamId, snapshotStream) Any [| event |] None ct :> Task }
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event, 'state> =
@@ -372,10 +372,16 @@ type AccessStrategy<'event, 'state> =
     /// It should return the event case whose name matches <c>snapshotEventCaseName</c>
     /// </summary>
     | AdjacentSnapshots of snapshotEventCaseName: string * toSnapshot: ('state -> 'event)
+    /// <summary>
+    /// Calls the provided <c>project</c> function to update a table in the same transaction as the appended events
+    /// For loads the <c>subStrategy</c> is used
+    /// </summary>
+    | AdjacentProjection of project: (Npgsql.NpgsqlConnection -> StreamId -> 'state -> Task<unit>) * subStrategy: AccessStrategy<'event, 'state>
+
 
 type private StoreCategory<'event, 'state, 'req>(context: MessageDbContext, codec: IEventCodec<_, _, 'req>, fold, initial, access) =
     let fold s xs = (fold : System.Func<'state, 'event[], 'state>).Invoke(s, xs)
-    let loadAlgorithm log category streamId streamName requireLeader ct =
+    let rec loadAlgorithm access log category streamId streamName requireLeader ct =
         match access with
         | AccessStrategy.Unoptimized -> context.LoadBatched(log, streamName, requireLeader, codec.Decode, fold, initial, ct)
         | AccessStrategy.LatestKnownEvent -> context.LoadLast(log, streamName, requireLeader, codec.Decode, fold, initial, ct)
@@ -386,19 +392,24 @@ type private StoreCategory<'event, 'state, 'req>(context: MessageDbContext, code
                 let! token, state = context.Reload(log, streamName, requireLeader, pos, codec.Decode, fold, state, ct)
                 return struct(token, state)
             | ValueNone -> return! context.LoadBatched(log, streamName, requireLeader, codec.Decode, fold, initial, ct) }
+        | AccessStrategy.AdjacentProjection(_, access) -> loadAlgorithm access log category streamId streamName requireLeader ct
     let reload (log, sn, leader, token, state) ct = context.Reload(log, sn, leader, token, codec.Decode, fold, state, ct)
     interface ICategory<'event, 'state, 'req> with
         member _.Empty = context.TokenEmpty, initial
         member _.Load(log, categoryName, streamId, streamName, _maxAge, requireLeader, ct) =
-            loadAlgorithm log categoryName streamId streamName requireLeader ct
+            loadAlgorithm access log categoryName streamId streamName requireLeader ct
         member x.Sync(log, categoryName, streamId, streamName, req, token, state, events, ct) = task {
             let encode e = codec.Encode(req, e)
             let encodedEvents: IEventData<EventBody>[] = events |> Array.map encode
-            match! context.TrySync(log, categoryName, streamId, streamName, token, encodedEvents, ct) with
-            | GatewaySyncResult.Written token' ->
-                let state' = fold state events
+            let state' = fold state events
+            let project =
                 match access with
-                | AccessStrategy.Unoptimized | AccessStrategy.LatestKnownEvent -> ()
+                | AccessStrategy.AdjacentProjection(project, _) -> Some (fun conn -> project conn (StreamId.Elements.trust streamId) state')
+                | _ -> None
+            match! context.TrySync(log, categoryName, streamId, streamName, token, encodedEvents, project, ct) with
+            | GatewaySyncResult.Written token' ->
+                match access with
+                | AccessStrategy.AdjacentProjection _ | AccessStrategy.Unoptimized | AccessStrategy.LatestKnownEvent -> ()
                 | AccessStrategy.AdjacentSnapshots(_, toSnap) ->
                     if Token.shouldSnapshot context.BatchOptions.BatchSize token token' then
                         do! x.StoreSnapshot(log, categoryName, streamId, req, token', toSnap state', ct)
