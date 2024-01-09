@@ -4,7 +4,7 @@ module internal Equinox.MessageDb.Tracing
 open Equinox.MessageDb.Core
 open System.Diagnostics
 
-[<AbstractClass; Sealed>]
+[<AbstractClass; Sealed; System.Runtime.CompilerServices.Extension>]
 type ActivityExtensions private () =
 
     [<System.Runtime.CompilerServices.Extension>]
