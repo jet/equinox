@@ -322,8 +322,8 @@ module LoadTest =
         let createStoreLog storeVerbose = createStoreLog storeVerbose verboseConsole maybeSeq
         let a = TestArguments p
         let storeLog, storeConfig, httpClient: ILogger * Store.Config option * HttpClient option =
-            match p.TryGetSubCommand() with
-            | Some (Web p) ->
+            match p.GetSubCommand() with
+            | Web p ->
                 let uri = p.GetResult(WebParameters.Endpoint,"https://localhost:5001") |> Uri
                 log.Information("Running web test targeting: {url}", uri)
                 createStoreLog false, None, new HttpClient(BaseAddress = uri) |> Some
