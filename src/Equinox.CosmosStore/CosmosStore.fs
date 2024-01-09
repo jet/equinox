@@ -124,14 +124,14 @@ type Tip = // TODO for STJ v5: All fields required unless explicitly optional
 [<NoComparison; NoEquality>]
 type Position = { index: int64; etag: string option }
 module internal Position =
-    /// NB very inefficient compared to FromEtagAndNext or using one already returned to you
-    let fromI (i: int64) = { index = i; etag = None }
-    /// If we have strong reason to suspect a stream is empty, we won't have an etag (and Writer Stored Procedure special cases this)
-    let fromKnownEmpty = fromI 0L
-    /// Blind append mode
-    let fromAppendAtEnd = fromI -1L // sic - needs to yield value -1 to trigger stored proc logic
     let fromEtagOnly (value: string) = { index = -2; etag = Some value }
-    let fromEtagAndNext (etag, n) = { index = n; etag = Some etag }
+    let fromEtagAndIndex (etag, n) = { index = n; etag = Some etag }
+    /// NB a token without an etag is inefficient compared to fromEtagAndIndex, so paths to this should be minimized
+    let fromIndex (x: int64) = { index = x; etag = None }
+    /// If we have strong reason to suspect a stream is empty, we won't have an etag (and Writer Stored Procedure special cases this)
+    let fromKnownEmpty = fromIndex 0L
+    /// Blind append mode
+    let fromAppendAtEnd = fromIndex -1L // sic - needs to yield value -1 to trigger stored proc logic
     /// If we encounter the tip (id=-1) item/document, we're interested in its etag so we can re-sync for 1 RU
     let tryFromBatch (x: Batch) =
         if x.id <> Tip.WellKnownDocumentId then None
@@ -443,7 +443,7 @@ module internal SyncExp =
     let fromVersion i =
         if i < 0L then raise <| ArgumentOutOfRangeException(nameof i, i, "must be >= 0")
         SyncExp.Version i
-    let fromVersionOrMagicAny = function -1L -> SyncExp.Any | i -> fromVersion i
+    let fromVersionOrAppendAtEnd = function -1L -> SyncExp.Any | i -> fromVersion i
     let fromEtag etag =
         if isNull etag then invalidArg (nameof etag) "must be non-null"
         SyncExp.Etag etag
@@ -461,7 +461,7 @@ module internal Sync =
         : Task<float*Result> = task {
         let ep =
             match exp with
-            | SyncExp.Version ev -> Position.fromI ev
+            | SyncExp.Version ev -> Position.fromIndex ev
             | SyncExp.Etag et -> Position.fromEtagOnly et
             | SyncExp.Any -> Position.fromAppendAtEnd
         let args = [| box req; box ep.index; box (Option.toObj ep.etag); box maxEventsInTip; box maxStringifyLen |]
@@ -622,7 +622,7 @@ module internal Tip =
         | ReadResult.NotFound -> return Result.NotFound
         | ReadResult.Found tip ->
             let minIndex = maybePos |> Option.map (fun x -> x.index)
-            return Result.Found (Position.fromEtagAndNext (tip._etag, tip.n), tip.i, Enum.EventsAndUnfolds(tip, ?maxIndex = maxIndex, ?minIndex = minIndex) |> Array.ofSeq) }
+            return Result.Found (Position.fromEtagAndIndex (tip._etag, tip.n), tip.i, Enum.EventsAndUnfolds(tip, ?maxIndex = maxIndex, ?minIndex = minIndex) |> Array.ofSeq) }
     let tryFindOrigin (tryDecode: ITimelineEvent<EventBody> -> 'event voption, isOrigin: 'event -> bool) xs =
         let stack = ResizeArray()
         let isOrigin' (u: ITimelineEvent<EventBody>) =
@@ -838,7 +838,7 @@ module internal Query =
         let events, pos =
             match primary with
             | None -> events, pos |> Option.defaultValue Position.fromKnownEmpty
-            | Some p -> Array.append p.events events, pos |> Option.orElse p.maybeTipPos |> Option.defaultValue (Position.fromI p.next)
+            | Some p -> Array.append p.events events, pos |> Option.orElse p.maybeTipPos |> Option.defaultValue (Position.fromIndex p.next)
         let inline logMissing (minIndex, maxIndex) message =
             if log.IsEnabled Events.LogEventLevel.Debug then
                 (log|> fun log -> match minIndex with None -> log | Some mi -> log |> Log.prop "minIndex" mi
@@ -1436,7 +1436,7 @@ type EventsContext
         do! context.EnsureStoredProcedureInitialized ct
         let store, stream = resolve streamName
         let batch = Sync.mkBatch stream events Array.empty
-        match! store.Sync(log, stream, SyncExp.fromVersionOrMagicAny position.index, batch, ct) with
+        match! store.Sync(log, stream, SyncExp.fromVersionOrAppendAtEnd position.index, batch, ct) with
         | InternalSyncResult.Written (Token.Unpack pos) -> return AppendResult.Ok pos
         | InternalSyncResult.Conflict (pos, events) -> return AppendResult.Conflict (pos, events)
         | InternalSyncResult.ConflictUnknown (Token.Unpack pos) -> return AppendResult.ConflictUnknown pos }
@@ -1470,10 +1470,10 @@ module Events =
         return xs }
     let (|MinPosition|) = function
         | 0L -> None
-        | i -> Some (Position.fromI i)
+        | i -> Some (Position.fromIndex i)
     let (|MaxPosition|) = function
         | int64.MaxValue -> None
-        | i -> Some (Position.fromI (i + 1L))
+        | i -> Some (Position.fromIndex (i + 1L))
 
     /// Returns an async sequence of events in the stream starting at the specified sequence number,
     /// reading in batches of the specified size.
@@ -1494,7 +1494,7 @@ module Events =
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
     let append (ctx: EventsContext) (streamName: StreamName) (index: int64) (events: IEventData<_>[]): Async<AppendResult<int64>> =
-        Async.call (fun ct -> ctx.Sync(streamName, Position.fromI index, events, ct) |> stripSyncResult)
+        Async.call (fun ct -> ctx.Sync(streamName, Position.fromIndex index, events, ct) |> stripSyncResult)
 
     /// Appends a batch of events to a stream at the the present Position without any conflict checks.
     /// NB typically, it is recommended to ensure idempotency of operations by using the `append` and related API as
