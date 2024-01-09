@@ -376,7 +376,7 @@ type AccessStrategy<'event, 'state> =
     /// Calls the provided <c>project</c> function to update a table in the same transaction as the appended events
     /// For loads the <c>subStrategy</c> is used
     /// </summary>
-    | AdjacentProjection of project: (Npgsql.NpgsqlConnection -> StreamId -> 'state -> Task<unit>) * subStrategy: AccessStrategy<'event, 'state>
+    | AdjacentProjection of project: (StreamId -> 'state -> Npgsql.NpgsqlConnection -> Task<unit>) * subStrategy: AccessStrategy<'event, 'state>
 
 
 type private StoreCategory<'event, 'state, 'req>(context: MessageDbContext, codec: IEventCodec<_, _, 'req>, fold, initial, access) =
@@ -404,7 +404,7 @@ type private StoreCategory<'event, 'state, 'req>(context: MessageDbContext, code
             let state' = fold state events
             let project =
                 match access with
-                | AccessStrategy.AdjacentProjection(project, _) -> Some (fun conn -> project conn (StreamId.Elements.trust streamId) state')
+                | AccessStrategy.AdjacentProjection(project, _) -> Some (project (StreamId.Elements.trust streamId) state')
                 | _ -> None
             match! context.TrySync(log, categoryName, streamId, streamName, token, encodedEvents, project, ct) with
             | GatewaySyncResult.Written token' ->
