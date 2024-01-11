@@ -233,8 +233,12 @@ and [<NoComparison; NoEquality; RequireQualifiedAccess>]
     /// - increasing how much we lean on Optimistic Concurrency Control when doing a `Transact` (though you're still guaranteed a consistent outcome)
     /// - limiting the frequency of reads to 1 request per stream per Cache per `age` when using `Query`
     | AllowStale of maxAge: TimeSpan
-    /// Inhibit load from database based on the fact that the stream is likely not to have been initialized yet, and we will be generating events
+    /// Inhibit load from store based on the fact that the stream is likely not to have been initialized yet, and we will be generating events
     | AssumeEmpty
+    /// Instead of loading from store, seed the loading process with the supplied memento
+    // NOTE: in V<=3, related to a low level pattern CreateMemento mechanism, see https://github.com/jet/equinox/pull/413
+    //       V4 and later only generates these via *StoreCategory.TryHydrateTip
+    | FromMemento of memento: struct (StreamToken * 'state)
 and [<AbstractClass; Sealed>] internal LoadPolicy private () =
     static member Fetch<'state, 'event>(x: LoadOption<'state> option) : IStream<'event, 'state> -> CancellationToken -> Task<struct (StreamToken * 'state)> =
         match x with
@@ -243,6 +247,7 @@ and [<AbstractClass; Sealed>] internal LoadPolicy private () =
         | Some LoadOption.AnyCachedValue ->         fun stream ct ->    stream.Load(maxAge = TimeSpan.MaxValue, requireLeader = false, ct = ct)
         | Some (LoadOption.AllowStale maxAge) ->    fun stream ct ->    stream.Load(maxAge = maxAge,            requireLeader = false, ct = ct)
         | Some LoadOption.AssumeEmpty ->            fun stream _ct ->   Task.FromResult(stream.LoadEmpty())
+        | Some (LoadOption.FromMemento tokenAndState) -> fun _stream _ct -> Task.FromResult tokenAndState
 
 (* Retry / Attempts policy used to define policy for retrying based on the conflicting state when there's an Append conflict (default 3 retries) *)
 

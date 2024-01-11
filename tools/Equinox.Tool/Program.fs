@@ -376,21 +376,18 @@ module CosmosInit =
     let connect log (p : ParseResults<Store.Cosmos.Parameters>) =
         Store.Cosmos.connect log (Store.Cosmos.Arguments p) |> fst
 
-    let containerAndOrDb log (p : ParseResults<InitParameters>) =
+    let containerAndOrDb log (p: ParseResults<InitParameters>) =
         let a = CosmosInitArguments p
         match p.GetSubCommand() with
         | InitParameters.Cosmos cp ->
             let connector, dName, cName = connect log cp
             match a.ProvisioningMode with
             | CosmosInit.Provisioning.Container throughput ->
-                let modeStr = "Container"
-                log.Information("CosmosStore provisioning at {mode:l} level for {rus:n0} RU/s", modeStr, throughput)
+                log.Information("CosmosStore provisioning at {mode:l} level for {rus:n0} RU/s", "Container", throughput)
             | CosmosInit.Provisioning.Database throughput ->
-                let modeStr = "Database"
-                log.Information("CosmosStore provisioning at {mode:l} level for {rus:n0} RU/s", modeStr, throughput)
+                log.Information("CosmosStore provisioning at {mode:l} level for {rus:n0} RU/s", "Database", throughput)
             | CosmosInit.Provisioning.Serverless ->
-                let modeStr = "Serverless"
-                log.Information("CosmosStore provisioning in {mode:l} mode with automatic RU/s as configured in account", modeStr)
+                log.Information("CosmosStore provisioning in {mode:l} mode with automatic RU/s as configured in account", "Serverless")
             CosmosInit.init log (connector.CreateUninitialized()) (dName, cName) a.ProvisioningMode a.SkipStoredProc
         | x -> p.Raise $"unexpected subcommand %A{x}"
 

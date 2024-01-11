@@ -444,9 +444,7 @@ module internal SyncExp =
         if i < 0L then raise <| ArgumentOutOfRangeException(nameof i, i, "must be >= 0")
         SyncExp.Version i
     let fromVersionOrAppendAtEnd = function -1L -> SyncExp.Any | i -> fromVersion i
-    let fromEtag etag =
-        if isNull etag then invalidArg (nameof etag) "must be non-null"
-        SyncExp.Etag etag
+    let fromEtag etag = SyncExp.Etag etag
 
 module internal Sync =
 
@@ -631,9 +629,7 @@ module internal Tip =
             | ValueSome e ->
                 stack.Insert(0, e) // WalkResult always renders events ordered correctly - here we're aiming to align with Enum.EventsAndUnfolds
                 isOrigin e
-        match xs |> Seq.tryFindBack isOrigin' with
-        | Some x -> ValueSome (x, stack.ToArray())
-        | None -> ValueNone
+        xs |> Seq.tryFindBack isOrigin', stack.ToArray()
 
 module internal Query =
 
@@ -714,10 +710,8 @@ module internal Query =
     type ScanResult<'event> = { found: bool; minIndex: int64; next: int64; maybeTipPos: Position option; events: 'event[] }
 
     let scanTip (tryDecode, isOrigin) (pos: Position, i: int64, xs: #ITimelineEvent<EventBody>[]): ScanResult<'event> =
-        let ok, e = xs |> Tip.tryFindOrigin (tryDecode, isOrigin) |> function
-            | ValueSome (_, events) -> true, events
-            | ValueNone -> false, Array.empty
-        { found = ok; maybeTipPos = Some pos; minIndex = i; next = pos.index + 1L; events = e }
+        let origin, events = xs |> Tip.tryFindOrigin (tryDecode, isOrigin)
+        { found = Option.isSome origin; maybeTipPos = Some pos; minIndex = i; next = pos.index + 1L; events = events }
 
     // Yields events in ascending Index order
     let scan<'event> (log: ILogger) (container, stream) includeTip (maxItems: int) maxRequests direction
@@ -1027,8 +1021,8 @@ type StoreClient(container: Container, fallback: Container option, query: QueryO
 
     // Always yields events forward, regardless of direction
     member internal _.Read(log, stream, direction, (tryDecode, isOrigin), ?ct, ?minIndex, ?maxIndex, ?tip): Task<StreamToken * 'event[]> = task {
-        let tip = tip |> Option.map (Query.scanTip (tryDecode, isOrigin))
-        let includeTip = Option.isNone tip
+        let tipContent = tip |> Option.map (Query.scanTip (tryDecode, isOrigin))
+        let includeTip = Option.isNone tipContent
         let walk log container = Query.scan log (container, stream) includeTip query.MaxItems query.MaxRequests direction (tryDecode, isOrigin)
         let walkFallback =
             match fallback with
@@ -1036,7 +1030,7 @@ type StoreClient(container: Container, fallback: Container option, query: QueryO
             | Some f -> Choice2Of2 (walk (log |> Log.prop "fallback" true) f)
 
         let log = log |> Log.prop "stream" stream
-        let! pos, events = Query.load log (minIndex, maxIndex) tip (walk log container) walkFallback (defaultArg ct CancellationToken.None)
+        let! pos, events = Query.load log (minIndex, maxIndex) tipContent (walk log container) walkFallback (defaultArg ct CancellationToken.None)
         return Token.create pos, events }
     member _.ReadLazy(log, batching: QueryOptions, stream, direction, (tryDecode, isOrigin), ?ct, ?minIndex, ?maxIndex): IAsyncEnumerable<'event[]> =
         Query.walkLazy log (container, stream) batching.MaxItems batching.MaxRequests (tryDecode, isOrigin) (direction, minIndex, maxIndex, defaultArg ct CancellationToken.None)
