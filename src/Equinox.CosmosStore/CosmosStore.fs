@@ -444,9 +444,7 @@ module internal SyncExp =
         if i < 0L then raise <| ArgumentOutOfRangeException(nameof i, i, "must be >= 0")
         SyncExp.Version i
     let fromVersionOrAppendAtEnd = function -1L -> SyncExp.Any | i -> fromVersion i
-    let fromEtag etag =
-        if isNull etag then invalidArg (nameof etag) "must be non-null"
-        SyncExp.Etag etag
+    let fromEtag etag = SyncExp.Etag etag
 
 module internal Sync =
 
