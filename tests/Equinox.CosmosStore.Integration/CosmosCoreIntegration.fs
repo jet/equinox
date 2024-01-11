@@ -394,7 +394,7 @@ type Tests(testOutputHelper) =
         let! _ = add6EventsIn2Batches ctx2 streamName
 
         // Trigger deletion of first batch from primary
-        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx1 streamName 4L
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx1 streamName 4
         if eventsInTip then test <@ deleted = 5 && deferred = 0 && trimmedPos = 5L @>
         else test <@ deleted = 4 && deferred = 1 && trimmedPos = 4L @>
 

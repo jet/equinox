@@ -103,10 +103,10 @@ let createPrimaryContextIgnoreMissing (connector: CosmosStoreConnector) containe
 
 let defaultTipMaxEvents = 10
 let createArchiveContext log queryMaxItems =
-    let client = (createConnector log).Connect(databaseId, [| containerId |]) |> Async.RunSynchronously
-    CosmosStoreContext(client, databaseId, containerId, defaultTipMaxEvents, queryMaxItems = queryMaxItems)
+    let client = (createConnector log).Connect(databaseId, [| archiveContainerId |]) |> Async.RunSynchronously
+    CosmosStoreContext(client, databaseId, archiveContainerId, defaultTipMaxEvents, queryMaxItems = queryMaxItems)
 let createFallbackContext log queryMaxItems =
-    let client = (createConnector log).Connect(databaseId, [| containerId |]) |> Async.RunSynchronously
+    let client = (createConnector log).Connect(databaseId, [| containerId; archiveContainerId |]) |> Async.RunSynchronously
     CosmosStoreContext(client, databaseId, containerId, defaultTipMaxEvents, queryMaxItems = queryMaxItems, archiveContainerId = archiveContainerId)
 
 type StoreContext = CosmosStoreContext
