@@ -2,6 +2,10 @@
 // (IStream could be marked `internal`, but has been left public in order to facilitate experimenting with custom `Decider` re-implementations within an app)
 namespace Equinox.Core
 
+#if DEBUG // Very strange - as of V8, compiling `transact` errors in Debug, but not Release
+#nowarn "3511"
+#endif
+
 /// Store-agnostic interface implemented by Category, representing interactions a Transact/Query can have with the state of a given event stream.
 type IStream<'event, 'state> =
 

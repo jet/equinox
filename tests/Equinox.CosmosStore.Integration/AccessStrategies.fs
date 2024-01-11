@@ -51,15 +51,15 @@ module SequenceCheck =
     module Fold =
 
         type State = int[]
-        let initial : State = [||]
+        let initial: State = [||]
         let evolve state = function
             | Events.Add e -> Array.append state [| e.value |]
         let fold state = Array.fold evolve state
 
-    let decide (value, count) (state: Fold.State) =
-        if (value = 0 && Array.isEmpty state) || Array.last state = (value - 1)
-        then Array.init count (fun i -> Events.Add {| value = value + i |})
-        else failwith $"Invalid Add of %d{value} to list %A{state}"
+    let decide (start, count) (state: Fold.State) =
+        if (start = 0 && Array.isEmpty state) || Array.last state = (start - 1)
+        then Array.init count (fun i -> Events.Add {| value = start + i |})
+        else failwith $"Invalid Add of %d{start} to list %A{state}"
 
     type Service(resolve : Guid -> Equinox.Decider<Events.Event, Fold.State>) =
 
@@ -111,7 +111,8 @@ type UnoptimizedTipReadingCorrectness(testOutputHelper) =
     /// This test compares the experiences of cached and uncached paths to reading the same data within a given stream
     /// This is in order to shake out bugs and/or variation induced by the presence of stale state in the cache entry
     [<Props.FsCheck(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can sync with competing writer with and without cache`` (instanceId, contextArgs, firstIsCached, Props.EventCount count1, Props.EventCount count2) = async {
+    let ``Can sync with competing writer with and without cache`` (contextArgs, firstIsCached, Props.EventCount count1, Props.EventCount count2) = async {
+        let instanceId = Guid.NewGuid()
         let context = createContext contextArgs
         let service1, service2 =
             let uncached = SequenceCheck.Config.createUncached log context
