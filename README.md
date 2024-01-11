@@ -203,7 +203,8 @@ Equinox does not focus on projection logic - each store brings its own strengths
 
     - can render events from any of the stores via `eqx dump`.
     - incorporates a benchmark scenario runner, running load tests composed of transactions in `samples/Store` and `samples/TodoBackend` against any supported store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects. (Install via: `dotnet tool install Equinox.Tool -g`)
-    - can configure indices in Azure CosmosDB for an `Equinox.CosmosStore` Container via `eqx init`. See [here](https://github.com/jet/equinox#store-data-in-azure-cosmosdb).
+    - can configure indices in Azure CosmosDB for an `Equinox.CosmosStore` Container via `eqx init`. See [here](#store-data-in-azure-cosmosdb).
+    - can search for streams based on name (`p`) or Uncompressed `u`nfold values for an `Equinox.CosmosStore` Container in Azure CosmosDB`. See [here](#eqx-query).
     - can create tables in Amazon DynamoDB for `Equinox.DynamoStore` via `eqx initaws`.
     - can initialize databases for `SqlStreamStore` via `eqx config`
 
