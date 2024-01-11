@@ -65,11 +65,12 @@ type Batch = // TODO for STJ v5: All fields required unless explicitly optional
 
         /// The Domain Events (as opposed to Unfolded Events, see Tip) at this offset in the stream
         e: Event[] }
-    /// Unless running in single partition mode (which would restrict us to 10GB per container)
-    /// we need to nominate a partition key that will be in every document
     static member internal PartitionKeyField = "p"
-    /// As one cannot sort by the implicit `id` field, we have an indexed `i` field for sort and range query use
-    static member internal IndexedFields = [Batch.PartitionKeyField; "i"; "n"]
+    // As one cannot sort by the implicit `id` field, we have an indexed `i` field for sort and range query use
+    // NB its critical to index the nominated PartitionKey field as RU costs increase if you don't
+    // TOCONSIDER: indexing strategy was developed and tuned before composite key extensions in ~2021, which might potentially be more efficient
+    //             a decent attempt at https://github.com/jet/equinox/issues/274 failed, but not 100% sure it's fundamentally impossible/wrong
+    static member internal IndexedPaths = [| Batch.PartitionKeyField; "i"; "n" |] |> Array.map (fun k -> $"/%s{k}/?")
 
 /// Compaction/Snapshot/Projection Event based on the state at a given point in time `i`
 [<NoEquality; NoComparison>]
@@ -90,6 +91,8 @@ type Unfold =
         /// Optional metadata, same encoding as `d` (can be null; not written if missing)
         [<Serialization.JsonConverter(typeof<JsonCompressedBase64Converter>)>]
         m: EventBody } // TODO for STJ v5: Optional, not serialized if missing
+    // Arrays are not indexed by default; enable filtering by case. Index uncompressed fields
+    static member internal IndexedPaths = [| "/u/[]/c/?"; "/u/[]/d/*" |]
 
 /// The special-case 'Pending' Batch Format used to read the currently active (and mutable) document
 /// Stored representation has the following diffs vs a 'normal' (frozen/completed) Batch: a) `id` = `-1` b) contains unfolds (`u`)
@@ -552,22 +555,22 @@ module Initialization =
         try let! r = c.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(id = name, body = body), cancellationToken = ct)
             return r.RequestCharge
         with :? CosmosException as ce when ce.StatusCode = System.Net.HttpStatusCode.Conflict -> return ce.RequestCharge }
-    let private applyBatchAndTipContainerProperties (cp: ContainerProperties) =
+    let private applyBatchAndTipContainerProperties unfoldsToo (cp: ContainerProperties) =
         cp.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
         cp.IndexingPolicy.Automatic <- true
-        // Can either do a blacklist or a whitelist
+        // We specify fields on whitelist basis; generic querying is inapplicable, and indexing is far from free (write RU and latency)
         // Given how long and variable the blacklist would be, we whitelist instead
         cp.IndexingPolicy.ExcludedPaths.Add(ExcludedPath(Path="/*"))
-        // NB its critical to index the nominated PartitionKey field defined above or there will be runtime errors
-        for k in Batch.IndexedFields do cp.IndexingPolicy.IncludedPaths.Add(IncludedPath(Path = sprintf "/%s/?" k))
+        for p in [| yield! Batch.IndexedPaths; if unfoldsToo then yield! Unfold.IndexedPaths |] do
+            cp.IndexingPolicy.IncludedPaths.Add(IncludedPath(Path = p))
     let createSyncStoredProcIfNotExists (log: ILogger option) container ct = task {
         let! t, ru = createStoredProcIfNotExists container (SyncStoredProc.name, SyncStoredProc.body) |> Stopwatch.time ct
         match log with
         | None -> ()
         | Some log -> log.Information("Created stored procedure {procName} in {ms:f1}ms {ru}RU", SyncStoredProc.name, t.ElapsedMilliseconds, ru) }
-    let init log (client: CosmosClient) (dName, cName) mode skipStoredProc ct = task {
+    let init log (client: CosmosClient) (dName, cName) mode indexUnfolds skipStoredProc ct = task {
         let! d = createOrProvisionDatabase client dName mode
-        let! c = createOrProvisionContainer d (cName, sprintf "/%s" Batch.PartitionKeyField, applyBatchAndTipContainerProperties) mode // as per Cosmos team, Partition Key must be "/id"
+        let! c = createOrProvisionContainer d (cName, $"/%s{Batch.PartitionKeyField}", applyBatchAndTipContainerProperties indexUnfolds) mode
         if not skipStoredProc then
             do! createSyncStoredProcIfNotExists (Some log) c ct }
 

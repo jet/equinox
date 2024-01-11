@@ -49,6 +49,7 @@ and [<NoComparison; NoEquality; RequireSubcommand>] InitParameters =
     | [<AltCommandLine "-A"; Unique>]       Autoscale
     | [<AltCommandLine "-m"; Unique>]       Mode of CosmosModeType
     | [<AltCommandLine "-P"; Unique>]       SkipStoredProc
+    | [<AltCommandLine "-U"; Unique>]       IndexUnfolds
     | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Store.Cosmos.Parameters>
     interface IArgParserTemplate with
         member a.Usage = a |> function
@@ -56,6 +57,7 @@ and [<NoComparison; NoEquality; RequireSubcommand>] InitParameters =
             | Autoscale ->                  "Autoscale provisioned throughput. Use --rus to specify the maximum RU/s."
             | Mode _ ->                     "Configure RU mode to use Container-level RU, Database-level RU, or Serverless allocations (Default: Use Container-level allocation)."
             | SkipStoredProc ->             "Inhibit creation of stored procedure in specified Container."
+            | IndexUnfolds ->               "Index `c` and `d` fields within the `u` field of Tip items. Default: Don't index"
             | Cosmos _ ->                   "Cosmos Connection parameters."
 and CosmosModeType = Container | Db | Serverless
 and CosmosInitArguments(p : ParseResults<InitParameters>) =
@@ -68,6 +70,7 @@ and CosmosInitArguments(p : ParseResults<InitParameters>) =
         | CosmosModeType.Serverless, auto when auto || p.Contains Rus -> p.Raise "Cannot specify RU/s or Autoscale in Serverless mode"
         | CosmosModeType.Serverless, _ ->   CosmosInit.Provisioning.Serverless
     member val SkipStoredProc =             p.Contains InitParameters.SkipStoredProc
+    member val IncludeUnfolds =             p.Contains InitParameters.IndexUnfolds
 and [<NoComparison; NoEquality; RequireSubcommand>] TableParameters =
     | [<AltCommandLine "-D"; Unique>]       OnDemand
     | [<AltCommandLine "-s"; Mandatory>]    Streaming of Equinox.DynamoStore.Core.Initialization.StreamingMode
@@ -430,7 +433,7 @@ module CosmosInit =
                 log.Information("CosmosStore provisioning at {mode:l} level for {rus:n0} RU/s", "Database", throughput)
             | CosmosInit.Provisioning.Serverless ->
                 log.Information("CosmosStore provisioning in {mode:l} mode with automatic RU/s as configured in account", "Serverless")
-            CosmosInit.init log (connector.CreateUninitialized()) (dName, cName) a.ProvisioningMode a.SkipStoredProc
+            CosmosInit.init log (connector.CreateUninitialized()) (dName, cName) a.ProvisioningMode a.IncludeUnfolds a.SkipStoredProc
         | x -> p.Raise $"unexpected subcommand %A{x}"
 
 module DynamoInit =
