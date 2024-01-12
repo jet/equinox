@@ -65,11 +65,12 @@ type Batch = // TODO for STJ v5: All fields required unless explicitly optional
 
         /// The Domain Events (as opposed to Unfolded Events, see Tip) at this offset in the stream
         e: Event[] }
-    /// Unless running in single partition mode (which would restrict us to 10GB per container)
-    /// we need to nominate a partition key that will be in every document
     static member internal PartitionKeyField = "p"
-    /// As one cannot sort by the implicit `id` field, we have an indexed `i` field for sort and range query use
-    static member internal IndexedFields = [Batch.PartitionKeyField; "i"; "n"]
+    // As one cannot sort by the (mandatory) `id` field, we have an indexed `i` field for sort and range query use
+    // NB its critical to also index the nominated PartitionKey field as RU costs increase (things degrade to scans) if you don't
+    // TOCONSIDER: indexing strategy was developed and tuned before composite key extensions in ~2021, which might potentially be more efficient
+    //             a decent attempt at https://github.com/jet/equinox/issues/274 failed, but not 100% sure it's fundamentally impossible/wrong
+    static member internal IndexedPaths = [| Batch.PartitionKeyField; "i"; "n" |] |> Array.map (fun k -> $"/%s{k}/?")
 
 /// Compaction/Snapshot/Projection Event based on the state at a given point in time `i`
 [<NoEquality; NoComparison>]
@@ -90,6 +91,8 @@ type Unfold =
         /// Optional metadata, same encoding as `d` (can be null; not written if missing)
         [<Serialization.JsonConverter(typeof<JsonCompressedBase64Converter>)>]
         m: EventBody } // TODO for STJ v5: Optional, not serialized if missing
+    // Arrays are not indexed by default. 1. enable filtering by `c`ase 2. index uncompressed fields within unfolds for filtering
+    static member internal IndexedPaths = [| "/u/[]/c/?"; "/u/[]/d/*" |]
 
 /// The special-case 'Pending' Batch Format used to read the currently active (and mutable) document
 /// Stored representation has the following diffs vs a 'normal' (frozen/completed) Batch: a) `id` = `-1` b) contains unfolds (`u`)
@@ -132,6 +135,9 @@ module internal Position =
     let fromKnownEmpty = fromIndex 0L
     /// Blind append mode
     let fromAppendAtEnd = fromIndex -1L // sic - needs to yield value -1 to trigger stored proc logic
+    /// Sentinel value we assign so we can reject attempts to sync without having known the context
+    let readOnly = { index = -2L; etag = None }
+    let isReadOnly (x: Position) = x.index = -2L && Option.isNone x.etag
     /// If we encounter the tip (id=-1) item/document, we're interested in its etag so we can re-sync for 1 RU
     let tryFromBatch (x: Batch) =
         if x.id <> Tip.WellKnownDocumentId then None
@@ -534,37 +540,42 @@ module Initialization =
             return d }
     let private createContainerIfNotExists (d: Database) cp maybeTp = async {
         let! r = Async.call (fun ct -> d.CreateContainerIfNotExistsAsync(cp, throughputProperties = Option.toObj maybeTp, cancellationToken = ct))
-        return r.Container }
+        let existed = r.StatusCode = Net.HttpStatusCode.OK
+        if existed then
+            do! Async.call (fun ct -> r.Container.ReplaceContainerAsync(cp, cancellationToken = ct)) |> Async.Ignore
+        return r.Container, existed }
     let private createOrProvisionContainer (d: Database) (cName, pkPath, customizeContainer) mode =
         let cp = ContainerProperties(id = cName, partitionKeyPath = pkPath)
         customizeContainer cp
         match mode with
-        | Provisioning.Database _ | Provisioning.Serverless -> createContainerIfNotExists d cp None
+        | Provisioning.Database _ | Provisioning.Serverless -> async {
+            let! c, _existed = createContainerIfNotExists d cp None
+            return c }
         | Provisioning.Container (ThroughputProperties throughput) -> async {
-            let! c = createContainerIfNotExists d cp (Some throughput)
-            let! _ = Async.call (fun ct -> c.ReplaceThroughputAsync(throughput, cancellationToken = ct))
+            let! c, existed = createContainerIfNotExists d cp (Some throughput)
+            if existed then do! Async.call (fun ct -> c.ReplaceThroughputAsync(throughput, cancellationToken = ct)) |> Async.Ignore
             return c }
 
     let private createStoredProcIfNotExists (c: Container) (name, body) ct: Task<float> = task {
         try let! r = c.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(id = name, body = body), cancellationToken = ct)
             return r.RequestCharge
         with :? CosmosException as ce when ce.StatusCode = System.Net.HttpStatusCode.Conflict -> return ce.RequestCharge }
-    let private applyBatchAndTipContainerProperties (cp: ContainerProperties) =
+    let private applyBatchAndTipContainerProperties indexUnfolds (cp: ContainerProperties) =
         cp.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
         cp.IndexingPolicy.Automatic <- true
-        // Can either do a blacklist or a whitelist
+        // We specify fields on whitelist basis; generic querying is inapplicable, and indexing is far from free (write RU and latency)
         // Given how long and variable the blacklist would be, we whitelist instead
         cp.IndexingPolicy.ExcludedPaths.Add(ExcludedPath(Path="/*"))
-        // NB its critical to index the nominated PartitionKey field defined above or there will be runtime errors
-        for k in Batch.IndexedFields do cp.IndexingPolicy.IncludedPaths.Add(IncludedPath(Path = sprintf "/%s/?" k))
+        for p in [| yield! Batch.IndexedPaths; if indexUnfolds then yield! Unfold.IndexedPaths |] do
+            cp.IndexingPolicy.IncludedPaths.Add(IncludedPath(Path = p))
     let createSyncStoredProcIfNotExists (log: ILogger option) container ct = task {
         let! t, ru = createStoredProcIfNotExists container (SyncStoredProc.name, SyncStoredProc.body) |> Stopwatch.time ct
         match log with
         | None -> ()
         | Some log -> log.Information("Created stored procedure {procName} in {ms:f1}ms {ru}RU", SyncStoredProc.name, t.ElapsedMilliseconds, ru) }
-    let init log (client: CosmosClient) (dName, cName) mode skipStoredProc ct = task {
+    let init log (client: CosmosClient) (dName, cName) mode indexUnfolds skipStoredProc ct = task {
         let! d = createOrProvisionDatabase client dName mode
-        let! c = createOrProvisionContainer d (cName, sprintf "/%s" Batch.PartitionKeyField, applyBatchAndTipContainerProperties) mode // as per Cosmos team, Partition Key must be "/id"
+        let! c = createOrProvisionContainer d (cName, $"/%s{Batch.PartitionKeyField}", applyBatchAndTipContainerProperties indexUnfolds) mode
         if not skipStoredProc then
             do! createSyncStoredProcIfNotExists (Some log) c ct }
 
@@ -630,6 +641,12 @@ module internal Tip =
                 stack.Insert(0, e) // WalkResult always renders events ordered correctly - here we're aiming to align with Enum.EventsAndUnfolds
                 isOrigin e
         xs |> Seq.tryFindBack isOrigin', stack.ToArray()
+    let tryHydrate (tryDecode: ITimelineEvent<EventBody> -> 'event voption, isOrigin: 'event -> bool) (unfolds: Unfold[], etag: string voption) =
+        match Enum.Unfolds unfolds |> tryFindOrigin (tryDecode, isOrigin) with
+        | Some u, events ->
+            let pos = match etag with ValueSome etag -> Position.fromEtagAndIndex (etag, u.Index) | ValueNone -> Position.readOnly
+            ValueSome (pos, events)
+        | None, _ -> ValueNone
 
 module internal Query =
 
@@ -1104,6 +1121,10 @@ type internal StoreCategory<'event, 'state, 'req>
             | InternalSyncResult.Conflict (pos', tipEvents) ->
                 return SyncResult.Conflict (reload (log, streamName, streamToken, state) (Some (pos', pos.index, tipEvents))) }
     interface Caching.IReloadable<'state> with member _.Reload(log, sn, _leader, token, state, ct) = reload (log, sn, token, state) None ct
+    member _.TryHydrateTip(u, ?etag) =
+        match Tip.tryHydrate (codec.Decode, isOrigin) (u, match etag with Some etag -> ValueSome etag | None -> ValueNone) with
+        | ValueNone -> ValueNone
+        | ValueSome (pos, events) -> ValueSome (Token.create pos, fold initial events)
 
 module ConnectionString =
 
@@ -1247,6 +1268,7 @@ and CosmosStoreClient
 /// Defines the policies for accessing a given Container (And optional fallback Container for retrieval of archived data).
 type CosmosStoreContext(client: CosmosStoreClient, databaseId, containerId, tipOptions, queryOptions, ?archive) =
     let containerGuard = client.GetOrAddPrimaryContainer(databaseId, containerId)
+    member val Container = containerGuard.Container
     member val QueryOptions = queryOptions
     member val TipOptions = tipOptions
     new(client: CosmosStoreClient, databaseId, containerId,
@@ -1311,7 +1333,7 @@ type AccessStrategy<'event, 'state> =
     /// </remarks>
     | Custom of isOrigin: ('event -> bool) * transmute: ('event[] -> 'state -> 'event[] * 'event[])
 
-type CosmosStoreCategory<'event, 'state, 'req> private (name, inner) =
+type CosmosStoreCategory<'event, 'state, 'req> private (name, inner, tryHydrateTip) =
     inherit Equinox.Category<'event, 'state, 'req>(name, inner)
     new(context: CosmosStoreContext, name, codec, fold, initial, access,
         // For CosmosDB, caching is typically a central aspect of managing RU consumption to maintain performance and capacity.
@@ -1336,7 +1358,14 @@ type CosmosStoreCategory<'event, 'state, 'req> private (name, inner) =
             | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> Array.empty, toSnapshot state |> Array.singleton)
             | AccessStrategy.Custom (isOrigin, transmute) ->     isOrigin,         true,  Choice3Of3 transmute
         let sc = StoreCategory<'event, 'state, 'req>(context.StoreClient, context.EnsureStoredProcedureInitialized, codec, fold, initial, isOrigin, checkUnfolds, shouldCompress, mapUnfolds)
-        CosmosStoreCategory<'event, 'state, 'req>(name, sc |> Caching.apply Token.isStale caching)
+        CosmosStoreCategory<'event, 'state, 'req>(name, sc |> Caching.apply Token.isStale caching, fun u e -> sc.TryHydrateTip(u, ?etag = e))
+    /// Parses the Unfolds (the `u` field of the Item with `id = "-1"`) into a form that can be passed to `Decider.Query` or `Decider.Transact` via `, ?load = <result>>`
+    member _.TryHydrateTip(u, [<O; D null>] ?etag: string) =
+        match tryHydrateTip u etag with
+        | ValueSome (t, s) -> Some (Equinox.LoadOption.FromMemento struct (t, s))
+        | ValueNone -> None
+    /// Derives from the supplied `u`nfolds. Yields `None` if there is no relevant `origin` event within the supplied array.
+    member x.TryLoad u = x.TryHydrateTip u |> Option.bind (function Equinox.LoadOption.FromMemento (_, s) -> Some s | _ -> None)
 
 module Exceptions =
 

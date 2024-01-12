@@ -25,6 +25,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `EventStore`: Revise test rig to target a Docker-hosted cluster [#317](https://github.com/jet/equinox/pull/317)
 - `EventStoreDb`: As per `EventStore` module, but using the modern `EventStore.Client.Grpc.Streams` client [#196](https://github.com/jet/equinox/pull/196)
 - `MessageDb`: Implements a [message-db](http://docs.eventide-project.org/user-guide/message-db/) storage backend [#339](https://github.com/jet/equinox/pull/339) with OpenTelemetry tracing and snapshotting support [#348](https://github.com/jet/equinox/pull/348) :pray: [@nordfjord](https://github.com/nordfjord)
+- `eqx init`: `-U/--index-unfolds` enables querying uncompressed unfolds (see `shouldCompress`) [#434](https://github.com/jet/equinox/pull/434)
+- `eqx query`: Queries based on uncompressed unfolds (see `eqx init -U`) [#434](https://github.com/jet/equinox/pull/434)
 - `eqx dump`: `-s` flag is now optional
 - `eqx stats`: `-A` flag to request all stats (equivalent to requesting `-ESD`) [#424](https://github.com/jet/equinox/pull/424)
 
@@ -56,6 +58,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `CosmosStore`: Only log `bytes` when log level is `Debug` [#305](https://github.com/jet/equinox/pull/305)
 - `CosmosStore.AccessStrategy.MultiSnapshot`,`Custom`: Change `list` and `seq` types to `array` [#338](https://github.com/jet/equinox/pull/338)
 - `CosmosStore.CosmosStoreCategory`: Generalize `compressUnfolds` to `shouldCompress` predicate [#436](https://github.com/jet/equinox/pull/436)
+- `CosmosStore.CosmosStoreCategory.TryHydrateTip`: Generates a Stream State Momento based on externally loaded `u`nfold state [#434](https://github.com/jet/equinox/pull/434)
+- `CosmosStore.CosmosStoreCategory.TryLoad`: Renders a `'state` based on an Unfold [#434](https://github.com/jet/equinox/pull/434)
 - `CosmosStore.Core.Initialization.initAux`: Replace hard-coded manual 400 RU with `mode` parameter [#328](https://github.com/jet/equinox/pull/328) :pray: [@brihadish](https://github.com/brihadish)
 - `CosmosStore.CosmosClientFactory`: Moved to Core [#430](https://github.com/jet/equinox/pull/430)
 - `EventStore`: Target `EventStore.Client` v `22.0.0-preview`; rename `Connector` -> `EventStoreConnector` [#317](https://github.com/jet/equinox/pull/317)

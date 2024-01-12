@@ -378,7 +378,37 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     eqx -VC stats -SDEP cosmos # -P to run in parallel # -V -C to show underlying query being used
     ```
 
-5. Use `propulsion` tool to run a CosmosDB ChangeFeedProcessor
+5. Use the `eqx` tool to query streams and/or snapshots in a CosmosDB store
+
+    <a name="eqx-query"></a>
+    ```powershell
+    # Add indexing of the `u`nfolds borne by Tip Items: 1) `c` for the case name 2) `d` for fields of uncompressed unfolds 
+    eqx init -m serverless --index-unfolds cosmos -d db -c $EQUINOX_COSMOS_VIEWS
+   
+    # query all streams LIKE "$User-%" with `Snapshotted2` unfolds. Batches of up to 100,000 events
+    eqx query -cn '$User' -un Snapshotted2 cosmos -d db -c $EQUINOX_COSMOS_VIEWS -b 100000
+    
+    # use a wild card (LIKE) for the stream name 
+    eqx query -cl '$Us%' -un Snapshotted cosmos -d db -c $EQUINOX_COSMOS_VIEWS -b 100000
+    # > Querying SELECT c.u, c.p, c._etag FROM c WHERE c.p LIKE "$Us%" AND EXISTS (SELECT VALUE u FROM u IN c.u WHERE u.c = "Snapshotted") {}
+    # > Page 7166s, 7166u, 0e 320.58RU 3.9s {}
+    # > Page 1608s, 1608u, 0e 68.59RU 0.9s {}
+    # > TOTALS 1c, 8774s, 389.17RU 4.7s {}   
+   
+    # Skip loading the _etag to simulate a query where you will only render the result (not `Transact` against it)
+    eqx query -cn '$User' -un Snapshotted cosmos -d db -c $EQUINOX_COSMOS_VIEWS -b 100000
+    # > Querying SELECT c.u FROM c WHERE c.p LIKE "$User-%" AND EXISTS (SELECT VALUE u FROM u IN c.u WHERE u.c = "Snapshotted") {}
+    # > Page 8774s, 8774u, 0e 342.33RU 3.8s {}
+    # > TOTALS 0c, 8774s, 342.33RU 3.8s {} # 👈 cheaper and only one batch as no .p or ._etag 
+   
+    # add criteria filtering based on an Uncompressed Unfold
+    eqx query -cn '$User' -un EmailIndex -uc 'u.d.email = "a@b.com"' cosmos -d db -c $EQUINOX_COSMOS_VIEWS -b 100000
+    # > Querying SELECT c.u, c.p, c._etag FROM c WHERE c.p LIKE "$User-%" AND EXISTS (SELECT VALUE u FROM u IN c.u WHERE u.c = "EmailIndex" AND u.d.email = "a@b.com") {}
+    # > Page 0s, 0u, 0e 2.8RU 0.7s {}
+    # > TOTALS 0c, 0s, 2.80RU 0.7s {} # 👈 only 2.8RU if nothing is returned
+    ```
+
+6. Use `propulsion` tool to run a CosmosDB ChangeFeedProcessor
 
     ```powershell
     dotnet tool uninstall Propulsion.Tool -g
@@ -392,7 +422,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     propulsion -V project -g projector1 stats cosmos
     ```
 
-6. Generate a CosmosDB ChangeFeedProcessor sample `.fsproj` (without Kafka producer/consumer), using `Propulsion.CosmosStore`
+7. Generate a CosmosDB ChangeFeedProcessor sample `.fsproj` (without Kafka producer/consumer), using `Propulsion.CosmosStore`
 
     ```powershell
     dotnet new -i Equinox.Templates
@@ -405,7 +435,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     # cosmos specifies source overrides (using defaults in step 1 in this instance)
     dotnet run -- -g projector2 cosmos
     ```
-7. Use `propulsion` tool to Run a CosmosDB ChangeFeedProcessor, emitting to a Kafka topic
+8. Use `propulsion` tool to Run a CosmosDB ChangeFeedProcessor, emitting to a Kafka topic
 
     ```powershell	
     $env:PROPULSION_KAFKA_BROKER="instance.kafka.mysite.com:9092" # or use -b	
@@ -418,7 +448,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     propulsion -V project -g projector3 -l 5 kafka temp-topic cosmos	
     ```	
 
- 8. Generate CosmosDB [Kafka Projector and Consumer](https://github.com/jet/propulsion#feeding-to-kafka) `.fsproj`ects (using `Propulsion.Kafka`)
+9. Generate CosmosDB [Kafka Projector and Consumer](https://github.com/jet/propulsion#feeding-to-kafka) `.fsproj`ects (using `Propulsion.Kafka`)
 
     ```powershell
     cat readme.md # more complete instructions regarding the code
@@ -442,7 +472,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet run -- -t topic0 -g consumer1
     ```
 
-9. Generate an Archive container; Generate a ChangeFeedProcessor App to mirror desired streams from the Primary to it
+10. Generate an Archive container; Generate a ChangeFeedProcessor App to mirror desired streams from the Primary to it
 
     ```powershell
     # once
@@ -466,7 +496,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
       cosmos -c equinox-test-archive 
     ``` 
 
-10. Use a ChangeFeedProcessor driven from the Archive Container to Prune the Primary
+11. Use a ChangeFeedProcessor driven from the Archive Container to Prune the Primary
 
     ```powershell
     md pruner | cd

@@ -29,6 +29,7 @@ type Arguments =
     | [<CliPrefix(CliPrefix.None); Last>]   InitAws of ParseResults<TableParameters>
     | [<CliPrefix(CliPrefix.None); Last>]   Config of ParseResults<ConfigParameters>
     | [<CliPrefix(CliPrefix.None); Last>]   Stats of ParseResults<StatsParameters>
+    | [<CliPrefix(CliPrefix.None); Last>]   Query of ParseResults<QueryParameters>
     | [<CliPrefix(CliPrefix.None); Last>]   Dump of ParseResults<DumpParameters>
     interface IArgParserTemplate with
         member a.Usage = a |> function
@@ -41,12 +42,14 @@ type Arguments =
             | InitAws _ ->                  "Initialize DynamoDB Table (supports `dynamo` stores; also handles RU/s provisioning adjustment)."
             | Config _ ->                   "Initialize Database Schema (supports `mssql`/`mysql`/`postgres` SqlStreamStore stores)."
             | Stats _ ->                    "inspect store to determine numbers of streams/documents/events and/or config (supports `cosmos` and `dynamo` stores)."
+            | Query _ ->                    "Load/Summarise streams based on Cosmos SQL Queries (supports `cosmos` only)."
             | Dump _ ->                     "Load and show events in a specified stream (supports all stores)."
 and [<NoComparison; NoEquality; RequireSubcommand>] InitParameters =
     | [<AltCommandLine "-ru"; Unique>]      Rus of int
     | [<AltCommandLine "-A"; Unique>]       Autoscale
     | [<AltCommandLine "-m"; Unique>]       Mode of CosmosModeType
     | [<AltCommandLine "-P"; Unique>]       SkipStoredProc
+    | [<AltCommandLine "-U"; Unique>]       IndexUnfolds
     | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Store.Cosmos.Parameters>
     interface IArgParserTemplate with
         member a.Usage = a |> function
@@ -54,6 +57,7 @@ and [<NoComparison; NoEquality; RequireSubcommand>] InitParameters =
             | Autoscale ->                  "Autoscale provisioned throughput. Use --rus to specify the maximum RU/s."
             | Mode _ ->                     "Configure RU mode to use Container-level RU, Database-level RU, or Serverless allocations (Default: Use Container-level allocation)."
             | SkipStoredProc ->             "Inhibit creation of stored procedure in specified Container."
+            | IndexUnfolds ->               "Index `c` and `d` fields within the `u` field of Tip items. Default: Don't index"
             | Cosmos _ ->                   "Cosmos Connection parameters."
 and CosmosModeType = Container | Db | Serverless
 and CosmosInitArguments(p : ParseResults<InitParameters>) =
@@ -66,6 +70,7 @@ and CosmosInitArguments(p : ParseResults<InitParameters>) =
         | CosmosModeType.Serverless, auto when auto || p.Contains Rus -> p.Raise "Cannot specify RU/s or Autoscale in Serverless mode"
         | CosmosModeType.Serverless, _ ->   CosmosInit.Provisioning.Serverless
     member val SkipStoredProc =             p.Contains InitParameters.SkipStoredProc
+    member val IncludeUnfolds =             p.Contains InitParameters.IndexUnfolds
 and [<NoComparison; NoEquality; RequireSubcommand>] TableParameters =
     | [<AltCommandLine "-D"; Unique>]       OnDemand
     | [<AltCommandLine "-s"; Mandatory>]    Streaming of Equinox.DynamoStore.Core.Initialization.StreamingMode
@@ -111,6 +116,46 @@ and [<NoComparison; NoEquality; RequireSubcommand>] StatsParameters =
             | Parallel ->                   "Run in Parallel (CAREFUL! can overwhelm RU allocations)."
             | Cosmos _ ->                   "Cosmos Connection parameters."
             | Dynamo _ ->                   "Dynamo Connection parameters."
+and [<NoComparison; NoEquality; RequireSubcommand>] QueryParameters =
+    | [<AltCommandLine "-cn"; Unique>]      CategoryName of string
+    | [<AltCommandLine "-cl"; Unique>]      CategoryLike of string
+    | [<AltCommandLine "-un"; Unique>]      UnfoldName of string
+    | [<AltCommandLine "-uc"; Unique>]      UnfoldCriteria of string
+    | [<AltCommandLine "-S"; Unique>]       IncludeStreamName
+    | [<AltCommandLine "-R"; Unique>]       ReadOnly
+    | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Store.Cosmos.Parameters>
+    interface IArgParserTemplate with
+        member a.Usage = a |> function
+            | CategoryName _ ->             "Specify category name to match against `p`, e.g. `$UserServices`."
+            | CategoryLike _ ->             "Specify category name to match against `p` as a Cosmos LIKE expression (with `%` as wildcard, e.g. `$UserServices-%`."
+            | UnfoldName _ ->               "Specify unfold Name to match against `u.c`, e.g. `Snapshotted`"
+            | UnfoldCriteria _ ->           "Specify constraints on Unfold (reference unfold fields via `u.d.`, top level fields via `c.`), e.g. `u.d.name = \"TenantName1\"`."
+            | ReadOnly ->                   "Only read `u`nfolds, not `_etag`. Default; Retrieve full data (u, p, _etag)"
+            | IncludeStreamName ->          "(For ReadOnly mode) Include StreamName (`p`). Default: Omit"
+            | Cosmos _ ->                   "Parameters for CosmosDB."
+and [<RequireQualifiedAccess>] CategoryCriteria = Name of string | Like of string | Unfiltered
+and [<RequireQualifiedAccess>] Fetch = UnfoldsOnly | UnfoldsAndName | Full
+and QueryArguments(p: ParseResults<QueryParameters>) =
+    member val CategoryCriteria =
+        match p.TryGetResult CategoryName, p.TryGetResult CategoryLike with
+        | Some cn, None -> CategoryCriteria.Name cn
+        | None, Some cl -> CategoryCriteria.Like cl
+        | None, None -> CategoryCriteria.Unfiltered
+        | Some _, Some _ -> p.Raise "CategoryLike and CategoryName are mutually exclusive"
+    member val Fields =
+        match p.Contains ReadOnly, p.Contains IncludeStreamName with
+        | true, false -> Fetch.UnfoldsOnly
+        | true, true -> Fetch.UnfoldsAndName
+        | false, _ -> Fetch.Full
+    member val UnfoldName = p.TryGetResult UnfoldName
+    member val UnfoldCriteria = p.TryGetResult UnfoldCriteria
+    member val CosmosArgs =
+        match p.GetSubCommand() with
+        | QueryParameters.Cosmos p -> Store.Cosmos.Arguments p
+        | x -> p.Raise $"unexpected subcommand %A{x}"
+    member x.ConfigureStore(log: ILogger) =
+        let storeConfig = None, true
+        Store.Cosmos.config log storeConfig x.CosmosArgs
 and [<NoComparison; NoEquality; RequireSubcommand>] DumpParameters =
     | [<AltCommandLine "-s"; MainCommand>]  Stream of FsCodec.StreamName
     | [<AltCommandLine "-C"; Unique>]       Correlation
@@ -216,13 +261,13 @@ and [<NoComparison; NoEquality; RequireSubcommand>] TestParameters =
             | Web _ ->                      "Run transactions against a Web endpoint."
 and Test = Favorite | SaveForLater | Todo
 and TestArguments(p : ParseResults<TestParameters>) =
-    member _.Options =                      p.GetResults Cached @ p.GetResults Unfolds
+    member val Options =                    p.GetResults Cached @ p.GetResults Unfolds
     member x.Cache =                        x.Options |> List.exists (function Cached ->  true | _ -> false)
     member x.Unfolds =                      x.Options |> List.exists (function Unfolds -> true | _ -> false)
-    member _.Test =                         p.GetResult(Name, Test.Favorite)
-    member _.ErrorCutoff =                  p.GetResult(ErrorCutoff, 10000L)
-    member _.TestsPerSecond =               p.GetResult(TestsPerSecond, 1000)
-    member _.Duration =                     p.GetResult(DurationM, 30.) |> TimeSpan.FromMinutes
+    member val Test =                       p.GetResult(Name, Test.Favorite)
+    member val ErrorCutoff =                p.GetResult(ErrorCutoff, 10000L)
+    member val TestsPerSecond =             p.GetResult(TestsPerSecond, 1000)
+    member val Duration =                   p.GetResult(DurationM, 30.) |> TimeSpan.FromMinutes
     member x.ReportingIntervals =           match p.GetResults(ReportIntervalS) with
                                             | [] -> TimeSpan.FromSeconds 10.|> Seq.singleton
                                             | intervals -> seq { for i in intervals -> TimeSpan.FromSeconds(float i) }
@@ -376,19 +421,20 @@ module CosmosInit =
     let connect log (p : ParseResults<Store.Cosmos.Parameters>) =
         Store.Cosmos.connect log (Store.Cosmos.Arguments p) |> fst
 
-    let containerAndOrDb log (p: ParseResults<InitParameters>) =
+    let containerAndOrDb (log: ILogger) (p: ParseResults<InitParameters>) =
         let a = CosmosInitArguments p
         match p.GetSubCommand() with
         | InitParameters.Cosmos cp ->
             let connector, dName, cName = connect log cp
+            let l = log.ForContext("IndexUnfolds", a.IncludeUnfolds)
             match a.ProvisioningMode with
             | CosmosInit.Provisioning.Container throughput ->
-                log.Information("CosmosStore provisioning at {mode:l} level for {rus:n0} RU/s", "Container", throughput)
+                l.Information("CosmosStore provisioning at {mode:l} level for {rus:n0} RU/s", "Container", throughput)
             | CosmosInit.Provisioning.Database throughput ->
-                log.Information("CosmosStore provisioning at {mode:l} level for {rus:n0} RU/s", "Database", throughput)
+                l.Information("CosmosStore provisioning at {mode:l} level for {rus:n0} RU/s", "Database", throughput)
             | CosmosInit.Provisioning.Serverless ->
-                log.Information("CosmosStore provisioning in {mode:l} mode with automatic RU/s as configured in account", "Serverless")
-            CosmosInit.init log (connector.CreateUninitialized()) (dName, cName) a.ProvisioningMode a.SkipStoredProc
+                l.Information("CosmosStore provisioning in {mode:l} mode with automatic RU/s as configured in account", "Serverless")
+            CosmosInit.init log (connector.CreateUninitialized()) (dName, cName) a.ProvisioningMode a.IncludeUnfolds a.SkipStoredProc
         | x -> p.Raise $"unexpected subcommand %A{x}"
 
 module DynamoInit =
@@ -540,6 +586,50 @@ module Dump =
         log.Information("Total Event Bodies Payload {kib:n1}KiB", float payloadBytes / 1024.)
         if verboseConsole then
             dumpStats log storeConfig
+module Query =
+    let run (log: ILogger) (p: ParseResults<QueryParameters>) = async {
+        let a = QueryArguments p
+        let storeConfig = a.ConfigureStore(log)
+        let unfoldFilter =
+            let exists cond = $"EXISTS (SELECT VALUE u FROM u IN c.u WHERE {cond})"
+            match [| match a.UnfoldName with None -> () | Some un -> $"u.c = \"{un}\""
+                     match a.UnfoldCriteria with None -> () | Some uc -> uc |] with
+            | [||] -> "1=1"
+            | [| x |] -> x |> exists
+            | xs -> String.Join(" AND ", xs) |> exists
+        let fields =
+            match a.Fields with
+            | Fetch.UnfoldsOnly -> "c.u"
+            | Fetch.UnfoldsAndName -> "c.u, c.p"
+            | Fetch.Full -> "c.u, c.p, c._etag"
+        let criteria =
+            match a.CategoryCriteria with
+            | CategoryCriteria.Name n -> $"c.p LIKE \"{n}-%%\""
+            | CategoryCriteria.Like pat -> $"c.p LIKE \"{pat}\""
+            | CategoryCriteria.Unfiltered -> Log.Warning "No CategoryName/CategoryLike specified - Unfold Criteria better be unambiguous"; "1=1"
+        let q = $"SELECT {fields} FROM c WHERE {criteria} AND {unfoldFilter}"
+        Log.Information("Querying {q}", q)
+        let container = match storeConfig with Store.Config.Cosmos (cc, _, _) -> cc.Container | _ -> failwith "Query requires Cosmos"
+        let opts = Microsoft.Azure.Cosmos.QueryRequestOptions(MaxItemCount = a.CosmosArgs.QueryMaxItems)
+        let sw, sw2 = System.Diagnostics.Stopwatch.StartNew(), System.Diagnostics.Stopwatch.StartNew()
+        use query = container.GetItemQueryIterator<Equinox.CosmosStore.Core.Tip>(q, requestOptions = opts)
+        let mutable lens, rus = 0L, 0.
+        let cats = System.Collections.Generic.HashSet()
+        while query.HasMoreResults do
+            let! res = query.ReadNextAsync(CancellationToken.None) |> Async.AwaitTaskCorrect
+            let items = res.Resource |> Array.ofSeq
+            let inline len x = if isNull x then 0 else Array.length x
+            Log.Information("Page {count}s, {us}u, {es}e {ru}RU {s:N1}s",
+                            items.Length, items |> Seq.sumBy (_.u >> len), items |> Seq.sumBy (_.e >> len), res.RequestCharge, sw.Elapsed.TotalSeconds)
+            sw.Restart()
+            lens <- lens + int64 items.Length
+            rus <- rus + res.RequestCharge
+            for x in items do
+                if not (isNull x.p) then
+                    let struct (categoryName, _sid) = x.p |> FsCodec.StreamName.parse |> FsCodec.StreamName.split
+                    cats.Add categoryName |> ignore
+        Log.Information("TOTALS {cats}c, {count}s, {ru:N2}RU {s:N1}s",
+                        cats.Count, lens, rus, sw2.Elapsed.TotalSeconds) }
 
 [<EntryPoint>]
 let main argv =
@@ -553,6 +643,7 @@ let main argv =
                 | Init a ->     (CosmosInit.containerAndOrDb log a CancellationToken.None).Wait()
                 | InitAws a ->  DynamoInit.table log a |> Async.RunSynchronously
                 | Config a ->   SqlInit.databaseOrSchema log a |> Async.RunSynchronously
+                | Query a ->    Query.run log a |> Async.RunSynchronously
                 | Dump a ->     Dump.run (log, verboseConsole, maybeSeq) a
                 | Stats a ->    CosmosStats.run (log, verboseConsole, maybeSeq) a |> Async.RunSynchronously
                 | Run a ->      let n = p.GetResult(LogFile, Arguments.programName () + ".log")
