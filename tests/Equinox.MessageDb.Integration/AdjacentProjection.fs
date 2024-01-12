@@ -62,6 +62,7 @@ module ContactPreferences =
 
 
 module Tests =
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     [<Fact>]
     let ``The projection is updated immediately`` () = async {
         use conn = new Npgsql.NpgsqlConnection(connectionString)
@@ -75,6 +76,7 @@ module Tests =
         test <@ result = Some { Projection.id = id; little_promotions = true; many_promotions = false; product_review = true; quick_surveys = false } @>
     }
 
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     [<Fact>]
     let ``The projection is not updated when no events are written`` () = async {
         use conn = new Npgsql.NpgsqlConnection(connectionString)
@@ -89,6 +91,7 @@ module Tests =
         test <@ result = None @>
     }
 
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     [<Fact>]
     let ``When the projection throws the events do not get written`` () = async {
         use conn = new Npgsql.NpgsqlConnection(connectionString)
@@ -111,6 +114,7 @@ module Tests =
         test <@ version = 0L @>
     }
 
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     [<Fact>]
     let ``The projection is updated every time`` () = async {
         use conn = new Npgsql.NpgsqlConnection(connectionString)
