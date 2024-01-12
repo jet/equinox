@@ -382,7 +382,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
     <a name="eqx-query"></a>
     ```powershell
-    # Add indexing of the `c` and `d` fields of the `u`nfolds borne by Tip Items
+    # Add indexing of the `u`nfolds borne by Tip Items: 1) `c` for the case name 2) `d` for fields of uncompressed unfolds 
     eqx init -m serverless --index-unfolds cosmos -d db -c $EQUINOX_COSMOS_VIEWS
    
     # query all streams LIKE "$User-%" with `Snapshotted2` unfolds. Batches of up to 100,000 events
@@ -403,7 +403,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
    
     # add criteria filtering based on an Uncompressed Unfold
     eqx query -cn '$User' -un EmailIndex -uc 'u.d.email = "a@b.com"' cosmos -d db -c $EQUINOX_COSMOS_VIEWS -b 100000
-    # > Querying SELECT c.u, c.p, c._etag FROM c WHERE c.p LIKE "$User-%" AND EXISTS (SELECT VALUE u FROM u IN c.u WHERE u.c = "EmailIndex" AND u.email = "a@b.com") {}
+    # > Querying SELECT c.u, c.p, c._etag FROM c WHERE c.p LIKE "$User-%" AND EXISTS (SELECT VALUE u FROM u IN c.u WHERE u.c = "EmailIndex" AND u.d.email = "a@b.com") {}
     # > Page 0s, 0u, 0e 2.8RU 0.7s {}
     # > TOTALS 0c, 0s, 2.80RU 0.7s {} # 👈 only 2.8RU if nothing is returned
     ```

@@ -261,13 +261,13 @@ and [<NoComparison; NoEquality; RequireSubcommand>] TestParameters =
             | Web _ ->                      "Run transactions against a Web endpoint."
 and Test = Favorite | SaveForLater | Todo
 and TestArguments(p : ParseResults<TestParameters>) =
-    member _.Options =                      p.GetResults Cached @ p.GetResults Unfolds
+    member val Options =                    p.GetResults Cached @ p.GetResults Unfolds
     member x.Cache =                        x.Options |> List.exists (function Cached ->  true | _ -> false)
     member x.Unfolds =                      x.Options |> List.exists (function Unfolds -> true | _ -> false)
-    member _.Test =                         p.GetResult(Name, Test.Favorite)
-    member _.ErrorCutoff =                  p.GetResult(ErrorCutoff, 10000L)
-    member _.TestsPerSecond =               p.GetResult(TestsPerSecond, 1000)
-    member _.Duration =                     p.GetResult(DurationM, 30.) |> TimeSpan.FromMinutes
+    member val Test =                       p.GetResult(Name, Test.Favorite)
+    member val ErrorCutoff =                p.GetResult(ErrorCutoff, 10000L)
+    member val TestsPerSecond =             p.GetResult(TestsPerSecond, 1000)
+    member val Duration =                   p.GetResult(DurationM, 30.) |> TimeSpan.FromMinutes
     member x.ReportingIntervals =           match p.GetResults(ReportIntervalS) with
                                             | [] -> TimeSpan.FromSeconds 10.|> Seq.singleton
                                             | intervals -> seq { for i in intervals -> TimeSpan.FromSeconds(float i) }
@@ -421,18 +421,19 @@ module CosmosInit =
     let connect log (p : ParseResults<Store.Cosmos.Parameters>) =
         Store.Cosmos.connect log (Store.Cosmos.Arguments p) |> fst
 
-    let containerAndOrDb log (p: ParseResults<InitParameters>) =
+    let containerAndOrDb (log: ILogger) (p: ParseResults<InitParameters>) =
         let a = CosmosInitArguments p
         match p.GetSubCommand() with
         | InitParameters.Cosmos cp ->
             let connector, dName, cName = connect log cp
+            let l = log.ForContext("IndexUnfolds", a.IncludeUnfolds)
             match a.ProvisioningMode with
             | CosmosInit.Provisioning.Container throughput ->
-                log.Information("CosmosStore provisioning at {mode:l} level for {rus:n0} RU/s", "Container", throughput)
+                l.Information("CosmosStore provisioning at {mode:l} level for {rus:n0} RU/s", "Container", throughput)
             | CosmosInit.Provisioning.Database throughput ->
-                log.Information("CosmosStore provisioning at {mode:l} level for {rus:n0} RU/s", "Database", throughput)
+                l.Information("CosmosStore provisioning at {mode:l} level for {rus:n0} RU/s", "Database", throughput)
             | CosmosInit.Provisioning.Serverless ->
-                log.Information("CosmosStore provisioning in {mode:l} mode with automatic RU/s as configured in account", "Serverless")
+                l.Information("CosmosStore provisioning in {mode:l} mode with automatic RU/s as configured in account", "Serverless")
             CosmosInit.init log (connector.CreateUninitialized()) (dName, cName) a.ProvisioningMode a.IncludeUnfolds a.SkipStoredProc
         | x -> p.Raise $"unexpected subcommand %A{x}"
 

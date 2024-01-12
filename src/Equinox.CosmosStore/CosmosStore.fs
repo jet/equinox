@@ -560,13 +560,13 @@ module Initialization =
         try let! r = c.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(id = name, body = body), cancellationToken = ct)
             return r.RequestCharge
         with :? CosmosException as ce when ce.StatusCode = System.Net.HttpStatusCode.Conflict -> return ce.RequestCharge }
-    let private applyBatchAndTipContainerProperties unfoldsToo (cp: ContainerProperties) =
+    let private applyBatchAndTipContainerProperties indexUnfolds (cp: ContainerProperties) =
         cp.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
         cp.IndexingPolicy.Automatic <- true
         // We specify fields on whitelist basis; generic querying is inapplicable, and indexing is far from free (write RU and latency)
         // Given how long and variable the blacklist would be, we whitelist instead
         cp.IndexingPolicy.ExcludedPaths.Add(ExcludedPath(Path="/*"))
-        for p in [| yield! Batch.IndexedPaths; if unfoldsToo then yield! Unfold.IndexedPaths |] do
+        for p in [| yield! Batch.IndexedPaths; if indexUnfolds then yield! Unfold.IndexedPaths |] do
             cp.IndexingPolicy.IncludedPaths.Add(IncludedPath(Path = p))
     let createSyncStoredProcIfNotExists (log: ILogger option) container ct = task {
         let! t, ru = createStoredProcIfNotExists container (SyncStoredProc.name, SyncStoredProc.body) |> Stopwatch.time ct
@@ -722,21 +722,6 @@ module internal Query =
             else used <- used + bytes
             if x.Index = stopIndex then found <- true
         used, dropped
-
-    // Attempts to hydrate a stream's state from the unfolds
-    let tryHydrate (tryDecode: ITimelineEvent<EventBody> -> 'event voption, isOrigin: 'event -> bool) (unfolds: Unfold[], etag: string voption) =
-        let stack = ResizeArray()
-        let isOrigin' (u: ITimelineEvent<EventBody>) =
-            match tryDecode u with
-            | ValueNone -> false
-            | ValueSome e ->
-                stack.Insert(0, e) // WalkResult always renders events ordered correctly - here we're aiming to align with Enum.EventsAndUnfolds
-                isOrigin e
-        match Enum.Unfolds unfolds |> Seq.tryFindBack isOrigin' with
-        | Some u ->
-            let pos = match etag with ValueSome etag -> Position.fromEtagAndIndex (etag, u.Index) | ValueNone -> Position.readOnly
-            ValueSome (pos, stack.ToArray())
-        | None -> ValueNone
 
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
     type ScanResult<'event> = { found: bool; minIndex: int64; next: int64; maybeTipPos: Position option; events: 'event[] }
