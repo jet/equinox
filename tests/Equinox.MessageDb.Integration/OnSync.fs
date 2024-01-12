@@ -15,10 +15,11 @@ type Category<'event, 'state, 'req> = MessageDbCategory<'event, 'state, 'req>
 
 let createContext connection batchSize = Context(connection, batchSize = batchSize)
 
-
 module Projection =
+
     [<CLIMutable>]
     type ContactPreferences = { id: string; many_promotions: bool; little_promotions: bool; product_review: bool; quick_surveys: bool }
+
     let createTable (conn: Npgsql.NpgsqlConnection) =
         conn.Execute("create table if not exists public.contact_preferences (
             id text not null primary key,
@@ -37,14 +38,11 @@ module Projection =
                  little_promotions = EXCLUDED.little_promotions,
                  product_review = EXCLUDED.product_review,
                  quick_surveys = EXCLUDED.quick_surveys",
-            { id = FsCodec.StreamId.toString streamId; many_promotions = state.manyPromotions; little_promotions = state.littlePromotions; product_review = state.productReview; quick_surveys = state.quickSurveys })
-        return () }
-    let readOne id (conn: Npgsql.NpgsqlConnection) = task {
+             { id = FsCodec.StreamId.toString streamId; many_promotions = state.manyPromotions; little_promotions = state.littlePromotions; product_review = state.productReview; quick_surveys = state.quickSurveys })
+        () }
+    let tryRead id (conn: Npgsql.NpgsqlConnection) = task {
         let! result = conn.QueryFirstOrDefaultAsync<ContactPreferences>("select * from public.contact_preferences where id = @id", {| id = id |})
-        return if obj.ReferenceEquals(result, null)
-            then None
-            else Some result
-
+        return if obj.ReferenceEquals(result, null) then None else Some result
     }
 
 module ContactPreferences =
@@ -56,14 +54,11 @@ module ContactPreferences =
         Category(createContext connection 1, ContactPreferences.Stream.Category, codec, fold, initial, access, caching, onSync)
         |> Equinox.Decider.forStream log
         |> ContactPreferences.create
-
     let create log connection = createWithOnSync log connection Projection.project
 
-
-
 module Tests =
+
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    [<Fact>]
     let ``The projection is updated immediately`` () = async {
         use conn = new Npgsql.NpgsqlConnection(connectionString)
         Projection.createTable conn
@@ -72,12 +67,11 @@ module Tests =
         let id = System.Guid.NewGuid() |> Guid.toStringN
         let clientId = ContactPreferences.ClientId id
         do! service.Update(clientId, { littlePromotions = true; manyPromotions = false; productReview = true; quickSurveys = false })
-        let! result = conn |> Projection.readOne id |> Async.AwaitTask
+        let! result = conn |> Projection.tryRead id |> Async.AwaitTask
         test <@ result = Some { Projection.id = id; little_promotions = true; many_promotions = false; product_review = true; quick_surveys = false } @>
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    [<Fact>]
     let ``The projection is not updated when no events are written`` () = async {
         use conn = new Npgsql.NpgsqlConnection(connectionString)
         Projection.createTable conn
@@ -87,12 +81,11 @@ module Tests =
         let clientId = ContactPreferences.ClientId id
         // this is the initial state
         do! service.Update(clientId, ContactPreferences.Fold.initial)
-        let! result = conn |> Projection.readOne id |> Async.AwaitTask
+        let! result = conn |> Projection.tryRead id |> Async.AwaitTask
         test <@ result = None @>
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    [<Fact>]
     let ``When the projection throws the events do not get written`` () = async {
         use conn = new Npgsql.NpgsqlConnection(connectionString)
         Projection.createTable conn
@@ -106,7 +99,7 @@ module Tests =
             do! service.Update(clientId, { littlePromotions = true; manyPromotions = false; productReview = true; quickSurveys = false })
             failwith "Unexpected success"
         with exn -> test <@  exn.Message = "Test error" @>
-        let! result = conn |> Projection.readOne id |> Async.AwaitTask
+        let! result = conn |> Projection.tryRead id |> Async.AwaitTask
         test <@ result = None @>
         let! result = service.Read(clientId)
         let! version = service.ReadVersion(clientId)
@@ -115,7 +108,6 @@ module Tests =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    [<Fact>]
     let ``The projection is updated every time`` () = async {
         use conn = new Npgsql.NpgsqlConnection(connectionString)
         Projection.createTable conn
@@ -125,6 +117,6 @@ module Tests =
         let clientId = ContactPreferences.ClientId id
         do! service.Update(clientId, { littlePromotions = true; manyPromotions = false; productReview = true; quickSurveys = false })
         do! service.Update(clientId, { littlePromotions = true; manyPromotions = true; productReview = true; quickSurveys = false })
-        let! result = conn |> Projection.readOne id |> Async.AwaitTask
+        let! result = conn |> Projection.tryRead id |> Async.AwaitTask
         test <@ result = Some { Projection.id = id; little_promotions = true; many_promotions = true; product_review = true; quick_surveys = false } @>
     }

@@ -396,7 +396,7 @@ type private StoreCategory<'event, 'state, 'req>(context: MessageDbContext, code
             let encode e = codec.Encode(req, e)
             let encodedEvents: IEventData<EventBody>[] = events |> Array.map encode
             let state' = fold state events
-            let onSync = match onSync with Some f -> Some (fun conn -> f (StreamId.Elements.trust streamId) state' conn) | None -> None
+            let onSync = onSync |> Option.map (fun f -> f (StreamId.Elements.trust streamId) state')
             match! context.TrySync(log, categoryName, streamId, streamName, token, encodedEvents, onSync, ct) with
             | GatewaySyncResult.Written token' ->
                 match access with
@@ -416,7 +416,7 @@ type private StoreCategory<'event, 'state, 'req>(context: MessageDbContext, code
         context.StoreSnapshot(log, category, streamId, encodedWithMeta, ct)
 
 /// <summary>
-/// The OnSync handler will be handed the <c>streamId</c>, <c>state</c>,
+/// The ~ handler will be handed the <c>streamId</c>, <c>state</c>,
 /// and the <c>connection</c> (still in an open transaction) that was used to
 /// append events to the store. This allows you to update other tables
 /// in the same transaction. Use only if you know what you're doing
