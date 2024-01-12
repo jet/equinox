@@ -127,7 +127,7 @@ type Tests() =
     let [<Fact>] ``allowStale unifies compatible concurrent loads`` () = task {
         cat.Delay <- TimeSpan.FromMilliseconds 70 // Ensure it's still in progress when our Delay is over
         let t1 = allowStale 1
-        do! Task.Delay 40 // Allow it time to definitely have started
+        do! Task.Delay 50 // Allow it time to definitely have started
         test <@ (1, 0) = (cat.Loads, cat.Reloads) @>
         let! struct (_token, state) = allowStale 300
         test <@ (1, 1, 0) = (state, cat.Loads, cat.Reloads) @>

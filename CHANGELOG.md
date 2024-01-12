@@ -52,7 +52,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Stores: `*Category` ctor: Change `fold` to be a `Func` (no changes to F# code required) [#421](https://github.com/jet/equinox/pull/421)
 - Stores: `*Category` ctor: Change `caching` to be last argument, to reflect that it is applied over the top [#410](https://github.com/jet/equinox/pull/410)
 - Stores: `*Category` ctor: Change `caching` and `access` to be mandatory, adding `NoCaching` and `Unoptimized` modes to represent the former defaults [#417](https://github.com/jet/equinox/pull/417)
-- `CosmosStore`: Require `Microsoft.Azure.Cosmos` v `3.27.0` [#310](https://github.com/jet/equinox/pull/310)
+- `CosmosStore`: Require `Microsoft.Azure.Cosmos` v `3.35.4` [#310](https://github.com/jet/equinox/pull/310)
 - `CosmosStore`: Switch to natively using `JsonElement` event bodies [#305](https://github.com/jet/equinox/pull/305) :pray: [@ylibrach](https://github.com/ylibrach)
 - `CosmosStore`: Switch to natively using `System.Text.Json` for serialization of all `Microsoft.Azure.Cosmos` round-trips [#305](https://github.com/jet/equinox/pull/305) :pray: [@ylibrach](https://github.com/ylibrach)
 - `CosmosStore`: Only log `bytes` when log level is `Debug` [#305](https://github.com/jet/equinox/pull/305)

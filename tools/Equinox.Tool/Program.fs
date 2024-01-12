@@ -70,7 +70,7 @@ and CosmosInitArguments(p : ParseResults<InitParameters>) =
         | CosmosModeType.Serverless, auto when auto || p.Contains Rus -> p.Raise "Cannot specify RU/s or Autoscale in Serverless mode"
         | CosmosModeType.Serverless, _ ->   CosmosInit.Provisioning.Serverless
     member val SkipStoredProc =             p.Contains InitParameters.SkipStoredProc
-    member val IncludeUnfolds =             p.Contains InitParameters.IndexUnfolds
+    member val IndexUnfolds =               p.Contains InitParameters.IndexUnfolds
 and [<NoComparison; NoEquality; RequireSubcommand>] TableParameters =
     | [<AltCommandLine "-D"; Unique>]       OnDemand
     | [<AltCommandLine "-s"; Mandatory>]    Streaming of Equinox.DynamoStore.Core.Initialization.StreamingMode
@@ -426,7 +426,7 @@ module CosmosInit =
         match p.GetSubCommand() with
         | InitParameters.Cosmos cp ->
             let connector, dName, cName = connect log cp
-            let l = log.ForContext("IndexUnfolds", a.IncludeUnfolds)
+            let l = log.ForContext("IndexUnfolds", a.IndexUnfolds)
             match a.ProvisioningMode with
             | CosmosInit.Provisioning.Container throughput ->
                 l.Information("CosmosStore provisioning at {mode:l} level for {rus:n0} RU/s", "Container", throughput)
@@ -434,7 +434,7 @@ module CosmosInit =
                 l.Information("CosmosStore provisioning at {mode:l} level for {rus:n0} RU/s", "Database", throughput)
             | CosmosInit.Provisioning.Serverless ->
                 l.Information("CosmosStore provisioning in {mode:l} mode with automatic RU/s as configured in account", "Serverless")
-            CosmosInit.init log (connector.CreateUninitialized()) (dName, cName) a.ProvisioningMode a.IncludeUnfolds a.SkipStoredProc
+            CosmosInit.init log (connector.CreateUninitialized()) (dName, cName) a.ProvisioningMode a.IndexUnfolds a.SkipStoredProc
         | x -> p.Raise $"unexpected subcommand %A{x}"
 
 module DynamoInit =
