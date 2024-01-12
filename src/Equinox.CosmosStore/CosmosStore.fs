@@ -540,15 +540,20 @@ module Initialization =
             return d }
     let private createContainerIfNotExists (d: Database) cp maybeTp = async {
         let! r = Async.call (fun ct -> d.CreateContainerIfNotExistsAsync(cp, throughputProperties = Option.toObj maybeTp, cancellationToken = ct))
-        return r.Container }
+        let existed = r.StatusCode = Net.HttpStatusCode.OK
+        if existed then
+            do! Async.call (fun ct -> r.Container.ReplaceContainerAsync(cp, cancellationToken = ct)) |> Async.Ignore
+        return r.Container, existed }
     let private createOrProvisionContainer (d: Database) (cName, pkPath, customizeContainer) mode =
         let cp = ContainerProperties(id = cName, partitionKeyPath = pkPath)
         customizeContainer cp
         match mode with
-        | Provisioning.Database _ | Provisioning.Serverless -> createContainerIfNotExists d cp None
+        | Provisioning.Database _ | Provisioning.Serverless -> async {
+            let! c, _existed = createContainerIfNotExists d cp None
+            return c }
         | Provisioning.Container (ThroughputProperties throughput) -> async {
-            let! c = createContainerIfNotExists d cp (Some throughput)
-            let! _ = Async.call (fun ct -> c.ReplaceThroughputAsync(throughput, cancellationToken = ct))
+            let! c, existed = createContainerIfNotExists d cp (Some throughput)
+            if existed then do! Async.call (fun ct -> c.ReplaceThroughputAsync(throughput, cancellationToken = ct)) |> Async.Ignore
             return c }
 
     let private createStoredProcIfNotExists (c: Container) (name, body) ct: Task<float> = task {
