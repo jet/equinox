@@ -415,6 +415,14 @@ type private StoreCategory<'event, 'state, 'req>(context: MessageDbContext, code
             FsCodec.Core.EventData.Create(rawEvent.EventType, rawEvent.Data, meta = Snapshot.meta token)
         context.StoreSnapshot(log, category, streamId, encodedWithMeta, ct)
 
+/// <summary>
+/// The OnSync handler will be handed the <c>streamId</c>, <c>state</c>,
+/// and the <c>connection</c> (still in an open transaction) that was used to
+/// append events to the store. This allows you to update other tables
+/// in the same transaction. Use only if you know what you're doing
+/// </summary>
+type OnSync<'state> = StreamId -> 'state -> Npgsql.NpgsqlConnection -> Task<unit>
+
 type MessageDbCategory<'event, 'state, 'req>(context: MessageDbContext, name, codec, fold, initial, access,
         // For MessageDb, caching is less critical than it is for e.g. CosmosDB.
         // However, while not necessary to control costs, caching can improve the throughput of your application a few times over,
@@ -422,5 +430,5 @@ type MessageDbCategory<'event, 'state, 'req>(context: MessageDbContext, name, co
         //   e.g. if streams are always short, events are always small, you are absolutely certain there will be no cache hits
         //        (and you have a cheerful but bored DBA)
         caching,
-        ?onSync) =
+        ?onSync: OnSync<'state>) =
     inherit Equinox.Category<'event, 'state, 'req>(name, StoreCategory(context, codec, fold, initial, access, onSync) |> Caching.apply Token.isStale caching)

@@ -1,4 +1,4 @@
-module Equinox.MessageDb.Integration.AdjacentProjection
+module Equinox.MessageDb.Integration.OnSync
 
 open Dapper
 open Domain
@@ -41,7 +41,7 @@ module Projection =
         return () }
     let readOne id (conn: Npgsql.NpgsqlConnection) = task {
         let! result = conn.QueryFirstOrDefaultAsync<ContactPreferences>("select * from public.contact_preferences where id = @id", {| id = id |})
-        return if System.Object.ReferenceEquals(result, null)
+        return if obj.ReferenceEquals(result, null)
             then None
             else Some result
 
@@ -69,7 +69,7 @@ module Tests =
         Projection.createTable conn
         let connection = connectToLocalStore()
         let service = ContactPreferences.create Serilog.Log.Logger connection
-        let id = System.Guid.NewGuid().ToString("N")
+        let id = System.Guid.NewGuid() |> Guid.toStringN
         let clientId = ContactPreferences.ClientId id
         do! service.Update(clientId, { littlePromotions = true; manyPromotions = false; productReview = true; quickSurveys = false })
         let! result = conn |> Projection.readOne id |> Async.AwaitTask
@@ -83,7 +83,7 @@ module Tests =
         Projection.createTable conn
         let connection = connectToLocalStore()
         let service = ContactPreferences.create Serilog.Log.Logger connection
-        let id = System.Guid.NewGuid().ToString("N")
+        let id = System.Guid.NewGuid() |> Guid.toStringN
         let clientId = ContactPreferences.ClientId id
         // this is the initial state
         do! service.Update(clientId, ContactPreferences.Fold.initial)
@@ -100,7 +100,7 @@ module Tests =
         let service = ContactPreferences.createWithOnSync Serilog.Log.Logger connection (fun _ _ _ -> task {
             failwith "Test error"
         })
-        let id = System.Guid.NewGuid().ToString("N")
+        let id = System.Guid.NewGuid() |> Guid.toStringN
         let clientId = ContactPreferences.ClientId id
         try
             do! service.Update(clientId, { littlePromotions = true; manyPromotions = false; productReview = true; quickSurveys = false })
@@ -121,7 +121,7 @@ module Tests =
         Projection.createTable conn
         let connection = connectToLocalStore()
         let service = ContactPreferences.create Serilog.Log.Logger connection
-        let id = System.Guid.NewGuid().ToString("N")
+        let id = System.Guid.NewGuid() |> Guid.toStringN
         let clientId = ContactPreferences.ClientId id
         do! service.Update(clientId, { littlePromotions = true; manyPromotions = false; productReview = true; quickSurveys = false })
         do! service.Update(clientId, { littlePromotions = true; manyPromotions = true; productReview = true; quickSurveys = false })

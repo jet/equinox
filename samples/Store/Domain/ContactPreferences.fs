@@ -62,7 +62,7 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
 
     member _.ReadVersion(email) =
         let decider = resolve email
-        decider.QueryEx (fun x -> x.Version)
+        decider.QueryEx(fun x -> x.Version)
 
     member _.ReadStale(email) =
         let decider = resolve email
