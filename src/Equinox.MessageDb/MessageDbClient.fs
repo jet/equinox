@@ -56,7 +56,7 @@ module private WriteMessage =
 
 type internal MessageDbWriter(connectionString: string) =
 
-    member _.WriteMessages(streamName, events: _[], version, project, ct) = task {
+    member _.WriteMessages(streamName, events: _[], version, onSync, ct) = task {
         use! conn = createConnectionAndOpen connectionString ct
         use transaction = conn.BeginTransaction()
         use batch = new NpgsqlBatch(conn, transaction)
@@ -65,7 +65,7 @@ type internal MessageDbWriter(connectionString: string) =
             WriteMessage.prepareCommand streamName expectedVersion e
         events |> Seq.mapi toAppendCall |> Seq.iter batch.BatchCommands.Add
         try do! batch.ExecuteNonQueryAsync(ct) :> Task
-            match project with
+            match onSync with
             | Some fn -> do! fn conn
             | None -> ()
             do! transaction.CommitAsync(ct)
