@@ -402,7 +402,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     # > TOTALS 0c, 8774s, 342.33RU 3.8s {} # 👈 cheaper and only one batch as no .p or ._etag 
    
     # add criteria filtering based on an Uncompressed Unfold
-    eqx query -cn '$User' -un EmailIndex -uc 'u.email = "a@b.com"' cosmos -d db -c $EQUINOX_COSMOS_VIEWS -b 100000
+    eqx query -cn '$User' -un EmailIndex -uc 'u.d.email = "a@b.com"' cosmos -d db -c $EQUINOX_COSMOS_VIEWS -b 100000
     # > Querying SELECT c.u, c.p, c._etag FROM c WHERE c.p LIKE "$User-%" AND EXISTS (SELECT VALUE u FROM u IN c.u WHERE u.c = "EmailIndex" AND u.email = "a@b.com") {}
     # > Page 0s, 0u, 0e 2.8RU 0.7s {}
     # > TOTALS 0c, 0s, 2.80RU 0.7s {} # 👈 only 2.8RU if nothing is returned

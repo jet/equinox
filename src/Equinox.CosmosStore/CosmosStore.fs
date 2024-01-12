@@ -66,8 +66,8 @@ type Batch = // TODO for STJ v5: All fields required unless explicitly optional
         /// The Domain Events (as opposed to Unfolded Events, see Tip) at this offset in the stream
         e: Event[] }
     static member internal PartitionKeyField = "p"
-    // As one cannot sort by the implicit `id` field, we have an indexed `i` field for sort and range query use
-    // NB its critical to index the nominated PartitionKey field as RU costs increase if you don't
+    // As one cannot sort by the (mandatory) `id` field, we have an indexed `i` field for sort and range query use
+    // NB its critical to also index the nominated PartitionKey field as RU costs increase (things degrade to scans) if you don't
     // TOCONSIDER: indexing strategy was developed and tuned before composite key extensions in ~2021, which might potentially be more efficient
     //             a decent attempt at https://github.com/jet/equinox/issues/274 failed, but not 100% sure it's fundamentally impossible/wrong
     static member internal IndexedPaths = [| Batch.PartitionKeyField; "i"; "n" |] |> Array.map (fun k -> $"/%s{k}/?")
@@ -91,7 +91,7 @@ type Unfold =
         /// Optional metadata, same encoding as `d` (can be null; not written if missing)
         [<Serialization.JsonConverter(typeof<JsonCompressedBase64Converter>)>]
         m: EventBody } // TODO for STJ v5: Optional, not serialized if missing
-    // Arrays are not indexed by default; enable filtering by case. Index uncompressed fields
+    // Arrays are not indexed by default. 1. enable filtering by `c`ase 2. index uncompressed fields within unfolds for filtering
     static member internal IndexedPaths = [| "/u/[]/c/?"; "/u/[]/d/*" |]
 
 /// The special-case 'Pending' Batch Format used to read the currently active (and mutable) document

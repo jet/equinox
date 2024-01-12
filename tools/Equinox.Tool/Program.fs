@@ -122,16 +122,16 @@ and [<NoComparison; NoEquality; RequireSubcommand>] QueryParameters =
     | [<AltCommandLine "-un"; Unique>]      UnfoldName of string
     | [<AltCommandLine "-uc"; Unique>]      UnfoldCriteria of string
     | [<AltCommandLine "-S"; Unique>]       IncludeStreamName
-    | [<AltCommandLine "-R"; Unique>]       QueryOnly
-    | [<CliPrefix(CliPrefix.None)>]         Cosmos   of ParseResults<Store.Cosmos.Parameters>
+    | [<AltCommandLine "-R"; Unique>]       ReadOnly
+    | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Store.Cosmos.Parameters>
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | CategoryName _ ->             "Specify category name, e.g. `$UserServices`."
-            | CategoryLike _ ->             "Specify category name Cosmos LIKE expression (with `%` as wildcard), e.g. `$UserServices-%`."
-            | UnfoldName _ ->               "Specify unfold Name (e.g. `Snapshotted`)."
-            | UnfoldCriteria _ ->           "Specify constraints on Unfold (reference unfold fields via `u.`, top level fields via `c.`), e.g. `u.Name = \"TenantName1\"`."
-            | IncludeStreamName ->          "Include StreamName (`p`). Default: Omit (QueryMany omits this by default)"
-            | QueryOnly ->                  "Only read Unfolds; Equivalent to QueryMany: retrieves `u` only. Default; Retrieve full data as per TransactMany (u, p, _etag)"
+            | CategoryName _ ->             "Specify category name to match against `p`, e.g. `$UserServices`."
+            | CategoryLike _ ->             "Specify category name to match against `p` as a Cosmos LIKE expression (with `%` as wildcard, e.g. `$UserServices-%`."
+            | UnfoldName _ ->               "Specify unfold Name to match against `u.c`, e.g. `Snapshotted`"
+            | UnfoldCriteria _ ->           "Specify constraints on Unfold (reference unfold fields via `u.d.`, top level fields via `c.`), e.g. `u.d.name = \"TenantName1\"`."
+            | ReadOnly ->                   "Only read `u`nfolds, not `_etag`. Default; Retrieve full data (u, p, _etag)"
+            | IncludeStreamName ->          "(For ReadOnly mode) Include StreamName (`p`). Default: Omit"
             | Cosmos _ ->                   "Parameters for CosmosDB."
 and [<RequireQualifiedAccess>] CategoryCriteria = Name of string | Like of string | Unfiltered
 and [<RequireQualifiedAccess>] Fetch = UnfoldsOnly | UnfoldsAndName | Full
@@ -143,7 +143,7 @@ and QueryArguments(p: ParseResults<QueryParameters>) =
         | None, None -> CategoryCriteria.Unfiltered
         | Some _, Some _ -> p.Raise "CategoryLike and CategoryName are mutually exclusive"
     member val Fields =
-        match p.Contains QueryOnly, p.Contains IncludeStreamName with
+        match p.Contains ReadOnly, p.Contains IncludeStreamName with
         | true, false -> Fetch.UnfoldsOnly
         | true, true -> Fetch.UnfoldsAndName
         | false, _ -> Fetch.Full
