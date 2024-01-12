@@ -10,6 +10,7 @@
     <Compile Include="..\Equinox.EventStoreDb.Integration\Infrastructure.fs" Link="Infrastructure.fs" />
     <Compile Include="..\..\samples\Store\Integration\AutoDataAttribute.fs" Link="AutoDataAttribute.fs" />
     <Compile Include="..\Equinox.EventStoreDb.Integration\StoreIntegration.fs" Link="StoreIntegration.fs" />
+    <Compile Include="OnSync.fs" />
 
   </ItemGroup>
 
@@ -19,6 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Dapper" Version="2.1.28" />
     <PackageReference Include="FsCheck.xUnit" Version="3.0.0-rc1" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="OpenTelemetry" Version="1.4.0-beta.3" />

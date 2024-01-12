@@ -1,11 +1,14 @@
 ﻿module Domain.ContactPreferences
 
 type ClientId = ClientId of email: string
-module ClientId = let toString (ClientId email) = email
+module ClientId =
+    let toString (ClientId email) = email
+    let parse = ClientId
 
 module Stream =
     let [<Literal>] Category = "ContactPreferences"
     let id = FsCodec.StreamId.gen ClientId.toString // TODO hash >> base64
+    let decodeId = FsCodec.StreamId.dec ClientId.parse
     let name = id >> FsCodec.StreamName.create Category
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
@@ -56,6 +59,10 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
     member _.Read(email) =
         let decider = resolve email
         decider.Query id
+
+    member _.ReadVersion(email) =
+        let decider = resolve email
+        decider.QueryEx(fun x -> x.Version)
 
     member _.ReadStale(email) =
         let decider = resolve email
