@@ -383,7 +383,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     <a name="eqx-query"></a>
     ```powershell
     # Add indexing of the `u`nfolds borne by Tip Items: 1) `c` for the case name 2) `d` for fields of uncompressed unfolds 
-    eqx init -m serverless --index-unfolds cosmos -d db -c $EQUINOX_COSMOS_VIEWS
+    eqx init -m serverless --indexunfolds cosmos -d db -c $EQUINOX_COSMOS_VIEWS
    
     # query all streams LIKE "$User-%" with `Snapshotted2` unfolds. Batches of up to 100,000 events
     eqx query -cn '$User' -un Snapshotted2 cosmos -d db -c $EQUINOX_COSMOS_VIEWS -b 100000

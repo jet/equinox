@@ -25,7 +25,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `EventStore`: Revise test rig to target a Docker-hosted cluster [#317](https://github.com/jet/equinox/pull/317)
 - `EventStoreDb`: As per `EventStore` module, but using the modern `EventStore.Client.Grpc.Streams` client [#196](https://github.com/jet/equinox/pull/196)
 - `MessageDb`: Implements a [message-db](http://docs.eventide-project.org/user-guide/message-db/) storage backend [#339](https://github.com/jet/equinox/pull/339) with OpenTelemetry tracing and snapshotting support [#348](https://github.com/jet/equinox/pull/348) :pray: [@nordfjord](https://github.com/nordfjord)
-- `eqx init`: `-U/--index-unfolds` enables querying uncompressed unfolds (see `shouldCompress`) [#434](https://github.com/jet/equinox/pull/434)
+- `eqx init`: `-U/--indexunfolds` enables querying uncompressed unfolds (see `shouldCompress`) [#434](https://github.com/jet/equinox/pull/434)
 - `eqx query`: Queries based on uncompressed unfolds (see `eqx init -U`) [#434](https://github.com/jet/equinox/pull/434)
 - `eqx dump`: `-s` flag is now optional
 - `eqx stats`: `-A` flag to request all stats (equivalent to requesting `-ESD`) [#424](https://github.com/jet/equinox/pull/424)
