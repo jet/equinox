@@ -97,8 +97,8 @@ module Fold =
     // Recognize a relevant snapshot when we meet one in the chain
     let isValid : Events.Event -> bool = function _, Events.Snapshot _ -> true | _ -> false
 
-let decideAdd count = [| -1L, Events.Added { count = delta } |]
-let decideRemove count = [|
+let decideAdd delta _state = [| -1L, Events.Added { count = delta } |]
+let decideRemove delta state = [|
     let bal = state |> Fold.State.balance
     if bal < delta then invalidArg "delta" $"delta %d{delta} exceeds balance %d{bal}"
     else -1L, Events.Removed { count = delta } |]
@@ -116,7 +116,7 @@ type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.St
         decider.Query Fold.State.balance
     member _.AsAt(clientId,index)  =
         let decider = resolve clientId
-        decider.Query((fun state -> state[index]))
+        decider.Query(fun state -> state[index])
 
 module Log =
     open Serilog

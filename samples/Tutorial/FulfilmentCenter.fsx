@@ -98,22 +98,22 @@ module FulfilmentCenter =
 
     type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
 
-        member _.UpdateName(id, value) =
+        member _.UpdateName(fc, value) =
             let decider = resolve fc
             decider.Transact(interpret (Register value))
-        member _.UpdateAddress(id, value) =
+        member _.UpdateAddress(fc, value) =
             let decider = resolve fc
             decider.Transact(interpret (UpdateAddress value))
-        member _.UpdateContact(id, value) =
+        member _.UpdateContact(fc, value) =
             let decider = resolve fc
             decider.Transact(interpret (UpdateContact value))
-        member _.UpdateDetails(id, value) =
+        member _.UpdateDetails(fc, value) =
             let decider = resolve fc
             decider.Transact(interpret (UpdateDetails value))
-        member _.Read id : Async<Summary> =
+        member _.Read fc : Async<Summary> =
             let decider = resolve fc
             decider.Query id
-        member _.QueryWithVersion(id, render : Fold.State -> 'res) : Async<int64*'res> =
+        member _.QueryWithVersion(fc, render : Fold.State -> 'res) : Async<int64*'res> =
             let decider = resolve fc
             decider.QueryEx(fun c -> c.Version, render c.State)
 

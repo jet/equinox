@@ -72,9 +72,9 @@ let interpret c (state : State) = [|
 
 type Equinox.Decider<'e, 's> with
 
-    member x.TransactWithPostState(interpret: 's -> 'e[], render: 's -> 'r): Async<'r> =
+    member x.TransactEx(interpret: 's -> 'e[], render: Equinox.ISyncContext<_> -> 'r): Async<'r> =
         x.TransactEx((fun (c: Equinox.ISyncContext<_>) -> (), interpret c.State),
-                     fun () (c: Equinox.ISyncContext<_>) -> render c.State)
+                     fun () (c: Equinox.ISyncContext<_>) -> render c)
         
 type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
 
@@ -89,10 +89,10 @@ type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
         decider.Transact(interpret command)
     member _.Create(clientId, template: Todo): Async<Todo> =
         let decider = resolve clientId
-        decider.TransactWithPostState(interpret (Add template), fun s -> s.items |> List.head)
+        decider.TransactEx(interpret (Add template), fun c -> c.State.items |> List.head)
     member _.Patch(clientId, item: Todo): Async<Todo> =
         let decider = resolve clientId
-        decider.TransactWithPostState(interpret (Update item), fun s -> s.items |> List.find (fun x -> x.id = item.id))
+        decider.TransactEx(interpret (Update item), fun c -> c.State.items |> List.find (fun x -> x.id = item.id))
     member _.Clear clientId : Async<unit> =
         let decider = resolve clientId
         decider.Transact(interpret Clear)
