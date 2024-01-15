@@ -657,22 +657,16 @@ let toSnapshot state = [| Event.Snapshotted (Array.ofList state) |]
 
 type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    let execute clientId command: Async<unit> =
+    member _.Execute(clientId, command) =
         let decider = resolve clientId
         decider.Transact(interpret command)
-        
-    let read clientId: Async<string list> =
+    member x.Favorite(clientId, skus) =
+        x.Execute(clientId, Command.Favorite(DateTimeOffset.Now, skus))
+    member x.Unfavorite(clientId, skus) =
+        x.Execute(clientId, Command.Unfavorite skus)
+    member _.List clientId: Async<Events.Favorited []> =
         let decider = resolve clientId
         decider.Query id
-
-    member _.Execute(clientId, command) =
-        execute clientId command
-    member _.Favorite(clientId, skus) =
-        execute clientId (Command.Favorite(DateTimeOffset.Now, skus))
-    member _.Unfavorite(clientId, skus) =
-        execute clientId (Command.Unfavorite skus)
-    member _.List clientId: Async<Events.Favorited []> =
-        read clientId
 
 let create resolve: Service =
     Service(Stream.id >> resolve)
@@ -907,14 +901,14 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
 let create resolve = Service(Stream.id >> resolve)
 ```
 
-`Read` above will do a roundtrip to the Store in order to fetch the most recent
+`read` above will do a roundtrip to the Store in order to fetch the most recent
 state (in `AnyCachedValue` or `AllowStale` modes, the store roundtrip can be optimized out by
 reading through the cache). This Synchronous Read can be used to
 [Read-your-writes](https://en.wikipedia.org/wiki/Consistency_model#Read-your-writes_Consistency)
 to establish a state incorporating the effects of any Command invocation you
 know to have been completed.
 
-`Execute` runs an Optimistic Concurrency Controlled `Transact` loop in order to
+`execute` runs an Optimistic Concurrency Controlled `Transact` loop in order to
 effect the intent of the [write-only] Command. This involves:
 
 1. establish state
@@ -1095,25 +1089,22 @@ let interpret c (state: State) =
 ```fsharp
 type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    let execute clientId command: Async<unit> =
-        let decider = resolve clientId
-        decider.Transact(interpret command)
     let handle clientId command: Async<Todo list> =
         let decider = resolve clientId
         decider.Transact(fun state ->
             let events = interpret command state
             let state' = fold state events
             state'.items,events)
-    let query clientId (projection: State -> T): Async<T> =
-        let decider = resolve clientId
-        decider.Query projection
 
     member _.List clientId: Async<Todo seq> =
-        query clientId (fun s -> s.items |> Seq.ofList)
+        let decider = resolve clientId
+        decider.Query(fun s -> s.items |> Seq.ofList)
     member _.TryGet(clientId, id) =
-        query clientId (fun x -> x.items |> List.tryFind (fun x -> x.id = id))
+        let decider = resolve clientId
+        decider.Query(fun x -> x.items |> List.tryFind (fun x -> x.id = id))
     member _.Execute(clientId, command): Async<unit> =
-        execute clientId command
+        let decider = resolve clientId
+        decider.Transact(interpret command)
     member _.Create(clientId, template: Todo): Async<Todo> = async {
         let! updated = handle clientId (Command.Add template)
         return List.head updated }

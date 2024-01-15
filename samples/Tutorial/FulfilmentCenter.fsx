@@ -98,22 +98,24 @@ module FulfilmentCenter =
 
     type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
 
-        let execute fc command : Async<unit> =
+        member _.UpdateName(id, value) =
             let decider = resolve fc
-            decider.Transact(interpret command)
-        let read fc : Async<Summary> =
+            decider.Transact(interpret (Register value))
+        member _.UpdateAddress(id, value) =
+            let decider = resolve fc
+            decider.Transact(interpret (UpdateAddress value))
+        member _.UpdateContact(id, value) =
+            let decider = resolve fc
+            decider.Transact(interpret (UpdateContact value))
+        member _.UpdateDetails(id, value) =
+            let decider = resolve fc
+            decider.Transact(interpret (UpdateDetails value))
+        member _.Read id : Async<Summary> =
             let decider = resolve fc
             decider.Query id
-        let queryEx fc (projection : Fold.State -> 't) : Async<int64*'t> =
+        member _.QueryWithVersion(id, render : Fold.State -> 'res) : Async<int64*'res> =
             let decider = resolve fc
-            decider.QueryEx(fun c -> c.Version, projection c.State)
-
-        member _.UpdateName(id, value) = execute id (Register value)
-        member _.UpdateAddress(id, value) = execute id (UpdateAddress value)
-        member _.UpdateContact(id, value) = execute id (UpdateContact value)
-        member _.UpdateDetails(id, value) = execute id (UpdateDetails value)
-        member _.Read id : Async<Summary> = read id
-        member _.QueryWithVersion(id, render : Fold.State -> 'res) : Async<int64*'res> = queryEx id render
+            decider.QueryEx(fun c -> c.Version, render c.State)
 
 open Equinox.CosmosStore
 

@@ -43,7 +43,7 @@ module Fold =
 
 type Command = Add of Events.Todo | Update of Events.Todo | Delete of id: int | Clear
 
-let interpret c (state: Fold.State) = [|
+let decide c (state: Fold.State) = [|
     match c with
     | Add value -> Events.Added { value with id = state.nextId }
     | Update value ->
@@ -55,12 +55,6 @@ let interpret c (state: Fold.State) = [|
 
 type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    let execute clientId command =
-        let decider = resolve clientId
-        decider.Transact(interpret command)
-    let query clientId projection =
-        let decider = resolve clientId
-        decider.Query projection
     let handle clientId command =
         let decider = resolve clientId
         decider.Transact(fun state ->
@@ -69,13 +63,16 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
             state'.items, events)
 
     member _.List(clientId): Async<Events.Todo seq> =
-        query clientId (fun s -> s.items |> Seq.ofList)
+        let decider = resolve clientId
+        decier.Query(fun s -> s.items |> Seq.ofList)
 
     member _.TryGet(clientId, id) =
-        query clientId (fun x -> x.items |> List.tryFind (fun x -> x.id = id))
+        let decider = resolve clientId
+        decider.Query(fun x -> x.items |> List.tryFind (fun x -> x.id = id))
 
     member _.Execute(clientId, command): Async<unit> =
-        execute clientId command
+        let decider = resolve clientId
+        decider.Transact(interpret command)
 
     member _.Create(clientId, template: Events.Todo): Async<Events.Todo> = async {
         let! state' = handle clientId (Command.Add template)

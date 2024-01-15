@@ -72,23 +72,19 @@ let interpret c (state : State) = [|
 
 type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
 
-    let execute clientId command : Async<unit> =
-        let decider = resolve clientId
-        decider.Transact(interpret command)
     let handle clientId command : Async<Todo list> =
         let decider = resolve clientId
         decider.Transact(fun state ->
             let events = interpret command state
             let state' = fold state events
             state'.items, events)
-    let query clientId (projection : State -> 't) : Async<'t> =
-        let decider = resolve clientId
-        decider.Query projection
 
     member _.List clientId : Async<Todo seq> =
-        query clientId (fun s -> s.items |> Seq.ofList)
+        let decider = resolve clientId
+        decider.Query(fun s -> s.items |> Seq.ofList)
     member _.TryGet(clientId, id) =
-        query clientId (fun x -> x.items |> List.tryFind (fun x -> x.id = id))
+        let decider = resolve clientId
+        decider.Query(fun x -> x.items |> List.tryFind (fun x -> x.id = id))
     member _.Execute(clientId, command) : Async<unit> =
         execute clientId command
     member _.Create(clientId, template: Todo) : Async<Todo> = async {
@@ -98,7 +94,8 @@ type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
         let! state' = handle clientId (Update item)
         return List.find (fun x -> x.id = item.id) state' }
     member _.Clear clientId : Async<unit> =
-        execute clientId Clear
+        let decider = resolve clientId
+        decider.Transact(interpret Clear)
 
 (*
  * EXERCISE THE SERVICE
