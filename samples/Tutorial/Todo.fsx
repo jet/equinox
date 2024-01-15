@@ -70,14 +70,13 @@ let interpret c (state : State) = [|
     | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then Deleted { id = id }
     | Clear -> if state.items |> List.isEmpty |> not then Cleared |]
 
-type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
+type Equinox.Decider<'e, 's> with
 
-    let handle clientId command : Async<Todo list> =
-        let decider = resolve clientId
-        decider.Transact(fun state ->
-            let events = interpret command state
-            let state' = fold state events
-            state'.items, events)
+    member x.TransactWithPostState(interpret: 's -> 'e[], render: 's -> 'r): Async<'r> =
+        x.TransactEx((fun (c: Equinox.ISyncContext<_>) -> (), interpret c.State),
+                     fun () (c: Equinox.ISyncContext<_>) -> render c.State)
+        
+type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
 
     member _.List clientId : Async<Todo seq> =
         let decider = resolve clientId
@@ -86,13 +85,14 @@ type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
         let decider = resolve clientId
         decider.Query(fun x -> x.items |> List.tryFind (fun x -> x.id = id))
     member _.Execute(clientId, command) : Async<unit> =
-        execute clientId command
-    member _.Create(clientId, template: Todo) : Async<Todo> = async {
-        let! state' = handle clientId (Add template)
-        return List.head state' }
-    member _.Patch(clientId, item: Todo) : Async<Todo> = async {
-        let! state' = handle clientId (Update item)
-        return List.find (fun x -> x.id = item.id) state' }
+        let decider = resolve clientId
+        decider.Transact(interpret command)
+    member _.Create(clientId, template: Todo): Async<Todo> =
+        let decider = resolve clientId
+        decider.TransactWithPostState(interpret (Add template), fun s -> s.items |> List.head)
+    member _.Patch(clientId, item: Todo): Async<Todo> =
+        let decider = resolve clientId
+        decider.TransactWithPostState(interpret (Update item), fun s -> s.items |> List.find (fun x -> x.id = item.id))
     member _.Clear clientId : Async<unit> =
         let decider = resolve clientId
         decider.Transact(interpret Clear)

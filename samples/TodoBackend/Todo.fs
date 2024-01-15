@@ -53,18 +53,17 @@ let decide c (state: Fold.State) = [|
     | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then Events.Deleted { id = id }
     | Clear -> if state.items |> List.isEmpty |> not then Events.Cleared |]
 
-type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
+type Equinox.Decider<'e, 's> with
 
-    let handle clientId command =
-        let decider = resolve clientId
-        decider.Transact(fun state ->
-            let events = interpret command state
-            let state' = Fold.fold state events
-            state'.items, events)
+    member x.TransactWithPostState(interpret: 's -> 'e[], render: 's -> 'r): Async<'r> =
+        x.TransactEx((fun (c: Equinox.ISyncContext<_>) -> (), interpret c.State),
+                     fun () (c: Equinox.ISyncContext<_>) -> render c.State)
+
+type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
     member _.List(clientId): Async<Events.Todo seq> =
         let decider = resolve clientId
-        decier.Query(fun s -> s.items |> Seq.ofList)
+        decider.Query(fun s -> s.items |> Seq.ofList)
 
     member _.TryGet(clientId, id) =
         let decider = resolve clientId
@@ -72,14 +71,16 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
 
     member _.Execute(clientId, command): Async<unit> =
         let decider = resolve clientId
-        decider.Transact(interpret command)
+        decider.Transact(decide command)
 
-    member _.Create(clientId, template: Events.Todo): Async<Events.Todo> = async {
-        let! state' = handle clientId (Command.Add template)
-        return List.head state' }
+    member _.Create(clientId, template: Events.Todo): Async<Events.Todo> =
+        let decider = resolve clientId
+        decider.TransactWithPostState(decide (Command.Add template),
+                                      fun s -> s.items |> List.head)
 
-    member _.Patch(clientId, item: Events.Todo): Async<Events.Todo> = async {
-        let! state' = handle clientId (Command.Update item)
-        return List.find (fun x -> x.id = item.id) state' }
+    member _.Patch(clientId, item: Events.Todo): Async<Events.Todo> =
+        let decider = resolve clientId
+        decider.TransactWithPostState(decide (Command.Update item),
+                                      fun s -> s.items |> List.find (fun x -> x.id = item.id))
 
 let create resolve = Service(Stream.id >> resolve)

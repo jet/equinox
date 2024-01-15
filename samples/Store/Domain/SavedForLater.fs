@@ -126,20 +126,14 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
         let decider = resolve clientId
         decider.Transact(decide maxSavedItems <| Add (DateTimeOffset.Now, Seq.toArray skus))
 
-    member _.Remove(clientId, resolve: (SkuId -> bool) -> Async<SkuId[]>): Async<unit> =
-        let resolve hasSku = async {
-            let! skus = resolve hasSku
-            return Remove skus }
-        let remove clientId (resolveCommand: (SkuId->bool) -> Async<Command>): Async<unit> =
-            let decider = resolve clientId
-            decider.Transact(fun (state: Fold.State) -> async {
-                let contents = seq { for item in state -> item.skuId } |> set
-                let! cmd = resolveCommand contents.Contains
-                let _, events = decide maxSavedItems cmd state
-                return (), events } )
-        remove clientId resolve
+    member _.Remove(clientId, resolveSkus: (SkuId -> bool) -> Async<SkuId[]>): Async<unit> =
+        let decider = resolve clientId
+        decider.Transact(fun state-> async {
+            let contents = state |> Seq.map (fun i -> i.skuId) |> set
+            let! skusToRemove = resolveSkus contents.Contains
+            return (), decide maxSavedItems (Remove skusToRemove) state |> snd })
 
-    member _.Merge(clientId, targetId): Async<bool> = async {
+    member x.Merge(clientId, targetId): Async<bool> = async {
         let! state = x.List clientId
         let decider = resolve targetId
         return! decider.Transact(decide maxSavedItems (Merge state)) }
