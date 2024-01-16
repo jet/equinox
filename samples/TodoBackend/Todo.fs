@@ -41,17 +41,20 @@ module Fold =
         | Events.Snapshotted      { items = items } -> { s with items = List.ofArray items }
     let fold = Array.fold evolve
 
-type Command = Add of Events.Todo | Update of Events.Todo | Delete of id: int | Clear
+module Decisions =
 
-let decide c (state: Fold.State) = [|
-    match c with
-    | Add value -> Events.Added { value with id = state.nextId }
-    | Update value ->
+    let add value (state: Fold.State) = [|
+        Events.Added { value with id = state.nextId } |]
+    let update (value: Events.Todo) (state: Fold.State) = [|
         match state.items |> List.tryFind (function { id = id } -> id = value.id) with
         | Some current when current <> value -> Events.Updated value
-        | _ -> ()
-    | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then Events.Deleted { id = id }
-    | Clear -> if state.items |> List.isEmpty |> not then Events.Cleared |]
+        | _ -> () |]
+    let delete id (state: Fold.State) = [|
+        if state.items |> List.exists (fun x -> x.id = id) then
+            Events.Deleted { id = id } |]
+    let clear (state: Fold.State) = [|
+        if state.items |> List.isEmpty |> not then
+            Events.Cleared |]
 
 type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
@@ -63,16 +66,20 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
         let decider = resolve clientId
         decider.Query(fun s -> s.items |> List.tryFind (fun x -> x.id = id))
 
-    member _.Execute(clientId, command): Async<unit> =
-        let decider = resolve clientId
-        decider.Transact(decide command)
-
     member _.Create(clientId, template: Events.Todo): Async<Events.Todo> =
         let decider = resolve clientId
-        decider.Transact(decide (Command.Add template), fun s -> s.items |> List.head)
+        decider.Transact(Decisions.add template, fun s -> s.items |> List.head)
 
     member _.Patch(clientId, item: Events.Todo): Async<Events.Todo> =
         let decider = resolve clientId
-        decider.Transact(decide (Command.Update item), fun s -> s.items |> List.find (fun x -> x.id = item.id))
+        decider.Transact(Decisions.update item, fun s -> s.items |> List.find (fun x -> x.id = item.id))
+
+    member _.Delete(clientId, id): Async<unit> =
+        let decider = resolve clientId
+        decider.Transact(Decisions.delete id)
+
+    member _.Clear(clientId): Async<unit> =
+        let decider = resolve clientId
+        decider.Transact(Decisions.clear)
 
 let create resolve = Service(Stream.id >> resolve)

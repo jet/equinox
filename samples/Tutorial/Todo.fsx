@@ -59,37 +59,41 @@ let private evolve s = function
     | Snapshotted { items=items } -> { s with items = List.ofArray items }
 let fold = Array.fold evolve
 
-type Command = Add of Todo | Update of Todo | Delete of id: int | Clear
-let interpret c (state : State) = [|
-    match c with
-    | Add value -> Added { value with id = state.nextId }
-    | Update value ->
+module Decisions =
+
+    let add value (state: Fold.State) = [|
+        Events.Added { value with id = state.nextId } |]
+    let update (value: Events.Todo) (state: Fold.State) = [|
         match state.items |> List.tryFind (function { id = id } -> id = value.id) with
-        | Some current when current <> value -> Updated value
-        | _ -> ()
-    | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then Deleted { id = id }
-    | Clear -> if state.items |> List.isEmpty |> not then Cleared |]
+        | Some current when current <> value -> Events.Updated value
+        | _ -> () |]
+    let delete id (state: Fold.State) = [|
+        if state.items |> List.exists (fun x -> x.id = id) then
+            Events.Deleted { id = id } |]
+    let clear (state: Fold.State) = [|
+        if state.items |> List.isEmpty |> not then
+            Events.Cleared |]
 
 type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
 
-    member _.List clientId : Async<Todo seq> =
+    member _.List(clientId): Async<Events.Todo seq> =
         let decider = resolve clientId
         decider.Query(fun s -> s.items |> Seq.ofList)
     member _.TryGet(clientId, id) =
         let decider = resolve clientId
         decider.Query(fun s -> s.items |> List.tryFind (fun x -> x.id = id))
-    member _.Execute(clientId, command) : Async<unit> =
+    member _.Create(clientId, template: Events.Todo): Async<Events.Todo> =
         let decider = resolve clientId
-        decider.Transact(interpret command)
-    member _.Create(clientId, template: Todo): Async<Todo> =
+        decider.Transact(Decisions.add template, fun s -> s.items |> List.head)
+    member _.Patch(clientId, item: Events.Todo): Async<Events.Todo> =
         let decider = resolve clientId
-        decider.Transact(interpret (Add template), fun s -> s.items |> List.head)
-    member _.Patch(clientId, item: Todo): Async<Todo> =
+        decider.Transact(Decisions.update item, fun s -> s.items |> List.find (fun x -> x.id = item.id))
+    member _.Delete(clientId, id): Async<unit> =
         let decider = resolve clientId
-        decider.Transact(interpret (Update item), fun s -> s.items |> List.find (fun x -> x.id = item.id))
-    member _.Clear clientId : Async<unit> =
+        decider.Transact(Decisions.delete id)
+    member _.Clear(clientId): Async<unit> =
         let decider = resolve clientId
-        decider.Transact(interpret Clear)
+        decider.Transact(Decisions.clear)
 
 (*
  * EXERCISE THE SERVICE
@@ -145,7 +149,7 @@ service.List(client) |> Async.RunSynchronously
 //                       order = 0;
 //                       title = "Feed cat";
 //                       completed = false;}]
-service.Execute(client, Clear) |> Async.RunSynchronously
+service.Clear(client) |> Async.RunSynchronously
 //val it : unit = ()
 
 service.TryGet(client,42) |> Async.RunSynchronously
@@ -173,7 +177,7 @@ service.Patch(client, itemH) |> Async.RunSynchronously
 //                 order = 0;
 //                 title = "Feed horse";
 //                 completed = false;}
-service.Execute(client, Delete 1) |> Async.RunSynchronously
+service.Delete(client, 1) |> Async.RunSynchronously
 //[05:47:18 INF] EqxCosmos Tip 304 224ms rc=1
 //Deleted 1[05:47:19 INF] EqxCosmos Sync 1+1 230ms rc=13.91
 //val it : unit = ()
