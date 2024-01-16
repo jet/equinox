@@ -965,14 +965,6 @@ result in you ending up with a model that's potentially both:
   facilitates testing independently with `MemoryStore` (which does necessitate a
   reference to a separate Assembly] as desired. 
 
-### Favorites (without Commands)
-
-TODO explain how life is simpler based on current code without commands (and how you can still use
-a DU to represent the cases in a property based tests)
-
-Potentially this can be done as a compare and contrast with the preceding section (though having
-a `query` and an `execute` is really an anti-pattern)
-
 ### Todo[Backend] walkthrough
 
 See [the TodoBackend.com sample](README.md#TodoBackend) for reference info

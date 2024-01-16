@@ -20,7 +20,8 @@
 
 (* Define the events that will be saved in the stream *)
 
-// Note using strings and DateTimes etc as Event payloads is not supported for .Cosmos or .EventStore using the UnionCodec support
+// Note using strings and DateTimes etc as Event payloads is not supported for .CosmosStore or .EventStore using the
+// TypeShape IUnionContract based Codec support
 // i.e. typically records are used for the Event Payloads even in cases where you feel you'll only ever have a single primitive value
 
 type Event =
@@ -45,59 +46,43 @@ let favesCba = fold initialState [| Added "a"; Added "b"; Added "c" |]
 //val favesCba : string list = ["c"; "b"; "a"]
 
 (*
- * COMMANDS
+ * DECISIONS / COMMANDS
  *)
 
-(* Now we can build a State from the Events, we can interpret a Command in terms of how we'd represent that in the stream *)
+(* Now we can build a State from the Events, we can map from an external need/intent to how we'd represent any changes
+   needed to out current state to reflect that *)
 
-type Command =
-    | Add of string
-    | Remove of string
-let interpret command state = [|
-    match command with
-    | Add sku -> if state |> List.contains sku |> not then Added sku
-    | Remove sku -> if state |> List.contains sku then Removed sku |]
+module Decisions =
+    
+    let add sku state = [|
+        if state |> List.contains sku |> not then
+            Added sku |]
+    let remove sku state = [|
+        if state |> List.contains sku then
+            Removed sku |]
 
-(* Note we don't yield events if they won't have a relevant effect - the interpret function makes the processing idempotent
-    if a retry of a command happens, it should not make a difference *)
+(* ^ Note we don't yield events if there is no state change required
+   This is referred to by the term idempotency https://en.wikipedia.org/wiki/Idempotence
+   In summary, re-running the same request immediately should tend to have zero effect and not do any write trip to the store *) 
 
-let removeBEffect = interpret (Remove "b") favesCba
+let removeBEffect = Decisions.remove "b" favesCba
 //val removeBEffect : Event list = [Removed "b"]
 
 let favesCa = fold favesCba removeBEffect
 // val favesCa : string list = ["c"; "a"]
 
-let _removeBAgainEffect = interpret (Remove "b") favesCa
+let _removeBAgainEffect = Decisions.remove "b" favesCa
 //val _removeBAgainEffect : Event list = []
 
-(*
- * STREAM API
- *)
-
-(* Equinox.Decider provides low level functions against an IStream given
-    a) a log to send metrics and store roundtrip info to
-    b) a maximum number of attempts to make if we clash with a conflicting write *)
-
-// Example of wrapping Decider to encapsulate stream access patterns (see DOCUMENTATION.md for reasons why this is not advised in real apps)
-type Handler(decider: Equinox.Decider<Event, State>) =
-    member _.Execute command: Async<unit> =
-        decider.Transact(interpret command)
-    member _.Read: Async<string list> =
-        decider.Query id
-
-(* When we Execute a command, Equinox.Decider will use `fold` and `interpret` to Decide whether Events need to be written
-    Normally, we'll let failures percolate via exceptions, but not return a result (i.e. we don't say "your command caused 1 event") *)
-
-// For now, write logs to the Console (in practice we'd connect it to a concrete log sink)
-open Serilog
-let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
-
 // related streams are termed a Category; Each client will have it's own Stream.
-let Category = "Favorites"
+let [<Literal>] CategoryName = "Favorites"
 let clientAFavoritesStreamId = FsCodec.StreamId.gen id "ClientA"
 
 // For test purposes, we use the in-memory store
 let store = Equinox.MemoryStore.VolatileStore()
+// For now, write logs to the Console (in practice we'd connect it to a concrete log sink)
+open Serilog
+let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
 // MemoryStore (as with most Event Stores) provides a way to observe events that have been persisted to a stream
 // For demo purposes we emit those to the log (which emits to the console)
 let logEvents sn (events: FsCodec.ITimelineEvent<_>[]) =
@@ -107,64 +92,73 @@ let _ = store.Committed.Subscribe(fun struct (sn, xs) -> logEvents sn xs)
 let codec =
     // For this example, we hand-code; normally one uses one of the FsCodec auto codecs, which codegen something similar
     let encode = function
-        | Added x -> struct ("Add",box x)
-        | Removed x -> "Remove",box x
-    let tryDecode name (e : obj) : Event voption =
+        | Added x -> struct ("Add", box x)
+        | Removed x -> "Remove", box x
+    let tryDecode name (e: obj): Event voption =
         match name, e with
         | "Add", (:? string as x) -> Added x |> ValueSome
         | "Remove", (:? string as x) -> Removed x |> ValueSome
         | _ -> ValueNone
     FsCodec.Codec.Create(encode, tryDecode)
+(*
+ * CATEGORY
+ *)
+
 // Each store has a <Store>Category that is used to resolve IStream instances binding to a specific stream in a specific store
-// ... because the nature of the contract with the handler is such that the store hands over State, we also pass the `initial` and `fold` as we used above
-let cat = Equinox.MemoryStore.MemoryStoreCategory(store, Category, codec, fold, initial)
-let decider = Equinox.Decider.forStream log cat
+// ... because the nature of the contract with the Decider is such that the store hands over State, we also pass the `initial` and `fold` as we used above
+let memoryStoreCategory = Equinox.MemoryStore.MemoryStoreCategory(store, CategoryName, codec, fold, initial)
+let deciderForStreamInMemoryStoreCategory = Equinox.Decider.forStream log memoryStoreCategory
 
-// We get a Decider instance for the streamId
-let clientADecider = decider clientAFavoritesStreamId
-// ... and wrap that in a Handler
-let handler = Handler(clientADecider)
+(*
+ * DECIDER
+ *)
 
-(* Run some commands *)
+// ... Given a Category, we can get a Decider for a given StreamId within it
+// A Decider lets you Transact or Query based on a state
 
-handler.Execute(Add "a") |> Async.RunSynchronously
-handler.Execute(Add "b") |> Async.RunSynchronously
+let clientADecider = deciderForStreamInMemoryStoreCategory clientAFavoritesStreamId
+
+// That Decider is then used as a building block
+
+// each time you want to do something against the stream, you do that via the Decider that's been established over it: 
+
+clientADecider.Transact(Decisions.add "a") |> Async.RunSynchronously
+clientADecider.Transact(Decisions.add "b") |> Async.RunSynchronously
 // Idempotency comes into play if we run it twice:
-handler.Execute(Add "b") |> Async.RunSynchronously
+clientADecider.Transact(Decisions.add "b") |> Async.RunSynchronously
 
 (* Read the current state *)
 
-handler.Read |> Async.RunSynchronously
-// val it : string list = ["b"; "a"]
+clientADecider.Query(fun state -> state) |> Async.RunSynchronously
 
 (*
 * SERVICES
 *)
 
-(* Building a service to package Command Handling and related functions
-    No, this is not doing CQRS! *)
+// In practice, you don't do a chain of actions against a given decider - you build a Service method that
+// - obtains the Decider
+// - applies the relevant decision or render function to execute the command and/or read the state 
 
-type Service(deciderFor : string -> Handler) =
+type Service(resolve: string -> Equinox.Decider<Event, State>) =
 
-    member _.Favorite(clientId, sku) =
-        let decider = deciderFor clientId
-        decider.Execute(Add sku)
+    member _.Favorite(clientId, sku): Async<unit> =
+        let decider = resolve clientId
+        decider.Transact(Decisions.add sku)
 
-    member _.Unfavorite(clientId, skus) =
-        let decider = deciderFor clientId
-        decider.Execute(Remove skus)
+    member _.Unfavorite(clientId, sku): Async<unit> =
+        let decider = resolve clientId
+        decider.Transact(Decisions.remove sku)
 
     member _.List(clientId): Async<string list> =
-        let decider = deciderFor clientId
-        decider.Read
+        let decider = resolve clientId
+        decider.Query(id)
 
-(* See Counter.fsx and Cosmos.fsx for a more compact representation which makes the Handler wiring less obtrusive *)
-let handlerFor (clientId: string) =
+(* See Counter.fsx and Cosmos.fsx for a more compact representation which makes the Service wiring less obtrusive *)
+let resolve (cat: Equinox.Category<_, _, _>) (clientId: string) =
     let streamId = FsCodec.StreamId.gen id clientId
-    let decider = Equinox.Decider.forStream log cat streamId 
-    Handler(decider)
+    Equinox.Decider.forStream log cat streamId 
 
-let service = Service(handlerFor)
+let service = Service(resolve memoryStoreCategory)
 
 let client = "ClientB"
 service.Favorite(client, "a") |> Async.RunSynchronously

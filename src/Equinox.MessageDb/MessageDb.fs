@@ -416,7 +416,7 @@ type private StoreCategory<'event, 'state, 'req>(context: MessageDbContext, code
         context.StoreSnapshot(log, category, streamId, encodedWithMeta, ct)
 
 /// <summary>
-/// The ~ handler will be handed the <c>streamId</c>, <c>state</c>,
+/// The handler will be handed the <c>streamId</c>, <c>state</c>,
 /// and the <c>connection</c> (still in an open transaction) that was used to
 /// append events to the store. This allows you to update other tables
 /// in the same transaction. Use only if you know what you're doing
