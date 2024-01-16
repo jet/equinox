@@ -82,13 +82,17 @@ module FulfilmentCenter =
     module Decisions =
 
         let register name = [|
-            if state.name <> Some c then Events.FcCreated name |]
+            if state.name <> Some c then
+                Events.FcCreated name |]
         let updateAddress a = [|
-            if state.address <> Some a then Events.FcAddressChanged { address = a } |]
+            if state.address <> Some a then
+                Events.FcAddressChanged { address = a } |]
         let updateContact c = [|
-            if state.contact <> Some c then Events.FcContactChanged { contact = c } |]
+            if state.contact <> Some c then
+                Events.FcContactChanged { contact = c } |]
         let updateDetails d = [|
-            if state.details <> Some d then Events.FcDetailsChanged { details = d } |]
+            if state.details <> Some d then
+                Events.FcDetailsChanged { details = d } |]
 
     type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
 

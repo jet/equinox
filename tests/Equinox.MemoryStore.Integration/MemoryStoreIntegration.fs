@@ -28,7 +28,7 @@ type Tests(testOutputHelper) =
         | Some c -> Some (max 1 c)
 
     [<AutoData>]
-    let ``Basic tracer bullet, sending an pdate and verifying the folded result directly and via a reload``
+    let ``Basic tracer bullet, sending an update and verifying the folded result directly and via a reload``
             cartId1 cartId2 (ctx,skuId,NonZero quantity,waive) = async {
         let store = createMemoryStore ()
         let service = createServiceMemory log store
