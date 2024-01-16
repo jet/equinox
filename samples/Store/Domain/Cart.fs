@@ -72,10 +72,9 @@ module Fold =
     let fold = Array.fold evolve
 
 type Context =              { time: System.DateTime; requestId: RequestId }
-type Command =
-    | SyncItem              of Context * SkuId * quantity: int option * waived: bool option
+type ItemInfo =             Context * SkuId * (*quantity:*) int option * (*waived:*) bool option
 
-let interpret command (state: Fold.State) =
+let interpretSync (item: ItemInfo) (state: Fold.State) =
     let itemExists f                                    = state.items |> List.exists f
     let itemExistsWithDifferentWaiveStatus skuId waive  = itemExists (fun x -> x.skuId = skuId && x.returnsWaived <> Some waive)
     let itemExistsWithDifferentQuantity skuId quantity  = itemExists (fun x -> x.skuId = skuId && x.quantity <> quantity)
@@ -90,17 +89,17 @@ let interpret command (state: Fold.State) =
     let maybeQuantityChanges c skuId quantity = seq {
         if itemExistsWithDifferentQuantity skuId quantity then
             Events.ItemQuantityChanged { context = c; skuId = skuId; quantity = quantity } }
-    [| match command with
+    [| match item with
         // a request to set quantity of `0` represents a removal request
-        | SyncItem (Context c, skuId, Some 0, _) ->
+        | (Context c, skuId, Some 0, _) ->
             if itemExistsWithSkuId skuId then
                 yield Events.ItemRemoved { context = c; skuId = skuId }
         // Add/quantity change with potential waive change at same time
-        | SyncItem (Context c, skuId, Some q, w) ->
+        | (Context c, skuId, Some q, w) ->
             if itemExistsWithSkuId skuId then yield! maybeQuantityChanges c skuId q; yield! maybePropChanges c skuId w
             else yield Events.ItemAdded { context = c; skuId = skuId; quantity = q; waived = w }
         // Waive return status change only
-        | SyncItem (Context c, skuId, None, w) ->
+        | (Context c, skuId, None, w) ->
             yield! maybePropChanges c skuId w |]
 
 let interpretMany fold interpreters (state: 'state): 'state * 'event[] =
@@ -114,16 +113,16 @@ let interpretMany fold interpreters (state: 'state): 'state * 'event[] =
 
 type Service internal (resolve: CartId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    member _.Run(cartId, optimistic, commands: Command seq, ?prepare): Async<Fold.State> =
+    member _.Run(cartId, optimistic, items: ItemInfo seq, ?prepare): Async<Fold.State> =
         let interpret state = async {
             match prepare with None -> () | Some prep -> do! prep
-            return interpretMany Fold.fold (Seq.map interpret commands) state }
+            return interpretMany Fold.fold (Seq.map interpretSync items) state }
         let decider = resolve cartId
         let opt = if optimistic then Equinox.LoadOption.AnyCachedValue else Equinox.LoadOption.RequireLoad
         decider.Transact(interpret, opt)
 
-    member x.ExecuteManyAsync(cartId, optimistic, commands: Command seq, ?prepare): Async<unit> =
-        x.Run(cartId, optimistic, commands, ?prepare = prepare) |> Async.Ignore
+    member x.ExecuteManyAsync(cartId, optimistic, items: ItemInfo seq, ?prepare): Async<unit> =
+        x.Run(cartId, optimistic, items, ?prepare = prepare) |> Async.Ignore
 
     member x.Execute(cartId, command) =
         x.ExecuteManyAsync(cartId, false, [command])

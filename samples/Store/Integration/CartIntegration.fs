@@ -31,9 +31,9 @@ let categoryCosmosStreamWithoutCustomAccessStrategy context =
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Cart.Service) count =
     service.ExecuteManyAsync(cartId, false, seq {
         for i in 1..count do
-            yield Cart.SyncItem (context, skuId, Some i, None)
+            yield (context, skuId, Some i, None)
             if i <> count then
-                yield Cart.SyncItem (context, skuId, Some 0, None) })
+                yield (context, skuId, Some 0, None) })
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutput testOutputHelper

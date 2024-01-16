@@ -162,9 +162,9 @@ module ContactPreferences =
 let addAndThenRemoveItems optimistic exceptTheLastOne context cartId skuId (service: Cart.Service) count =
         service.ExecuteManyAsync(cartId, optimistic, seq {
             for i in 1..count do
-                yield Cart.SyncItem (context, skuId, Some i, None)
+                yield (context, skuId, Some i, None)
                 if not exceptTheLastOne || i <> count then
-                    yield Cart.SyncItem (context, skuId, Some 0, None) })
+                    yield (context, skuId, Some 0, None) })
 let addAndThenRemoveItemsManyTimes context cartId skuId service count =
     addAndThenRemoveItems false false context cartId skuId service count
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service count =
@@ -253,7 +253,7 @@ type GeneralTests(testOutputHelper) =
                     return Some (skuId, addRemoveCount) }
 
         let act prepare (service: Cart.Service) skuId count =
-            service.ExecuteManyAsync(cartId, false, prepare = prepare, commands = [ Cart.SyncItem (ctx, skuId, Some count, None) ])
+            service.ExecuteManyAsync(cartId, false, prepare = prepare, items = [ (ctx, skuId, Some count, None) ])
 
         let eventWaitSet () = let e = new ManualResetEvent(false) in (Async.AwaitWaitHandle e |> Async.Ignore), async { e.Set() |> ignore }
         let w0, s0 = eventWaitSet ()
