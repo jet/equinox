@@ -37,24 +37,15 @@ module Fold =
     let transmute events _state =
         [||],events
 
-type Command =
-    | Update of Events.Value
-
-let interpret command (state: Fold.State) = [|
-    match command with
-    | Update ({ preferences = preferences } as value) ->
-        if state <> preferences then
-            Events.Updated value |]
+let interpretUpdate ({ preferences = preferences }: Events.Value as value) (state: Fold.State) = [|
+    if state <> preferences then
+        Events.Updated value |]
 
 type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    let update email value: Async<unit> =
-        let decider = resolve email
-        let command = let (ClientId email) = email in Update { email = email; preferences = value }
-        decider.Transact(interpret command)
-
-    member _.Update(email, value) =
-        update email value
+    member _.Update((ClientId email) as clientId, value) =
+        let decider = resolve clientId
+        decider.Transact(interpretUpdate { email = email; preferences = value })
 
     member _.Read(email) =
         let decider = resolve email
