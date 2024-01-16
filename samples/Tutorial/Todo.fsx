@@ -70,12 +70,6 @@ let interpret c (state : State) = [|
     | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then Deleted { id = id }
     | Clear -> if state.items |> List.isEmpty |> not then Cleared |]
 
-type Equinox.Decider<'e, 's> with
-
-    member x.TransactEx(interpret: 's -> 'e[], render: Equinox.ISyncContext<_> -> 'r): Async<'r> =
-        x.TransactEx((fun (c: Equinox.ISyncContext<_>) -> (), interpret c.State),
-                     fun () (c: Equinox.ISyncContext<_>) -> render c)
-        
 type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
 
     member _.List clientId : Async<Todo seq> =
@@ -83,16 +77,16 @@ type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
         decider.Query(fun s -> s.items |> Seq.ofList)
     member _.TryGet(clientId, id) =
         let decider = resolve clientId
-        decider.Query(fun x -> x.items |> List.tryFind (fun x -> x.id = id))
+        decider.Query(fun s -> s.items |> List.tryFind (fun x -> x.id = id))
     member _.Execute(clientId, command) : Async<unit> =
         let decider = resolve clientId
         decider.Transact(interpret command)
     member _.Create(clientId, template: Todo): Async<Todo> =
         let decider = resolve clientId
-        decider.TransactEx(interpret (Add template), fun c -> c.State.items |> List.head)
+        decider.Transact(interpret (Add template), fun s -> s.items |> List.head)
     member _.Patch(clientId, item: Todo): Async<Todo> =
         let decider = resolve clientId
-        decider.TransactEx(interpret (Update item), fun c -> c.State.items |> List.find (fun x -> x.id = item.id))
+        decider.Transact(interpret (Update item), fun s -> s.items |> List.find (fun x -> x.id = item.id))
     member _.Clear clientId : Async<unit> =
         let decider = resolve clientId
         decider.Transact(interpret Clear)

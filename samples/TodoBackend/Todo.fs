@@ -36,7 +36,7 @@ module Fold =
     let private evolve s = function
         | Events.Added item ->    { items = item :: s.items; nextId = s.nextId + 1 }
         | Events.Updated value -> { s with items = s.items |> List.map (function { id = id } when id = value.id -> value | item -> item) }
-        | Events.Deleted          { id=id } -> { s with items = s.items  |> List.filter (fun x -> x.id <> id) }
+        | Events.Deleted          { id = id } -> { s with items = s.items  |> List.filter (fun x -> x.id <> id) }
         | Events.Cleared ->       { s with items = [] }
         | Events.Snapshotted      { items = items } -> { s with items = List.ofArray items }
     let fold = Array.fold evolve
@@ -52,12 +52,6 @@ let decide c (state: Fold.State) = [|
         | _ -> ()
     | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then Events.Deleted { id = id }
     | Clear -> if state.items |> List.isEmpty |> not then Events.Cleared |]
-
-type Equinox.Decider<'e, 's> with
-
-    member x.TransactEx(interpret: 's -> 'e[], render: Equinox.ISyncContext<_> -> 'r): Async<'r> =
-        x.TransactEx((fun (c: Equinox.ISyncContext<_>) -> (), interpret c.State),
-                     fun () (c: Equinox.ISyncContext<_>) -> render c)
 
 type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
@@ -75,10 +69,10 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
 
     member _.Create(clientId, template: Events.Todo): Async<Events.Todo> =
         let decider = resolve clientId
-        decider.TransactEx(decide (Command.Add template), fun c -> c.State.items |> List.head)
+        decider.Transact(decide (Command.Add template), fun s -> s.items |> List.head)
 
     member _.Patch(clientId, item: Events.Todo): Async<Events.Todo> =
         let decider = resolve clientId
-        decider.TransactEx(decide (Command.Update item), fun c -> c.State.items |> List.find (fun x -> x.id = item.id))
+        decider.Transact(decide (Command.Update item), fun s -> s.items |> List.find (fun x -> x.id = item.id))
 
 let create resolve = Service(Stream.id >> resolve)
