@@ -79,37 +79,31 @@ module FulfilmentCenter =
             | Events.FcDetailsChanged x -> { state with details = Some x.details }
         let fold = Array.fold evolve
 
-    type Command =
-        | Register of FcName
-        | UpdateAddress of Address
-        | UpdateContact of ContactInformation
-        | UpdateDetails of FcDetails
+    module Decisions =
 
-    let interpret command state = [|
-        match command with
-        | Register c when state.name = Some c -> ()
-        | Register c -> Events.FcCreated c
-        | UpdateAddress c when state.address = Some c -> ()
-        | UpdateAddress c -> Events.FcAddressChanged { address = c }
-        | UpdateContact c when state.contact = Some c -> ()
-        | UpdateContact c -> Events.FcContactChanged { contact = c }
-        | UpdateDetails c when state.details = Some c -> ()
-        | UpdateDetails c -> Events.FcDetailsChanged { details = c } |]
+        let register name = [|
+            if state.name <> Some c then Events.FcCreated name |]
+        let updateAddress a = [|
+            if state.address <> Some a then Events.FcAddressChanged { address = a } |]
+        let updateContact c = [|
+            if state.contact <> Some c then Events.FcContactChanged { contact = c } |]
+        let updateDetails d = [|
+            if state.details <> Some d then Events.FcDetailsChanged { details = d } |]
 
     type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
 
         member _.UpdateName(fc, value) =
             let decider = resolve fc
-            decider.Transact(interpret (Register value))
+            decider.Transact(Decisions.Register value)
         member _.UpdateAddress(fc, value) =
             let decider = resolve fc
-            decider.Transact(interpret (UpdateAddress value))
+            decider.Transact(Decisions.updateAddress value)
         member _.UpdateContact(fc, value) =
             let decider = resolve fc
-            decider.Transact(interpret (UpdateContact value))
+            decider.Transact(Decisions.updateContact value)
         member _.UpdateDetails(fc, value) =
             let decider = resolve fc
-            decider.Transact(interpret (UpdateDetails value))
+            decider.Transact(Decisions.updateDetails value)
         member _.Read fc : Async<Summary> =
             let decider = resolve fc
             decider.Query id
@@ -177,18 +171,15 @@ module FulfilmentCenterSummary =
         | Events.Updated v -> Some v
     let fold = Array.fold evolve
 
-    type Command =
-        | Update of version : int64 * Types.Summary
-    let interpret command (state: State) = [|
-        match command with
-        | Update (uv, _us) when state |> Option.exists (fun s -> s.version > uv) -> ()
-        | Update (uv, us) -> Events.Updated { version = uv; state = us } |]
+    let decideIngest version summary (state: State) = [|
+        if state |> Option.exists (fun s -> s.version > version) |> not then
+            Events.Updated { version = version; state = summary } |]
 
     type Service internal (resolve: string -> Equinox.Decider<Events.Event, State>) =
 
         member _.Update(id, version, value) =
             let decider = resolve id
-            decider.Transact(interpret (Update (version, value)))
+            decider.Transact(decideIngest version value)
         member _.TryRead id: Async<Summary option> =
             let decider = resolve id
             decider.Query(Option.map (fun s -> s.state))

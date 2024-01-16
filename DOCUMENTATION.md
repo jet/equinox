@@ -965,6 +965,14 @@ result in you ending up with a model that's potentially both:
   facilitates testing independently with `MemoryStore` (which does necessitate a
   reference to a separate Assembly] as desired. 
 
+### Favorites (without Commands)
+
+TODO explain how life is simpler based on current code without commands (and how you can still use
+a DU to represent the cases in a property based tests)
+
+Potentially this can be done as a compare and contrast with the preceding section (though having
+a `query` and an `execute` is really an anti-pattern)
+
 ### Todo[Backend] walkthrough
 
 See [the TodoBackend.com sample](README.md#TodoBackend) for reference info
@@ -1049,30 +1057,34 @@ let fold = Array.fold evolve
   `fold` using mutable state), in reality this would reduce the legibility and
   malleability of the code.
 
-#### `Command`s + `interpret`
+#### `Decisions`
 
 ```fsharp
-type Command = Add of Todo | Update of Todo | Delete of id: int | Clear
-let interpret c (state: State) =
-    match c with
-    | Add value -> [| Added { value with id = state.nextId } |]
-    | Update value ->
+module Decisions =
+
+    let add value (state: Fold.State) = [|
+        Events.Added { value with id = state.nextId } |]
+    let update (value: Events.Todo) (state: Fold.State) = [|
         match state.items |> List.tryFind (function { id = id } -> id = value.id) with
-        | Some current when current <> value -> [| Updated value |]
-        | _ -> [||]
-    | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [| Deleted id |] else [||]
-    | Clear -> if state.items |> List.isEmpty then [||] else [| Cleared |]
+        | Some current when current <> value -> Events.Updated value
+        | _ -> () |]
+    let delete id (state: Fold.State) = [|
+        if state.items |> List.exists (fun x -> x.id = id) then
+            Events.Deleted { id = id } |]
+    let clear (state: Fold.State) = [|
+        if state.items |> List.isEmpty |> not then
+            Events.Cleared |]
 ```
 
-- Note `Add` does not adhere to the normal idempotency constraint, being
+- Note `add` does not adhere to the normal idempotency constraint, being
   unconditional. If the spec provided an id or token to deduplicate requests,
   we'd track that in the `fold` and use it to rule out duplicate requests.
 
-- For `Update`, we can lean on structural equality in `when current <> value`
+- For `update`, we can lean on structural equality in `when current <> value`
   to cleanly rule out redundant updates
 
 - The current implementation is 'good enough' but there's always room to argue
-  for adding more features. For `Clear`, we could maintain a flag about whether
+  for adding more features. For `clear`, we could maintain a flag about whether
   we've just seen a clear, or have a request identifier to deduplicate,
   rather than risk omitting a chance to mark the stream clear and hence
   leverage the `isOrigin` aspect of having the event.
@@ -1082,43 +1094,38 @@ let interpret c (state: State) =
 ```fsharp
 type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    let handle clientId command: Async<Todo list> =
-        let decider = resolve clientId
-        decider.Transact(fun state ->
-            let events = interpret command state
-            let state' = fold state events
-            state'.items,events)
-
-    member _.List clientId: Async<Todo seq> =
+    member _.List(clientId): Async<Events.Todo seq> =
         let decider = resolve clientId
         decider.Query(fun s -> s.items |> Seq.ofList)
     member _.TryGet(clientId, id) =
         let decider = resolve clientId
-        decider.Query(fun x -> x.items |> List.tryFind (fun x -> x.id = id))
-    member _.Execute(clientId, command): Async<unit> =
+        decider.Query(fun s -> s.items |> List.tryFind (fun x -> x.id = id))
+    member _.Create(clientId, template: Events.Todo): Async<Events.Todo> =
         let decider = resolve clientId
-        decider.Transact(interpret command)
-    member _.Create(clientId, template: Todo): Async<Todo> = async {
-        let! updated = handle clientId (Command.Add template)
-        return List.head updated }
-    member _.Patch(clientId, item: Todo): Async<Todo> = async {
-        let! updated = handle clientId (Command.Update item)
-        return List.find (fun x -> x.id = item.id) updated }
+        decider.Transact(Decisions.add template, fun s -> s.items |> List.head)
+    member _.Patch(clientId, item: Events.Todo): Async<Events.Todo> =
+        let decider = resolve clientId
+        decider.Transact(Decisions.update item, fun s -> s.items |> List.find (fun x -> x.id = item.id))
+    member _.Delete(clientId, id): Async<unit> =
+        let decider = resolve clientId
+        decider.Transact(Decisions.delete id)
+    member _.Clear(clientId): Async<unit> =
+        let decider = resolve clientId
+        decider.Transact(Decisions.clear)
 ```
 
-- `handle` represents a command processing flow where we (idempotently) apply a
-  command, but then also emit the state to the caller, as dictated by the needs
-  of the call as specified in the TodoBackend spec. We use the `fold` function
-  to compute the post-state, and then project from that, along with the
-  (pending) events as computed.
+- `Create` and `Patch` represents a command processing flow where we (idempotently)
+  manifest the intent that the incoming request represents (often referred to as the _Command_),
+  but then also echo back a response based on the resulting state to the caller,
+  as dictated by the needs of the call as specified in the TodoBackend spec.
+  The `render` function we pass is presented with the post-state (folded from the
+  input state and the events (if any) applied), and then project from that
 
 - While we could theoretically use Projections to service queries from an
   eventually consistent Read Model, this is not in alignment with the
   Read-you-writes expectation embodied in the tests (i.e. it would not pass the
   tests), and, more importantly, would not work correctly as a backend for the
-  app. Because we have more than one query required, we make a generic `query`
-  method, even though a specific `read` method (as in the Favorite example)
-  might make sense to expose too
+  app.
 
 - The main conclusion to be drawn from the Favorites and TodoBackend `Service`
   implementations's use of `Decider` Methods is that, while there can be
