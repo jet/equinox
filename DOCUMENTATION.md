@@ -626,20 +626,14 @@ let evolve state = function
     | Removed id -> state |> List.filter (is id)
 let fold = Array.fold evolve
 
-(*
- * Decision Processing to translate a Command's intent to Events that would
- * Make It So
- *)
 
-type Command =
-    | Add of Item  // IRL do not use Event records in Command types
-    | Remove of itemId: int
-
-let interpret command state =
-    let has id = state |> List.exists (is id)
-    match command with
-    | Add item -> if has item.id then [||] else [| Added item |]
-    | Remove id -> if has id then [| Removed id |] else [||]
+let has id state = state |> List.exists (is id)
+let decideAdd item state =
+    if state |> has item.id then [||]
+    else [| Added item |]
+let decideRemove id state =
+    if state |> has id then [| Removed id |]
+    else [||] 
 
 (*
  * Optional: Snapshot/Unfold-related functions to allow establish state
@@ -657,13 +651,12 @@ let toSnapshot state = [| Event.Snapshotted (Array.ofList state) |]
 
 type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    member _.Execute(clientId, command) =
+    member _.Favorite(clientId, skus) =
         let decider = resolve clientId
-        decider.Transact(interpret command)
-    member x.Favorite(clientId, skus) =
-        x.Execute(clientId, Command.Favorite(DateTimeOffset.Now, skus))
-    member x.Unfavorite(clientId, skus) =
-        x.Execute(clientId, Command.Unfavorite skus)
+        decider.Transact(decideFavorite skus)
+    member _.Unfavorite(clientId, skus) =
+        let decider = resolve clientId
+        decider.Transact(decideUnfavorite skus)
     member _.List clientId: Async<Events.Favorited []> =
         let decider = resolve clientId
         decider.Query id
