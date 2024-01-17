@@ -55,7 +55,7 @@ let favesCba = fold initialState [| Added "a"; Added "b"; Added "c" |]
 module Decisions =
     
     let add sku state = [|
-        if state |> List.contains sku |> not then
+        if not (state |> List.contains sku) then
             Added sku |]
     let remove sku state = [|
         if state |> List.contains sku then

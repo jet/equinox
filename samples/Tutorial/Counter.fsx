@@ -68,7 +68,7 @@ let decide command (State state) = [|
     | Clear i ->
         if state <> i then Cleared {value = i } |]
 
-type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
+type Service internal (resolve: string -> Equinox.Decider<Event, State>) =
 
     member _.Execute(instanceId, command) : Async<unit> =
         let decider = resolve instanceId

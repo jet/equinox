@@ -25,7 +25,9 @@ Functional Event sourcing is not far from what we have around these parts;
 which is [not surprising given there's input from Jérémie Chassaing](https://github.com/thinkbeforecoding/FsUno.Prod))
 
 [_Functional Event Sourcing Decider_](https://thinkbeforecoding.com/post/2021/12/17/functional-event-sourcing-decider), [Jérémie Chassaing](https://twitter.com/thinkb4coding), 2021.
-Precursor to an excellent book covering this space more broadly. There's teasers with extensive code walk-through and discussion in [this 2h45m video](https://www.youtube.com/watch?v=kgYGMVDHQHs) on [Event Driven Information Systems](https://www.youtube.com/channel/UCSoUh4ikepF3LkMchruSSaQ)
+Precursor to an excellent book covering this space more broadly. There's teasers
+with extensive code walk-through and discussion in [this 2h45m video](https://www.youtube.com/watch?v=kgYGMVDHQHs) on
+[Event Driven Information Systems](https://www.youtube.com/channel/UCSoUh4ikepF3LkMchruSSaQ)
 
 - **Your link here** - Please add notable materials that helped you on your journey here via PRs!
 
@@ -300,14 +302,13 @@ Version    | When a decision function is invoked, it's presented with a State de
 
 # Programming Model
 
-NB this has lots of room for improvement, having started as a placeholder in
-[#50](https://github.com/jet/equinox/issues/50); **improvements are absolutely
-welcome, as this is intended for an audience with diverse levels of familiarity
-with event sourcing in general, and Equinox in particular**.
+NB this has lots of room for improvement, having started as a placeholder in [#50](https://github.com/jet/equinox/issues/50);
+**improvements are absolutely welcome, as this is intended for an audience with
+diverse levels of familiarity with event sourcing in general, and Equinox in particular**.
 
 ## Aggregate Module
 
-All the code handling any given Aggregate’s Invariants, Commands and
+All the code handling any given Aggregate’s Invariants, Decisions and
 Synchronous Queries should be [encapsulated within a single
 `module`](https://en.wikipedia.org/wiki/Cohesion_(computer_science)). It's
 highly recommended to use the following canonical skeleton layout:
@@ -315,13 +316,12 @@ highly recommended to use the following canonical skeleton layout:
 ```fsharp
 module Aggregate
 
-  let [<Literal>] private CategoryName = "category"
-  let private streamId = FsCodec.StreamId.gen Id.toString
+let [<Literal>] private CategoryName = "category"
+let private streamId = FsCodec.StreamId.gen Id.toString
 
 (* Optionally (rarely) Helpers/Types *)
 
-// NOTE - these types and the union case names reflect the actual storage
-//        formats and hence need to be versioned with care
+// NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 [<RequiredQualifiedAccess>]
 module Events =
 
@@ -484,8 +484,7 @@ module MemoryStore =
         Equinox.MemoryStore.MemoryStoreCategory(store, CategoryName, Events.codec, Fold.fold, Fold.initial)
 ```
 
-Typically that binding module can live with your test helpers rather than
-making your Domain Assemblies depend on it.
+This is key to being able to test `Service` behavior without having to use Mocks.
 
 ## Core concepts
 
@@ -570,16 +569,16 @@ When running a decision process, we have the following stages:
      b. if there is a conflict, obtain the conflicting events [that other
      writers have produced] since the Position used in step 1, `fold` them into
      our `state`, and go back to 2 (aside: the CosmosDB stored procedure can
-     send them back immediately at zero cost or latency, and there is [a
-     proposal for EventStore to afford the same
-     facility](https://github.com/EventStore/EventStore/issues/1652))
+     send them back immediately at zero cost or latency, and there is
+     [a proposal for EventStore to afford the same facility](https://github.com/EventStore/EventStore/issues/1652))
 
 4. [if it makes sense for our scenario], hold the _state_, _position_ and
    _etag_ in our cache. When a Decision or Synchronous Query is needed, do a
    point-read of the _tip_ and jump straight to step 2 if nothing has been
    modified.
 
-See [Cosmos Storage Model](#cosmos-storage-model) for a more detailed discussion of the role of the Sync Stored Procedure in step 3
+See [Cosmos Storage Model](#cosmos-storage-model) for a more detailed discussion of the role of
+the Sync Stored Procedure in step 3
 
 ## Canonical example Aggregate + Service
 
@@ -611,7 +610,6 @@ let evolve state = function
     | Removed id -> state |> List.filter (is id)
 let fold = Array.fold evolve
 
-
 let has id state = state |> List.exists (is id)
 let decideAdd item state =
     if state |> has item.id then [||]
@@ -636,12 +634,12 @@ let toSnapshot state = [| Event.Snapshotted (Array.ofList state) |]
 
 type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    member _.Favorite(clientId, skus) =
+    member _.Favorite(clientId, sku) =
         let decider = resolve clientId
-        decider.Transact(decideFavorite skus)
-    member _.Unfavorite(clientId, skus) =
+        decider.Transact(decideAdd sku)
+    member _.Unfavorite(clientId, sku) =
         let decider = resolve clientId
-        decider.Transact(decideUnfavorite skus)
+        decider.Transact(decideRemove sku)
     member _.List clientId: Async<Events.Favorited []> =
         let decider = resolve clientId
         decider.Query id
@@ -692,21 +690,30 @@ At a high level we have:
 - _Events_ - Events that have been accepted into the model as part of a
   Transaction represent the basic Facts from which State or Projections can be
   derived
-- _Commands_ - taking intent implied by an upstream request or other impetus
+- _Commands/requests/Decisions_ - taking intent implied by an upstream request
+  or other impetus
   (e.g., automated synchronization based on an upstream data source) driving a
   need to sync a system’s model to reflect that implied need (while upholding
   the Aggregate's Invariants). The Decision process is responsible proposing
   Events to be appended to the Stream representing the relevant events in the
   timeline of that Aggregate.
+  **NOTE while you'll find 90% of event sourcing samples use a Command Pattern
+  that employs a class hierarchy (or, if the language supports it, represents it as
+  a discriminated union). You'll also find lots of examples of pipelines with
+  Mediators etc that illustrate how this enables you do hook in cross-cutting concerns.
+  In practice, the negatives of applying such a straitjacket outweigh the benefits.
+  Hence, it is advised to prefer having individual methods (`member`s) on
+  `type Service`, and pass the relevant inputs via the argument list.** 
 - _State_ - the State at any point is inferred by _folding_ the events in
   order; this state typically feeds into the Decision with the goal of ensuring
   Idempotent handling (if its a retry and/or the desired state already
   pertained, typically one would expect the decision to be "no-op, no Events to
   emit")
-- _Projections_ - while most State we'll fold from the events will be dictated
-  by what we need (in addition to a Command's arguments) to be able to make the
+- _Projections/Reactions/Notifications_ - while most State we'll fold from the events
+  will be dictated
+  by what we need (in addition to a request's arguments) to be able to make the
   Decision implied by the command, the same Events that are _necessary_ for
-  Command Handling to be able to uphold the Invariants can also be used as the
+  Decision processing to be able to uphold the Invariants can also be used as the
   basis for various summaries at the single aggregate level, Rich Events
   exposed as notification feeds at the boundary of the Bounded Context, and/or
   as denormalized representations forming a
@@ -714,30 +721,32 @@ At a high level we have:
 - Queries - as part of the processing, one might wish to expose the state
   before or after the Decision and/or a computation based on that to the caller
   as a result. In its simplest form (just reading the value and emitting it
-  without any potential Decision/Command even applying), such a _Synchronous
-  Query_ is a gross violation of CQRS - reads should ideally be served from a
-  _Read Model_
+  without any potential Decision applying), such a _Synchronous
+  Query_ is a violation of CQRS, which suggests that reads should _always_ be
+  served from a _Read Model_. Be sure you understand the trade-offs involved in
+  applying CQRS before deciding to use it in All cases (or in None).
 
 ## Programming Model walkthrough
 
 ### Flows and Deciders
 
-Equinox’s Command Handling consists of < 200 lines including interfaces and
+Equinox’s Transaction Handling consists of < 200 lines including interfaces and
 comments in https://github.com/jet/equinox/tree/master/src/Equinox - the
 elements you'll touch in a normal application are:
 
-- [`module Stream`](https://github.com/jet/equinox/blob/master/src/Equinox/Stream.fs#L30) -
+- [`module Stream`](https://github.com/jet/equinox/blob/master/src/Equinox/Stream.fs#L34) -
   internal implementation of Optimistic Concurrency Control / retry loop used
   by `Decider`. It's recommended to at least scan this file as it defines the
   Transaction semantics that are central to Equinox and the overall `Decider` concept.
 - [`type Decider`](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L11) -
   surface API one uses to `Transact` or `Query` against a specific stream's state
-- [`type LoadOption` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L218) -
-  used to specify optimization overrides to be applied when a `Decider`'s `Query` or `Transact` operations establishes the state of the stream
+- [`type LoadOption` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L222) -
+  used to specify optimization overrides to be applied when a `Decider`'s `Query`
+  or `Transact` operations need to establish the state of the stream
 
 Its recommended to read the examples in conjunction with perusing the code in
 order to see the relatively simple implementations that underlie the
-abstractions; the 2 files can tell many of the thousands of words about to
+abstractions; the two files can tell many of the thousands of words about to
 follow!
 
 #### Decider Members
@@ -748,10 +757,10 @@ type Equinox.Decider(...) =
     // Run interpret function with present state, retrying with Optimistic Concurrency
     member _.Transact(interpret: 'state -> 'event[]): Async<unit>
 
-    // Run decide function with present state, retrying with Optimistic Concurrency, yielding Result on exit
+    // Run decide function with present state, retrying with Optimistic Concurrency, yielding result on exit
     member _.Transact(decide: 'state -> 'result * 'event[]): Async<'result>
 
-    // Runs a Null Flow that simply yields a `projection` of `Context.State`
+    // Runs a Null Flow that simply yields a `projection` from the state
     member _.Query(projection: 'state -> 'view): Async<'view>
 ```
 
@@ -761,7 +770,7 @@ In this section, we’ll use possibly the simplest toy example: an unbounded lis
 of items a user has 'favorited' (starred) in an e-commerce system.
 
 See [samples/Tutorial/Favorites.fsx](samples/Tutorial/Favorites.fsx). It’s
-recommended to load this in Visual Studio and feed it into the F# Interactive
+recommended to load this in your IDE and feed it into the F# Interactive
 REPL to observe it step by step. Here, we'll skip some steps and annotate some
 aspects with regard to trade-offs that should be considered.
 
@@ -790,7 +799,7 @@ Event implies in that context and yielding that result _without mutating either
 input_.
 
 While the `evolve` function operates on a `state` and a _single_ event, `fold`
-(named for the standard FP operation of that name) walks a chain of events,
+(named for the standard FP operation of that name) walks an array of events,
 propagating the running state into each `evolve` invocation. It is the `fold`
 operation that's typically used a) in tests and b) when passing a function to
 an Equinox `Resolver` to manage the behavior.
@@ -808,97 +817,132 @@ following reasons:
 
 - computing a 'proposed' state that never materializes due to a failure to save
   and/or an Optimistic Concurrency failure
-- the store can sometimes take a `state` from the cache and `fold`ing in
-  different `events` when the conflicting events are supplied after having been
-  loaded for the retry in the loop
+- the store can sometimes take a `state` from the cache and `fold`s in
+  different `events` (when the conflicting events are loaded for the retry in the loop)
 - concurrent executions against the stream may be taking place in parallel
   within the same process; this is permitted, Equinox makes no attempt to
   constrain the behavior in such a case
 
-#### `Command`s + `interpret`
+#### `Decisions`
 
 ```fsharp
-type Command =
-    | Add of string
-    | Remove of string
-let interpret command state =
-    match command with
-    | Add sku -> if state |> List.contains sku then [||] else [| Added sku |]
-    | Remove sku -> if state |> List.contains sku |> not then [||] else [| Removed sku |]
+module Decisions =
+    let add sku state = [|
+        if not (state |> List.contains sku) then
+            Added sku |]
+    let remove sku state = [|
+        if state |> List.contains sku then
+            Removed sku |]
 ```
 
-Command handling should almost invariably be implemented in an
-[Idempotent](https://en.wikipedia.org/wiki/Idempotence) fashion. In some cases,
-a blind append can arguably be an OK way to do this, especially if one is doing
-simple add/removes that are not problematic if repeated or reordered. However
+Transactions should almost invariably be implemented in an
+[Idempotent](https://en.wikipedia.org/wiki/Idempotence) fashion.
+Some would argue that a blind append may be an OK way to do this, perhaps where
+the operations are simple add/removes that are not problematic if repeated. However
 it should be noted that:
 
-- each write roundtrip (i.e. each `Transact`), and ripple effects resulting
-  from all subscriptions having to process an event are not free either. As the
+- each write roundtrip (i.e. each `Transact`) to the store is not free, and neither are
+  ripple effects resulting from all subscriptions having to process an event. As the
   cache can be used to validate whether an Event is actually necessary in the
   first instance, it's highly recommended to follow the convention as above and
-  return an empty Event `list` in the case of a Command not needing to trigger
-  events to move the model toward it's intended end-state
+  return no Events in the case of the intended state the request implied already being in effect.
 
 - understanding the reasons for each event typically yields a more correct
   model and/or test suite, which pays off in more understandable code
 
-- under load, retries frequently bunch up, and being able to dedupicate them
+- as in the above, if the events are clean and minimal, the Fold State can be simpler;
+  if `add` does not deduplicate redundant additions as it does above, the model would
+  need to change to use a `Set`, or consider whether the item was already present
+  during _every_ `evolve` operation involving an `Added` event
+
+- under load, retries frequently bunch up, and being able to deduplicate them
   without hitting the store and causing a conflict can significantly reduce
   feedback effects that cause inordinate impacts on stability at the worst
   possible time
 
-_It should also be noted that, when executing a Command, the `interpret`
+_It should also be noted that, when executing a Decision, the `interpret`
 function is expected to behave statelessly; as with `fold`, multiple concurrent
 calls within the same process can occur.__
 
 A final consideration to mention is that, even when correct idempotent handling
 is in place, two writers can still produce conflicting events. In this
 instance, the `Transact` loop's Optimistic Concurrency control will cause the
-'loser' to re-`interpret` the Command with an updated `state` [incorporating
+'loser' to re-`interpret` the Decision with an updated `state` [incorporating
 the conflicting events the other writer (thread/process/machine) produced] as
 context
 
-#### `Decider` usage
+#### `Decider` usage - `module Decisions` and `type Service`
 
 ```fsharp
-let [<Literal>] private CategoryName = "Favorites"
-let private streamId = FsCodec.StreamId.gen ClientId.toString
+type Service internal (resolve: string -> Equinox.Decider<Events.Event, Fold.State>) =
 
-type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
-
-    let execute clientId command: Async<unit> =
+    member _.Favorite(clientId, sku) =
         let decider = resolve clientId
-        decider.Transact(interpret command)
-
-    let read clientId: Async<string list> =
+        decider.Transact(Decisions.add sku)
+    member _.Unfavorite(clientId, sku) =
+        let decider = resolve clientId
+        decider.Transact(Decisions.remove sku)
+    member _.List clientId: Async<string list> =
         let decider = resolve clientId
         decider.Query id
-
-let create resolve = Service(streamId >> resolve)
 ```
 
-`read` above will do a roundtrip to the Store in order to fetch the most recent
-state (in `AnyCachedValue` or `AllowStale` modes, the store roundtrip can be optimized out by
-reading through the cache). This Synchronous Read can be used to
-[Read-your-writes](https://en.wikipedia.org/wiki/Consistency_model#Read-your-writes_Consistency)
-to establish a state incorporating the effects of any Command invocation you
-know to have been completed.
+Note the `resolve` parameter affords one a sufficient
+[_seam_](http://www.informit.com/articles/article.aspx?p=359417) that
+facilitates testing independently with the `MemoryStore`. 
 
-`execute` runs an Optimistic Concurrency Controlled `Transact` loop in order to
-effect the intent of the [write-only] Command. This involves:
+In general, you want to have as little logic as possible in your `type Service`
+as possible - the ideal situation is for everything to be tested independent of
+of storage, event encoding (and Equinox behaviors) by simply invoking functions
+from `module Decisions`.
+
+Any logic that makes sense to put in `type Service` should be tested with the
+`MemoryStore` to the maximum degree possible. You will likely also opt
+to have some further tests that exercise the actual concrete store, but you
+want to maximize the amount of validation of the paths that can be performed
+against the in-memory store in order to have a fast-running test suite without
+the flakiness that's inevitable with even a store emulator.
+
+#### Request processing/commands
+
+`Favorite` and `Unfavorite` run an Optimistic Concurrency Controlled `Transact`
+loop in order to effect the intent of the [write-only] request. This involves:
 
 1. establish state
-2. use `interpret` to determine what (if any) Events need to be appended
+2. use the Decision Function (`Decisions.add`/`Decisions.remove`) to determine
+   what (if any) Events need to be appended to manifest the intent
 3. submit the Events, if any, for appending
-4. retrying b+c where there's a conflict (i.e., the version of the stream that
-   pertained in (a) has been superseded)
-5. after `maxAttempts` / `3` retries, a `MaxResyncsExhaustedException` is
+4. retrying 2/3 where there's a conflict (i.e., the version of the stream that
+   pertained in 1 has been superseded)
+5. after `maxAttempts` retries, a `MaxResyncsExhaustedException` is
    thrown, and an upstream can retry as necessary (depending on SLAs, a timeout
    may further constrain the number of retries that can occur)
 
-Aside from reading the various documentation regarding the concepts underlying
-CQRS, it's important to consider that (unless you're trying to leverage the
+Note that we've opted not to employ the Command pattern here; we have an individual
+Decision Function per action/request, and an associated `member` in the `Service`
+that takes the parameters and passes them to it (as opposed to the relevant parameters
+being stored in a Command class or Discriminated Union case)
+
+- while the Command pattern can help clarify a high level flow, there's no
+  substitute for representing actual business functions as well-named methods
+  representing specific behaviors that are meaningful in the context of the
+  application's Ubiquitous Language, can be documented and tested.
+
+- the exact result type that makes sense for a given operation can vary; if you
+  have a single handler, you're forced to use a highest common factor in the result
+  type, i.e. you might end up using a result type that contains aspects that are
+  redundant for some requests
+
+##### Reads on the same Service vs CQRS
+
+`List` above will do a roundtrip to the Store in order to fetch the most recent
+state (in `AnyCachedValue` or `AllowStale` modes, the store roundtrip can be optimized
+out by reading through the cache). This Synchronous Read can be used to
+[Read-your-writes](https://en.wikipedia.org/wiki/Consistency_model#Read-your-writes_Consistency)
+to establish a state incorporating the effects of any request you
+know to have been completed.
+
+It's important to consider that (unless you're trying to leverage the
 Read-your-writes guarantee), doing reads direct from an event-sourced store is
 generally not considered a best practice (the opposite, in fact). Any state you
 surface to a caller is by definition out of date the millisecond you obtain it,
@@ -906,7 +950,7 @@ so in many cases a caller might as well use an eventually-consistent version of
 the same state obtained via a [n eventually-consistent] Projection (see terms
 above).
 
-All that said, if you're in a situation where your cache hit ratio is going to
+That said, if you're in a situation where your cache hit ratio is going to
 be high and/or you have reason to believe the underlying Event-Streams are not
 going to be long, pretty good performance can be achieved nonetheless; just
 consider that taking this shortcut _will_ impede scaling and, at worst, can
@@ -919,35 +963,6 @@ result in you ending up with a model that's potentially both:
   and/or any output from `unfold` (and its storage cost) is a drag on one's
   ability to read, test, extend and generally maintain the Command
   Handling/Decision logic that can only live on the write side
-
-#### `Service` Members
-
-```fsharp
-    member _.Favorite(clientId, sku) =
-        execute clientId (Add sku)
-    member _.Unfavorite(clientId, skus) =
-        execute clientId (Remove skus)
-    member _.List clientId: Async<string list> =
-        read clientId
-```
-
-- while the decision processing logic in the `Service` type can arguably be
-  extracted into a standalone `type` (called something like `Handler`) in order
-  to separate the stream logic from the business function being accomplished,
-  it's become clear in the course of writing tutorials and explaining verbally
-  that the extra concept count is not justified. This can be further exacerbated
-  by the need to hover in an IDE and/or add type annotations in order to
-  understand what types are flowing about.
-
-- while the Command pattern can help clarify a high level flow, there's no
-  substitute for representing actual business functions as well-named methods
-  representing specific behaviors that are meaningful in the context of the
-  application's Ubiquitous Language, can be documented and tested.
-
-- the `resolve` parameter affords one a sufficient
-  [_seam_](http://www.informit.com/articles/article.aspx?p=359417) that
-  facilitates testing independently with `MemoryStore` (which does necessitate a
-  reference to a separate Assembly] as desired. 
 
 ### Todo[Backend] walkthrough
 
@@ -1104,7 +1119,7 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
   app.
 
 - The main conclusion to be drawn from the Favorites and TodoBackend `Service`
-  implementations's use of `Decider` Methods is that, while there can be
+  implementation's use of `Decider` Methods is that, while there can be
   commonality in terms of the sorts of transactions one might encapsulate in
   this manner, there's also It Depends factors; for instance:
     1. the design doesnt provide complete idempotency and/or follow the CQRS style
@@ -1167,7 +1182,7 @@ Equinox Flow.
 If the _interpret function_ does not yield any events, there will be no trip to
 the store them.
 
-A command may be rejected
+A requst may be rejected
 [by throwing](https://eiriktsarpalis.wordpress.com/2017/02/19/youre-better-off-using-exceptions/)
 from within the `interpret` function.
 
@@ -1176,19 +1191,19 @@ conflicting write have taken place since the loading of the state_
 
 ```fsharp
 
-let interpret (context, command) state: Events.Event[] =
+let interpret (context, command) state: Events.Event[] = [|
     match tryCommand context command state with
     | None ->
-        [||] // not relevant / already in effect
+        () // not relevant / already in effect
     | Some eventDetails -> // accepted, mapped to event details record
-        [| Events.HandledCommand eventDetails |]
+        Events.HandledCommand eventDetails |]
 
 type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>)
 
     // Given the supplied context, apply the command for the specified clientId
     member _.Execute(clientId, context, command): Async<unit> =
         let decider = resolve clientId
-        decider.Transact(fun state -> interpretCommand (context, command) state)
+        decider.Transact(interpret (context, command))
 
     // Given the supplied context, apply the command for the specified clientId
     // Throws if this client's data is marked Read Only
@@ -1208,7 +1223,7 @@ necessary function is a hybrid of a _projection_ and the preceding `interpret`
 signature: you're both potentially emitting events and yielding an outcome or
 projecting some of the 'state'.
 
-In this case, the signature is: `let decide (context, command, args) state:
+In this case, the signature is: `let decide (context, args) state:
 'result * Events.Event[]`
 
 Note that the return value is a _tuple_ of `('result, Events.Event[])`:
@@ -1234,8 +1249,7 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
     // from the last attempt is the outcome
     member _.Try(clientId, context, command): Async<int> =
         let decider = resolve clientId
-        decider.Transact(fun state ->
-            decide (context, command) state)
+        decider.Transact(decide (context, command))
 ```
 
 ## DOs
@@ -1249,8 +1263,8 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
 
 - Any command's processing should take into account the current `'state` of the
   aggregate, `interpreting` the state in an
-  [idempotent](https://en.wikipedia.org/wiki/Idempotence) manner; applying the
-  same Command twice should result in no events being written when the same
+  [idempotent](https://en.wikipedia.org/wiki/Idempotence) manner; processing the same request
+  twice should result in no events being written when the same
   logical request is made the second time.
 
 ## DONTs

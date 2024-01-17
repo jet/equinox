@@ -93,7 +93,7 @@ module FulfilmentCenter =
             if state.details <> Some d then
                 Events.FcDetailsChanged { details = d } |]
 
-    type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
+    type Service internal (resolve: string -> Equinox.Decider<Events.Event, Fold.State>) =
 
         member _.UpdateName(fc, value) =
             let decider = resolve fc

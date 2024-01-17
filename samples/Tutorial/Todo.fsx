@@ -53,7 +53,7 @@ module Snapshot =
 let private evolve s = function
     | Added item -> { items = item :: s.items; nextId = s.nextId + 1 }
     | Updated value -> { s with items = s.items |> List.map (function { id = id } when id = value.id -> value | item -> item) }
-    | Deleted { id=id } -> { s with items = s.items |> List.filter (fun x -> x.id <> id) }
+    | Deleted { id = id } -> { s with items = s.items |> List.filter (fun x -> x.id <> id) }
     | Cleared -> { s with items = [] }
     | Snapshotted { items=items } -> { s with items = List.ofArray items }
 let fold = Array.fold evolve
@@ -73,7 +73,7 @@ module Decisions =
         if state.items |> List.isEmpty |> not then
             Cleared |]
 
-type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
+type Service internal (resolve: string -> Equinox.Decider<Event, State>) =
 
     member _.List(clientId): Async<Todo seq> =
         let decider = resolve clientId

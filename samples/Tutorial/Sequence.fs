@@ -29,7 +29,7 @@ module Fold =
 let decideReserve (count : int) (state : Fold.State) : int64 * Events.Event[] =
     state.next, [| Events.Reserved { next = state.next + int64 count } |]
 
-type Service internal (resolve : SequenceId -> Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (resolve: SequenceId -> Equinox.Decider<Events.Event, Fold.State>) =
 
     /// Reserves an id, yielding the reserved value. Optional <c>count</c> enables reserving more than the default count of <c>1</c> in a single transaction
     member _.Reserve(series,?count) : Async<int64> =

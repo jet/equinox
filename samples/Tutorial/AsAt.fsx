@@ -45,8 +45,8 @@ let private streamId = FsCodec.StreamId.gen id
 
 module Events =
 
-    type Delta = { count : int }
-    type SnapshotInfo = { balanceLog : int[] }
+    type Delta = { count: int }
+    type SnapshotInfo = { balanceLog: int[] }
     type Contract =
         | Added of Delta
         | Removed of Delta
@@ -102,7 +102,7 @@ let decideRemove delta state = [|
     if bal < delta then invalidArg "delta" $"delta %d{delta} exceeds balance %d{bal}"
     else -1L, Events.Removed { count = delta } |]
 
-type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (resolve: string -> Equinox.Decider<Events.Event, Fold.State>) =
 
     member _.Add(clientId, count) =
         let decider = resolve clientId

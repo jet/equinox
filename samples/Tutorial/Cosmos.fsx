@@ -43,7 +43,7 @@ module Favorites =
 
     module Events =
 
-        type Item = { sku : string }
+        type Item = { sku: string }
         type Event =
             | Added of Item
             | Removed of Item
@@ -59,21 +59,23 @@ module Favorites =
             | Events.Removed { sku = sku } -> state |> List.filter (fun x -> x <> sku)
         let fold s xs = Array.fold evolve s xs
 
-    let decideAdd sku state = [|
-        if state |> List.contains sku |> not then
-            Events.Added { sku = sku } |]
-    let decideRemove sku state = [|
-        if state |> List.contains sku then
-            Events.Removed { sku = sku } |]
+    module Decisions =
+        
+        let add sku state = [|
+            if not (state |> List.contains sku) then
+                Events.Added { sku = sku } |]
+        let remove sku state = [|
+            if state |> List.contains sku then
+                Events.Removed { sku = sku } |]
 
-    type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
+    type Service internal (resolve: string -> Equinox.Decider<Events.Event, Fold.State>) =
 
         member _.Favorite(clientId, sku) =
             let decider = resolve clientId
-            decider.Transact(decideAdd sku)
+            decider.Transact(Decisions.add sku)
         member _.Unfavorite(clientId, sku) =
             let decider = resolve clientId
-            decider.Transact(decideRemove sku)
+            decider.Transact(Decisions.remove sku)
         member _.List clientId: Async<string list> =
             let decider = resolve clientId
             decider.Query id

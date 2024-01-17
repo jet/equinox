@@ -60,13 +60,13 @@ module SequenceCheck =
         then Array.init count (fun i -> Events.Add {| value = start + i |})
         else failwith $"Invalid Add of %d{start} to list %A{state}"
 
-    type Service(resolve : Guid -> Equinox.Decider<Events.Event, Fold.State>) =
+    type Service(resolve: Guid -> Equinox.Decider<Events.Event, Fold.State>) =
 
-        member _.Read(instance : Guid) : Async<int[]> =
+        member _.Read(instance: Guid): Async<int[]> =
             let decider = resolve instance
             decider.Query(id)
 
-        member _.Add(instance : Guid, value : int, count) : Async<int[]> =
+        member _.Add(instance: Guid, value: int, count): Async<int[]> =
             let decider = resolve instance
             decider.Transact(decide (value, count), id)
 
