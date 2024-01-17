@@ -6,10 +6,10 @@ module ClientId =
     let parse = ClientId
 
 module Stream =
-    let [<Literal>] Category = "ContactPreferences"
+    let [<Literal>] CategoryName = "ContactPreferences"
     let id = FsCodec.StreamId.gen ClientId.toString // TODO hash >> base64
     let decodeId = FsCodec.StreamId.dec ClientId.parse
-    let name = id >> FsCodec.StreamName.create Category
+    let name = id >> FsCodec.StreamName.create CategoryName
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =

@@ -27,7 +27,7 @@ open System
    This tutorial stresses different aspects *)
 
 module Stream =
-    let Category = "Todos"
+    let CategoryName = "Todos"
     let id = FsCodec.StreamId.gen id
 
 type Todo =             { id: int; order: int; title: string; completed: bool }
@@ -133,7 +133,7 @@ module Store =
     let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
 
     let access = AccessStrategy.Snapshot Snapshot.config
-    let category = CosmosStoreCategory(context, Stream.Category, codec, fold, initial, access, cacheStrategy)
+    let category = CosmosStoreCategory(context, Stream.CategoryName, codec, fold, initial, access, cacheStrategy)
 
 let service = Service(Stream.id >> Equinox.Decider.forStream log Store.category)
 

@@ -39,7 +39,7 @@ module Log =
 module Favorites =
 
     module Stream =
-        let Category = "Favorites"
+        let Categoryname = "Favorites"
         let id = FsCodec.StreamId.gen id
 
     module Events =
@@ -87,7 +87,7 @@ module Favorites =
         let accessStrategy = AccessStrategy.Unoptimized // Or Snapshot etc https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#access-strategies
         let category (context, cache) =
             let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-            CosmosStoreCategory(context, Stream.Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
+            CosmosStoreCategory(context, Stream.Categoryname, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
 
 let [<Literal>] appName = "equinox-tutorial"
 

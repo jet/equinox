@@ -41,7 +41,7 @@
 open System
 
 module Stream =
-    let [<Literal>] Category = "Account"
+    let [<Literal>] CategoryName = "Account"
     let id = FsCodec.StreamId.gen id
 
 module Events =
@@ -151,7 +151,7 @@ module EventStore =
     let context = EventStoreContext(connection, batchSize = snapshotWindow)
     // rig snapshots to be injected as events into the stream every `snapshotWindow` events
     let accessStrategy = AccessStrategy.RollingSnapshots (Fold.isValid,Fold.snapshot)
-    let cat = EventStoreCategory(context, Stream.Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
+    let cat = EventStoreCategory(context, Stream.CategoryName, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
     let resolve = Equinox.Decider.forStream Log.log cat
 
 module Cosmos =
@@ -165,7 +165,7 @@ module Cosmos =
     let client = connector.Connect(databaseId, [| containerId |]) |> Async.RunSynchronously
     let context = CosmosStoreContext(client, databaseId, containerId, tipMaxEvents = 10)
     let accessStrategy = AccessStrategy.Snapshot (Fold.isValid,Fold.snapshot)
-    let cat = CosmosStoreCategory(context, Stream.Category, Events.codecJe, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
+    let cat = CosmosStoreCategory(context, Stream.CategoryName, Events.codecJe, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
     let resolve = Equinox.Decider.forStream Log.log cat
 
 let service = Service(Stream.id >> EventStore.resolve)

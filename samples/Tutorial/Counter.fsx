@@ -32,8 +32,8 @@ type Event =
 
 module Stream =
     // Events for a given DDD aggregate are considered to be in the same 'Category' for indexing purposes
-    // When reacting to events (using Propulsion), the Category will be a key thing to filter events based on
-    let [<Literal>] Category = "Counter"
+    // When reacting to events (using Propulsion), the CategoryName will be a key thing to filter events based on
+    let [<Literal>] CategoryName = "Counter"
     // Maps from an app-level counter name (perhaps a strongly typed id), to a well-formed StreamId that can be stored in the Event Store
     // For this sample, we let callers just pass a string, and we trust it's suitable for use as a StreamId directly
     let id = FsCodec.StreamId.gen id
@@ -98,7 +98,7 @@ let logEvents sn (events : FsCodec.ITimelineEvent<_>[]) =
 let store = Equinox.MemoryStore.VolatileStore()
 let _ = store.Committed.Subscribe(fun struct (sn, xs) -> logEvents sn xs)
 let codec = FsCodec.Box.Codec.Create()
-let cat = Equinox.MemoryStore.MemoryStoreCategory(store, Stream.Category, codec, fold, initial)
+let cat = Equinox.MemoryStore.MemoryStoreCategory(store, Stream.CategoryName, codec, fold, initial)
 let service = Service(Stream.id >> Equinox.Decider.forStream log cat)
 
 let clientId = "ClientA"

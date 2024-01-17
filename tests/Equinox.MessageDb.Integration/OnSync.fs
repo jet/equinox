@@ -51,7 +51,7 @@ module ContactPreferences =
     let createWithOnSync log connection onSync =
         let access = AccessStrategy.LatestKnownEvent
         let caching = Equinox.CachingStrategy.NoCaching
-        Category(createContext connection 1, ContactPreferences.Stream.Category, codec, fold, initial, access, caching, onSync)
+        Category(createContext connection 1, ContactPreferences.Stream.CategoryName, codec, fold, initial, access, caching, onSync)
         |> Equinox.Decider.forStream log
         |> ContactPreferences.create
     let create log connection = createWithOnSync log connection Projection.project

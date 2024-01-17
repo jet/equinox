@@ -5,7 +5,7 @@ module Sequence
 open System
 
 module Stream =
-    let [<Literal>] Category = "Sequence"
+    let [<Literal>] CategoryName = "Sequence"
     let id = FsCodec.StreamId.gen SequenceId.toString
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
@@ -44,7 +44,7 @@ module Cosmos =
     open Equinox.CosmosStore
     let private create (context, cache, accessStrategy) =
         let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        CosmosStoreCategory(context, Stream.Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
+        CosmosStoreCategory(context, Stream.CategoryName, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
 
     module LatestKnownEvent =
 

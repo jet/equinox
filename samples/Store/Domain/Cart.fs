@@ -1,9 +1,9 @@
 ﻿module Domain.Cart
 
 module Stream =
-    let [<Literal>] Category = "Cart"
+    let [<Literal>] CategoryName = "Cart"
     let id = FsCodec.StreamId.gen CartId.toString
-    let name = id >> FsCodec.StreamName.create Category
+    let name = id >> FsCodec.StreamName.create CategoryName
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 [<RequireQualifiedAccess>]

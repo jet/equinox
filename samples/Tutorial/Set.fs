@@ -1,7 +1,7 @@
 module Set
 
 module Stream =
-    let [<Literal>] Category = "Set"
+    let [<Literal>] CategoryName = "Set"
     let id = FsCodec.StreamId.gen SetId.toString
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
@@ -61,9 +61,9 @@ module Cosmos =
     let category (context, cache) =
         let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         let accessStrategy = Equinox.CosmosStore.AccessStrategy.RollingState Fold.Snapshot.generate
-        Equinox.CosmosStore.CosmosStoreCategory(context, Stream.Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
+        Equinox.CosmosStore.CosmosStoreCategory(context, Stream.CategoryName, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
 
 module MemoryStore =
 
     let category store =
-        Equinox.MemoryStore.MemoryStoreCategory(store, Stream.Category, Events.codec, Fold.fold, Fold.initial)
+        Equinox.MemoryStore.MemoryStoreCategory(store, Stream.CategoryName, Events.codec, Fold.fold, Fold.initial)

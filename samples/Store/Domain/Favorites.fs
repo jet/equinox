@@ -1,9 +1,9 @@
 ﻿module Domain.Favorites
 
 module Stream =
-    let [<Literal>] Category = "Favorites"
+    let [<Literal>] CategoryName = "Favorites"
     let id = FsCodec.StreamId.gen ClientId.toString
-    let name = id >> FsCodec.StreamName.create Category
+    let name = id >> FsCodec.StreamName.create CategoryName
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =

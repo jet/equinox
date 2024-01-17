@@ -7,27 +7,27 @@ open Swensen.Unquote
 
 let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
 
-let Category = ContactPreferences.Stream.Category
+let CategoryName = ContactPreferences.Stream.CategoryName
 let createMemoryStore () = MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
-    MemoryStore.MemoryStoreCategory(store, Category, FsCodec.Box.Codec.Create(), fold, initial)
+    MemoryStore.MemoryStoreCategory(store, CategoryName, FsCodec.Box.Codec.Create(), fold, initial)
     |> Decider.forStream log
     |> ContactPreferences.create
 
 let codec = ContactPreferences.Events.codec
 let codecJe = ContactPreferences.Events.codecJe
 let categoryGesWithOptimizedStorageSemantics context =
-    EventStoreDb.EventStoreCategory(context 1, Category, codec, fold, initial, EventStoreDb.AccessStrategy.LatestKnownEvent, CachingStrategy.NoCaching)
+    EventStoreDb.EventStoreCategory(context 1, CategoryName, codec, fold, initial, EventStoreDb.AccessStrategy.LatestKnownEvent, CachingStrategy.NoCaching)
 let categoryGesWithoutAccessStrategy context =
-    EventStoreDb.EventStoreCategory(context defaultBatchSize, Category, codec, fold, initial, EventStoreDb.AccessStrategy.Unoptimized, CachingStrategy.NoCaching)
+    EventStoreDb.EventStoreCategory(context defaultBatchSize, CategoryName, codec, fold, initial, EventStoreDb.AccessStrategy.Unoptimized, CachingStrategy.NoCaching)
 
 let categoryCosmosWithLatestKnownEventSemantics context =
-    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, CosmosStore.AccessStrategy.LatestKnownEvent, CachingStrategy.NoCaching)
+    CosmosStore.CosmosStoreCategory(context, CategoryName, codecJe, fold, initial, CosmosStore.AccessStrategy.LatestKnownEvent, CachingStrategy.NoCaching)
 let categoryCosmosUnoptimized context =
-    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, CosmosStore.AccessStrategy.Unoptimized, CachingStrategy.NoCaching)
+    CosmosStore.CosmosStoreCategory(context, CategoryName, codecJe, fold, initial, CosmosStore.AccessStrategy.Unoptimized, CachingStrategy.NoCaching)
 let categoryCosmosRollingUnfolds context =
     let access = CosmosStore.AccessStrategy.Custom(ContactPreferences.Fold.isOrigin, ContactPreferences.Fold.transmute)
-    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, access, CachingStrategy.NoCaching)
+    CosmosStore.CosmosStoreCategory(context, CategoryName, codecJe, fold, initial, access, CachingStrategy.NoCaching)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutput testOutputHelper

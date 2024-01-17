@@ -34,7 +34,7 @@ module WiringHelpers =
 module SequenceCheck =
 
     module Stream =
-        let [<Literal>] Category = "_SequenceCheck"
+        let [<Literal>] CategoryName = "_SequenceCheck"
         let id = FsCodec.StreamId.gen (fun (g : Guid) -> g.ToString "N")
 
     module Events =
@@ -77,9 +77,9 @@ module SequenceCheck =
     module Config =
 
         let createUncached log context =
-            createCategoryUnoptimizedUncached Stream.Category Events.codec Fold.initial Fold.fold context |> Equinox.Decider.forStream log |> create
+            createCategoryUnoptimizedUncached Stream.CategoryName Events.codec Fold.initial Fold.fold context |> Equinox.Decider.forStream log |> create
         let create log (context, cache) =
-            createCategoryUnoptimized Stream.Category Events.codec Fold.initial Fold.fold (context, cache) |> Equinox.Decider.forStream log |> create
+            createCategoryUnoptimized Stream.CategoryName Events.codec Fold.initial Fold.fold (context, cache) |> Equinox.Decider.forStream log |> create
 
 module Props =
     open FsCheck

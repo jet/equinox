@@ -51,7 +51,7 @@ module Types =
 module FulfilmentCenter =
 
     module Stream =
-        let [<Literal>] Category = "FulfilmentCenter"
+        let [<Literal>] CategoryName = "FulfilmentCenter"
         let id = FsCodec.StreamId.gen id
 
     module Events =
@@ -145,7 +145,7 @@ module Store =
 open FulfilmentCenter
 
 let service =
-    let cat = CosmosStoreCategory(Store.context, Stream.Category, Events.codec, Fold.fold, Fold.initial, AccessStrategy.Unoptimized, Store.cacheStrategy)
+    let cat = CosmosStoreCategory(Store.context, Stream.CategoryName, Events.codec, Fold.fold, Fold.initial, AccessStrategy.Unoptimized, Store.cacheStrategy)
     Service(Stream.id >> Equinox.Decider.forStream Log.log cat)
 
 let fc = "fc0"
@@ -158,7 +158,7 @@ Log.dumpMetrics ()
 module FulfilmentCenterSummary =
 
     module Stream =
-        let [<Literal>] Category = "FulfilmentCenter"
+        let [<Literal>] CategoryName = "FulfilmentCenter"
         let id = FsCodec.StreamId.gen id
 
     module Events =

@@ -4,7 +4,7 @@ module Domain.InventoryItem
 open System
 
 module Stream =
-    let [<Literal>] Category = "InventoryItem"
+    let [<Literal>] CategoryName = "InventoryItem"
     let id = FsCodec.StreamId.gen InventoryItemId.toString
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care

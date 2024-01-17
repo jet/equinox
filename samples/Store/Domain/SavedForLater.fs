@@ -4,7 +4,7 @@ open System
 open System.Collections.Generic
 
 module Stream =
-    let [<Literal>] Category = "SavedForLater"
+    let [<Literal>] CategoryName = "SavedForLater"
     let id = FsCodec.StreamId.gen ClientId.toString
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care

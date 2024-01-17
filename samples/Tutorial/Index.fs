@@ -1,7 +1,7 @@
 module Index
 
 module Stream =
-    let [<Literal>] Category = "Index"
+    let [<Literal>] CategoryName = "Index"
     let id = FsCodec.StreamId.gen IndexId.toString
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
@@ -55,9 +55,9 @@ module Cosmos =
     let category (context,cache) =
         let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         let accessStrategy = AccessStrategy.RollingState Fold.snapshot
-        CosmosStoreCategory(context, Stream.Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
+        CosmosStoreCategory(context, Stream.CategoryName, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
 
 module MemoryStore =
 
     let category store =
-        Equinox.MemoryStore.MemoryStoreCategory(store, Stream.Category, Events.codec, Fold.fold, Fold.initial)
+        Equinox.MemoryStore.MemoryStoreCategory(store, Stream.CategoryName, Events.codec, Fold.fold, Fold.initial)

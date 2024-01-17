@@ -15,7 +15,7 @@ module CompanyId =
     let toString (value : CompanyId) : string = %value
 
 module Stream =
-    let [<Literal>] Category = "Upload"
+    let [<Literal>] CategoryName = "Upload"
     let id = FsCodec.StreamId.gen2 CompanyId.toString PurchaseOrderId.toString
 
 type UploadId = string<uploadId>
@@ -60,9 +60,9 @@ module Cosmos =
     open Equinox.CosmosStore
     let category (context, cache) =
         let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        CosmosStoreCategory(context, Stream.Category, Events.codecJe, Fold.fold, Fold.initial, AccessStrategy.LatestKnownEvent, cacheStrategy)
+        CosmosStoreCategory(context, Stream.CategoryName, Events.codecJe, Fold.fold, Fold.initial, AccessStrategy.LatestKnownEvent, cacheStrategy)
 
 module EventStore =
     open Equinox.EventStoreDb
     let category context =
-        EventStoreCategory(context, Stream.Category, Events.codec, Fold.fold, Fold.initial, AccessStrategy.LatestKnownEvent, Equinox.CachingStrategy.NoCaching)
+        EventStoreCategory(context, Stream.CategoryName, Events.codec, Fold.fold, Fold.initial, AccessStrategy.LatestKnownEvent, Equinox.CachingStrategy.NoCaching)
