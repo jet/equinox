@@ -160,7 +160,7 @@ module ContactPreferences =
         |> ContactPreferences.create
 
 let addAndThenRemoveItems optimistic exceptTheLastOne context cartId skuId (service: Cart.Service) count =
-        service.ExecuteManyAsync(cartId, optimistic, seq {
+        service.SyncItems(cartId, optimistic, seq {
             for i in 1..count do
                 yield (context, skuId, Some i, None)
                 if not exceptTheLastOne || i <> count then
@@ -253,7 +253,7 @@ type GeneralTests(testOutputHelper) =
                     return Some (skuId, addRemoveCount) }
 
         let act prepare (service: Cart.Service) skuId count =
-            service.ExecuteManyAsync(cartId, false, prepare = prepare, items = [ (ctx, skuId, Some count, None) ])
+            service.SyncItems(cartId, false, prepare = prepare, items = [ (ctx, skuId, Some count, None) ])
 
         let eventWaitSet () = let e = new ManualResetEvent(false) in (Async.AwaitWaitHandle e |> Async.Ignore), async { e.Set() |> ignore }
         let w0, s0 = eventWaitSet ()
@@ -363,7 +363,7 @@ type GeneralTests(testOutputHelper) =
         // Trigger 10 events, then reload
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne ctx cartId skuId service1 5
         test <@ batchForwardAndAppend = capture.ExternalCalls @>
-        let! resStale = service2.ReadStale cartId
+        let! resStale = service2.ReadAnyCachedValue cartId
         test <@ batchForwardAndAppend = capture.ExternalCalls @>
         let! resFresh = service2.Read cartId
         // Because we're caching writes, stale vs fresh reads are equivalent
@@ -380,7 +380,7 @@ type GeneralTests(testOutputHelper) =
         // While we now have 12 events, we should be able to read them with a single call
         capture.Clear()
         // Do a stale read - we will see outs
-        let! res = service2.ReadStale cartId
+        let! res = service2.ReadAnyCachedValue cartId
         // result after 10 should be different to result after 12
         test <@ res <> resFresh @>
         // but we don't do a roundtrip to get it

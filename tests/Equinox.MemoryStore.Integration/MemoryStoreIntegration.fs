@@ -36,10 +36,10 @@ type Tests(testOutputHelper) =
 
         // Act: Run the decision twice...
         let actTrappingStateAsSaved cartId =
-            service.Run(cartId, false, [ item ])
+            service.RunInternal(cartId, false, [ item ])
 
         let actLoadingStateSeparately cartId = async {
-            let! _ = service.ExecuteManyAsync(cartId, false, [ item ])
+            let! _ = service.SyncItems(cartId, false, [ item ])
             return! service.Read cartId }
         let! expected = cartId1 |> actTrappingStateAsSaved
         let! actual = cartId2 |> actLoadingStateSeparately

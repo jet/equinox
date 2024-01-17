@@ -51,7 +51,7 @@ module Fold =
         let eventCaseName = nameof Events.Snapshotted
 
     let private evolve (state: State) event =
-        let updateItems f = { state with items = f state.items }
+        let updateItems f = { items = f state.items }
         match event with
         | Events.Snapshotted s ->
             Snapshot.hydrate s
@@ -91,46 +91,44 @@ let interpretSync (item: ItemInfo) (state: Fold.State) =
             Events.ItemQuantityChanged { context = c; skuId = skuId; quantity = quantity } }
     [| match item with
         // a request to set quantity of `0` represents a removal request
-        | (Context c, skuId, Some 0, _) ->
+        | Context c, skuId, Some 0, _ ->
             if itemExistsWithSkuId skuId then
                 yield Events.ItemRemoved { context = c; skuId = skuId }
         // Add/quantity change with potential waive change at same time
-        | (Context c, skuId, Some q, w) ->
+        | Context c, skuId, Some q, w ->
             if itemExistsWithSkuId skuId then yield! maybeQuantityChanges c skuId q; yield! maybePropChanges c skuId w
             else yield Events.ItemAdded { context = c; skuId = skuId; quantity = q; waived = w }
         // Waive return status change only
-        | (Context c, skuId, None, w) ->
+        | Context c, skuId, None, w ->
             yield! maybePropChanges c skuId w |]
 
-let interpretMany fold interpreters (state: 'state): 'state * 'event[] =
+// See DOCUMENTATION.md for an overview of this helper and why it exists
+let interpretMany fold (interpreters: seq<'state -> 'event[]>) (state: 'state): 'event[] = [|
     let mutable state = state
-    let events = [|
-        for interpret in interpreters do
-            let events = interpret state
-            yield! events
-            state <- fold state events |]
-    state, events
+    for interpret in interpreters do
+        let events = interpret state
+        state <- fold state events
+        yield! events |]
 
 type Service internal (resolve: CartId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    member _.Run(cartId, optimistic, items: ItemInfo seq, ?prepare): Async<Fold.State> =
+    // NOTE in a real app, you should NOT emit the post-state like this
+    //      (it's passed out to validate that Read yields an identical result to what the writer wrote for the purposes of validating the Store)
+    member _.RunInternal(cartId, optimistic, items: ItemInfo seq, ?prepare): Async<Fold.State> =
         let interpret state = async {
             match prepare with None -> () | Some prep -> do! prep
             return interpretMany Fold.fold (Seq.map interpretSync items) state }
         let decider = resolve cartId
         let opt = if optimistic then Equinox.LoadOption.AnyCachedValue else Equinox.LoadOption.RequireLoad
-        decider.Transact(interpret, opt)
+        decider.Transact(interpret, id, opt)
 
-    member x.ExecuteManyAsync(cartId, optimistic, items: ItemInfo seq, ?prepare): Async<unit> =
-        x.Run(cartId, optimistic, items, ?prepare = prepare) |> Async.Ignore
-
-    member x.Execute(cartId, command) =
-        x.ExecuteManyAsync(cartId, false, [command])
+    member x.SyncItems(cartId, optimistic, items: ItemInfo seq, ?prepare): Async<unit> =
+        x.RunInternal(cartId, optimistic, items, ?prepare = prepare) |> Async.Ignore
 
     member _.Read cartId =
         let decider = resolve cartId
         decider.Query id
-    member _.ReadStale cartId =
+    member _.ReadAnyCachedValue cartId =
         let decider = resolve cartId
         decider.Query(id, Equinox.LoadOption.AnyCachedValue)
 

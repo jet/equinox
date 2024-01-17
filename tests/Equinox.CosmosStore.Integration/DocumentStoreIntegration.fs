@@ -68,7 +68,7 @@ type Tests(testOutputHelper) =
     let log, capture = testContext.CreateLoggerWithCapture()
 
     let addAndThenRemoveItems optimistic exceptTheLastOne context cartId skuId (service: Cart.Service) count =
-        service.ExecuteManyAsync(cartId, optimistic, seq {
+        service.SyncItems(cartId, optimistic, seq {
             for i in 1..count do
                 yield (context, skuId, Some i, None)
                 if not exceptTheLastOne || i <> count then
@@ -201,7 +201,7 @@ type Tests(testOutputHelper) =
                     return Some (skuId, addRemoveCount) }
 
         let act prepare (service: Cart.Service) skuId count =
-            service.ExecuteManyAsync(cartId, false, prepare = prepare, items = [ (cartContext, skuId, Some count, None) ])
+            service.SyncItems(cartId, false, prepare = prepare, items = [ (cartContext, skuId, Some count, None) ])
 
         let eventWaitSet () = let e = new ManualResetEvent(false) in (Async.AwaitWaitHandle e |> Async.Ignore), async { e.Set() |> ignore }
         let w0, s0 = eventWaitSet ()
@@ -363,7 +363,7 @@ type Tests(testOutputHelper) =
                     return Some (skuId, addRemoveCount) }
 
         let act prepare (service: Cart.Service) skuId count =
-            service.ExecuteManyAsync(cartId, false, prepare = prepare, items = [ (cartContext, skuId, Some count, None) ])
+            service.SyncItems(cartId, false, prepare = prepare, items = [ (cartContext, skuId, Some count, None) ])
 
         let eventWaitSet () = let e = new ManualResetEvent(false) in (Async.AwaitWaitHandle e |> Async.Ignore), async { e.Set() |> ignore }
         let w0, s0 = eventWaitSet ()
@@ -500,7 +500,7 @@ type Tests(testOutputHelper) =
 
         // While we now have 12 events, we should be able to read them with a single call
         capture.Clear()
-        let! _ = service2.ReadStale cartId
+        let! _ = service2.ReadAnyCachedValue cartId
         // A Stale read doesn't roundtrip
         test <@ [] = capture.ExternalCalls @>
         let! _ = service2.Read cartId

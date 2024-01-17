@@ -1309,10 +1309,9 @@ let validateIdempotent contextAndOrArgsAndOrCommand state' =
     | xs -> failwithf "Not idempotent; Generated %A in response to %A" xs contextAndOrArgsAndOrCommand
 ```
 
-### With [`FsCheck.xUnit`](https://fsharpforfunandprofit.com/posts/property-based-testing/)
+### With [`FsCheck.Xunit`](https://fsharpforfunandprofit.com/posts/property-based-testing/)
 
-Example FsCheck.xUnit test to validate command is always valid given the
-Aggregate's `initial` state:
+To validate command is always valid given the Aggregate's `initial` state:
 
 ```fsharp
 let [<Property>] properties contextAndOrArgsAndOrCommand =
@@ -1328,7 +1327,7 @@ type InterpretCases() as this =
     do this.Add( case1 )
     do this.Add( case2 )
 
-let [<Theory; ClassData(nameof(InterpretCases)>] examples args =
+let [<Theory; ClassData(nameof InterpretCases>] examples args =
     let state' = validateInterpret contextAndOrArgsAndOrCommand initial
     validateIdempotent contextAndOrArgsAndOrCommand state'
 ```
@@ -1341,7 +1340,7 @@ aggregate. It's advisable in general to represent each aspect of the processing
 in terms of the above `interpret` function signature. This allows that aspect
 of the behavior to be unit tested cleanly. The overall chain of processing can
 then be represented as a [composed method](https://wiki.c2.com/?ComposedMethod)
-which can then summarize the overall transaction.
+which can then manage the overall transaction.
 
 ### Idiomatic approach - composed method based on side-effect free functions
 
@@ -1349,23 +1348,21 @@ There's an example of such a case in the
 [Cart's Domain Service](https://github.com/jet/equinox/blob/master/samples/Store/Domain/Cart.fs#L106):
 
 ```fsharp
-let interpretMany fold interpreters (state: 'state): 'state * 'event[] =
+let interpretMany fold (interpreters: seq<'state -> 'event[]>) (state: 'state): 'state * 'event[] = [|
     let mutable state = state
-    let events = [|
-        for interpret in interpreters do
-            let events = interpret state
-            yield! events
-            state <- fold state events |]
-    state, events
+    for interpret in interpreters do
+          let events = interpret state
+          state <- fold state events
+          yield! events |]
 
 type Service internal (resolve: CartId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    member _.Run(cartId, optimistic, commands: Command seq, ?prepare): Async<Fold.State> =
-        let decider = resolve cartId
-        let opt = if optimistic then Equinox.LoadOption.AnyCachedValue else Equinox.LoadOption.RequireLoad
-        decider.Transact(fun state -> async {
+    member _.SyncItems(cartId, reqs: Item seq, ?prepare): Async<unit> =
+        let interpret state = async {
             match prepare with None -> () | Some prep -> do! prep
-            return interpretMany Fold.fold (Seq.map interpret commands) state }, opt)
+            return interpretMany Fold.fold (Seq.map interpretSync reqs) state }
+        let decider = resolve cartId
+        decider.Transact(interpret)
 ```
 
 <a name="accumulator"></a>
@@ -1377,7 +1374,7 @@ advised as a default strategy to use_
 
 An alternate approach is to encapsulate the folding (Equinox in V1 exposed an
 interface that encouraged such patterns; this was removed in two steps, as code
-written using the idiomatic approach is [intrinsically simpler, even if it
+written using the idiomatic approach is [intrinsically Simpler, even if it
 seems not as Easy](https://www.infoq.com/presentations/Simple-Made-Easy/) at
 first)
 
@@ -1389,7 +1386,7 @@ type Accumulator<'event, 'state>(fold: 'state -> 'event[] -> 'state, originState
 
     /// The Events that have thus far been pended via the `decide` functions
     /// `Execute`/`Decide`d during the course of this flow
-    member _.Accumulated: 'event[] =
+    member _.Events: 'event[] =
         accumulated.ToArray()
 
     /// The current folded State, based on the Stream's `originState` + any
@@ -1420,16 +1417,16 @@ type Accumulator<'event, 'state>(fold: 'state -> 'event[] -> 'state, originState
         return result }
 
 type Service ... =
-    member _.Run(cartId, optimistic, commands: Command seq, ?prepare): Async<Fold.State> =
-        let decider = resolve cartId
-        let opt = if optimistic then Equinox.LoadOption.AnyCachedValue else Equinox.LoadOption.RequireLoad
-        decider.Transact(fun state -> async {
+
+    member _.Run(cartId, reqs: Item seq, ?prepare): Async<unit> =
+        let interpret state = async {
             match prepare with None -> () | Some prep -> do! prep
             let acc = Accumulator(Fold.fold, state)
-            for cmd in commands do
-                acc.Transact(interpret cmd)
-            return acc.State, acc.Accumulated
-        }, opt)
+            for req in reqs do
+                acc.Transact(interpretSync req)
+            return acc.Events }
+        let decider = resolve cartId
+        decider.Transact(interpret)
 ```
 
 # Equinox Architectural Overview
