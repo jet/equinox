@@ -33,9 +33,8 @@ module WiringHelpers =
 /// This is especially relevant when events are spread between a Tip page and preceding pages as the Tip reading logic is special cased compared to querying
 module SequenceCheck =
 
-    module Stream =
-        let [<Literal>] Category = "_SequenceCheck"
-        let id = FsCodec.StreamId.gen (fun (g : Guid) -> g.ToString "N")
+    let [<Literal>] private CategoryName = "_SequenceCheck"
+    let private streamId = FsCodec.StreamId.gen (fun (g : Guid) -> g.ToString "N")
 
     module Events =
 
@@ -61,25 +60,25 @@ module SequenceCheck =
         then Array.init count (fun i -> Events.Add {| value = start + i |})
         else failwith $"Invalid Add of %d{start} to list %A{state}"
 
-    type Service(resolve : Guid -> Equinox.Decider<Events.Event, Fold.State>) =
+    type Service(resolve: Guid -> Equinox.Decider<Events.Event, Fold.State>) =
 
-        member _.Read(instance : Guid) : Async<int[]> =
+        member _.Read(instance: Guid): Async<int[]> =
             let decider = resolve instance
             decider.Query(id)
 
-        member _.Add(instance : Guid, value : int, count) : Async<int[]> =
+        member _.Add(instance: Guid, value: int, count): Async<int[]> =
             let decider = resolve instance
             decider.Transact(decide (value, count), id)
 
     let private create resolve =
-        Service(Stream.id >> resolve)
+        Service(streamId >> resolve)
 
     module Config =
 
         let createUncached log context =
-            createCategoryUnoptimizedUncached Stream.Category Events.codec Fold.initial Fold.fold context |> Equinox.Decider.forStream log |> create
+            createCategoryUnoptimizedUncached CategoryName Events.codec Fold.initial Fold.fold context |> Equinox.Decider.forStream log |> create
         let create log (context, cache) =
-            createCategoryUnoptimized Stream.Category Events.codec Fold.initial Fold.fold (context, cache) |> Equinox.Decider.forStream log |> create
+            createCategoryUnoptimized CategoryName Events.codec Fold.initial Fold.fold (context, cache) |> Equinox.Decider.forStream log |> create
 
 module Props =
     open FsCheck

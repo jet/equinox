@@ -11,7 +11,7 @@ let snapshot = Cart.Fold.Snapshot.config
 
 let createMemoryStore () = MemoryStore.VolatileStore<ReadOnlyMemory<byte>>()
 let createServiceMemory log store =
-    MemoryStore.MemoryStoreCategory(store, Cart.Stream.Category, Cart.Events.codec, fold, initial)
+    MemoryStore.MemoryStoreCategory(store, Cart.CategoryName, Cart.Events.codec, fold, initial)
     |> Decider.forStream log
     |> Cart.create
 
@@ -19,21 +19,21 @@ let codec = Cart.Events.codec
 let codecJe = Cart.Events.codecJe
 
 let categoryGesStreamWithRollingSnapshots context =
-    EventStoreDb.EventStoreCategory(context, Cart.Stream.Category, codec, fold, initial, EventStoreDb.AccessStrategy.RollingSnapshots snapshot, CachingStrategy.NoCaching)
+    EventStoreDb.EventStoreCategory(context, Cart.CategoryName, codec, fold, initial, EventStoreDb.AccessStrategy.RollingSnapshots snapshot, CachingStrategy.NoCaching)
 let categoryGesStreamWithoutCustomAccessStrategy context =
-    EventStoreDb.EventStoreCategory(context, Cart.Stream.Category, codec, fold, initial, EventStoreDb.AccessStrategy.Unoptimized, CachingStrategy.NoCaching)
+    EventStoreDb.EventStoreCategory(context, Cart.CategoryName, codec, fold, initial, EventStoreDb.AccessStrategy.Unoptimized, CachingStrategy.NoCaching)
 
 let categoryCosmosStreamWithSnapshotStrategy context =
-    CosmosStore.CosmosStoreCategory(context, Cart.Stream.Category, codecJe, fold, initial, CosmosStore.AccessStrategy.Snapshot snapshot, CachingStrategy.NoCaching)
+    CosmosStore.CosmosStoreCategory(context, Cart.CategoryName, codecJe, fold, initial, CosmosStore.AccessStrategy.Snapshot snapshot, CachingStrategy.NoCaching)
 let categoryCosmosStreamWithoutCustomAccessStrategy context =
-    CosmosStore.CosmosStoreCategory(context, Cart.Stream.Category, codecJe, fold, initial, CosmosStore.AccessStrategy.Unoptimized, CachingStrategy.NoCaching)
+    CosmosStore.CosmosStoreCategory(context, Cart.CategoryName, codecJe, fold, initial, CosmosStore.AccessStrategy.Unoptimized, CachingStrategy.NoCaching)
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Cart.Service) count =
-    service.ExecuteManyAsync(cartId, false, seq {
+    service.SyncItems(cartId, false, seq {
         for i in 1..count do
-            yield Cart.SyncItem (context, skuId, Some i, None)
+            yield (context, skuId, Some i, None)
             if i <> count then
-                yield Cart.SyncItem (context, skuId, Some 0, None) })
+                yield (context, skuId, Some 0, None) })
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutput testOutputHelper

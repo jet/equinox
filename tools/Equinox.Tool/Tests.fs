@@ -56,7 +56,7 @@ let executeLocal (container: ServiceProvider) test: ClientId -> Async<unit> =
         fun clientId -> async {
             let! items = service.List(clientId)
             if Seq.length items > 1000 then
-                return! service.Execute(clientId, TodoBackend.Command.Clear)
+                return! service.Clear(clientId)
             else
                 let! _ = service.Create(clientId, TodoBackend.Events.Todo.Create size)
                 return ()}

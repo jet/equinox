@@ -3,9 +3,8 @@ module Domain.InventoryItem
 
 open System
 
-module Stream =
-    let [<Literal>] Category = "InventoryItem"
-    let id = FsCodec.StreamId.gen InventoryItemId.toString
+let [<Literal>] private CategoryName = "InventoryItem"
+let private streamId = FsCodec.StreamId.gen InventoryItemId.toString
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -68,4 +67,4 @@ type Service internal (resolve: InventoryItemId -> Equinox.Decider<Events.Event,
         decider.Query id
 
 let create resolve =
-    Service(Stream.id >> resolve)
+    Service(streamId >> resolve)

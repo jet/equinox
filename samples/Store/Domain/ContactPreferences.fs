@@ -5,11 +5,10 @@ module ClientId =
     let toString (ClientId email) = email
     let parse = ClientId
 
-module Stream =
-    let [<Literal>] Category = "ContactPreferences"
-    let id = FsCodec.StreamId.gen ClientId.toString // TODO hash >> base64
-    let decodeId = FsCodec.StreamId.dec ClientId.parse
-    let name = id >> FsCodec.StreamName.create Category
+let [<Literal>] CategoryName = "ContactPreferences"
+let private streamId = FsCodec.StreamId.gen ClientId.toString // TODO hash >> base64
+let private decodeId = FsCodec.StreamId.dec ClientId.parse
+let streamName = streamId >> FsCodec.StreamName.create CategoryName
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -37,36 +36,27 @@ module Fold =
     let transmute events _state =
         [||],events
 
-type Command =
-    | Update of Events.Value
-
-let interpret command (state: Fold.State) = [|
-    match command with
-    | Update ({ preferences = preferences } as value) ->
-        if state <> preferences then
-            Events.Updated value |]
+let interpretUpdate ({ preferences = preferences }: Events.Value as value) (state: Fold.State) = [|
+    if state <> preferences then
+        Events.Updated value |]
 
 type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    let update email value: Async<unit> =
-        let decider = resolve email
-        let command = let (ClientId email) = email in Update { email = email; preferences = value }
-        decider.Transact(interpret command)
+    member _.Update(ClientId email as clientId, value) =
+        let decider = resolve clientId
+        decider.Transact(interpretUpdate { email = email; preferences = value })
 
-    member _.Update(email, value) =
-        update email value
-
-    member _.Read(email) =
-        let decider = resolve email
+    member _.Read(clientId) =
+        let decider = resolve clientId
         decider.Query id
 
-    member _.ReadVersion(email) =
-        let decider = resolve email
+    member _.ReadVersion(clientId) =
+        let decider = resolve clientId
         decider.QueryEx(fun x -> x.Version)
 
-    member _.ReadStale(email) =
-        let decider = resolve email
+    member _.ReadStale(clientId) =
+        let decider = resolve clientId
         decider.Query(id, Equinox.LoadOption.AnyCachedValue)
 
 let create resolve =
-    Service(Stream.id >> resolve)
+    Service(streamId >> resolve)

@@ -3,9 +3,8 @@
 open System
 open System.Collections.Generic
 
-module Stream =
-    let [<Literal>] Category = "SavedForLater"
-    let id = FsCodec.StreamId.gen ClientId.toString
+let [<Literal>] CategoryName = "SavedForLater"
+let private streamId = FsCodec.StreamId.gen ClientId.toString
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -116,38 +115,27 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
 
     do if maxSavedItems < 0 then invalidArg "maxSavedItems" "must be non-negative value."
 
-    let execute clientId command: Async<bool> =
-        let decider = resolve clientId
-        decider.Transact(decide maxSavedItems command)
+    member _.MaxSavedItems = maxSavedItems
 
-    let read clientId: Async<Events.Item[]> =
+    member _.List clientId: Async<Events.Item []> =
         let decider = resolve clientId
         decider.Query id
 
-    let remove clientId (resolveCommand: (SkuId->bool) -> Async<Command>): Async<unit> =
-        let decider = resolve clientId
-        decider.Transact(fun (state: Fold.State) -> async {
-            let contents = seq { for item in state -> item.skuId } |> set
-            let! cmd = resolveCommand contents.Contains
-            let _, events = decide maxSavedItems cmd state
-            return (), events } )
-
-    member _.MaxSavedItems = maxSavedItems
-
-    member _.List clientId: Async<Events.Item []> = read clientId
-
     member _.Save(clientId, skus: seq<SkuId>): Async<bool> =
-        execute clientId <| Add (DateTimeOffset.Now, Seq.toArray skus)
+        let decider = resolve clientId
+        decider.Transact(decide maxSavedItems <| Add (DateTimeOffset.Now, Seq.toArray skus))
 
-    member _.Remove(clientId, resolve: (SkuId -> bool) -> Async<SkuId[]>): Async<unit> =
-        let resolve hasSku = async {
-            let! skus = resolve hasSku
-            return Remove skus }
-        remove clientId resolve
+    member _.Remove(clientId, resolveSkus: (SkuId -> bool) -> Async<SkuId[]>): Async<unit> =
+        let decider = resolve clientId
+        decider.Transact(fun state-> async {
+            let contents = state |> Seq.map (fun i -> i.skuId) |> set
+            let! skusToRemove = resolveSkus contents.Contains
+            return (), decide maxSavedItems (Remove skusToRemove) state |> snd })
 
-    member _.Merge(clientId, targetId): Async<bool> = async {
-        let! state = read clientId
-        return! execute targetId (Merge state) }
+    member x.Merge(clientId, targetId): Async<bool> = async {
+        let! state = x.List clientId
+        let decider = resolve targetId
+        return! decider.Transact(decide maxSavedItems (Merge state)) }
 
 let create maxSavedItems resolve =
-    Service(Stream.id >> resolve, maxSavedItems)
+    Service(streamId >> resolve, maxSavedItems)

@@ -97,7 +97,7 @@ module SimplestThing =
     let evolve (_state: Event) (event: Event) = event
     let fold = Array.fold evolve
     let initial = StuffHappened
-    let [<Literal>] CategoryName = "SimplestThing"
+    let [<Literal>] private CategoryName = "SimplestThing"
     let streamId = FsCodec.StreamId.gen Guid.toStringN
     let decider log context id =
         let cat = Category(context, CategoryName, codec, fold, initial, AccessStrategy.Unoptimized, Equinox.CachingStrategy.NoCaching)
@@ -107,40 +107,40 @@ module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
     let codec = Cart.Events.codec
     let createServiceWithoutOptimization log context =
-        Category(context, Cart.Stream.Category, codec, fold, initial, AccessStrategy.Unoptimized, Equinox.CachingStrategy.NoCaching)
+        Category(context, Cart.CategoryName, codec, fold, initial, AccessStrategy.Unoptimized, Equinox.CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log
         |> Cart.create
 
     #if STORE_MESSAGEDB
     let snapshot = Cart.Fold.Snapshot.eventCaseName, Cart.Fold.Snapshot.generate
     let createServiceWithAdjacentSnapshotting log context =
-        Category(context, Cart.Stream.Category, codec, fold, initial, AccessStrategy.AdjacentSnapshots snapshot, Equinox.CachingStrategy.NoCaching)
+        Category(context, Cart.CategoryName, codec, fold, initial, AccessStrategy.AdjacentSnapshots snapshot, Equinox.CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log
         |> Cart.create
     #else
     let snapshot = Cart.Fold.Snapshot.config
     let createServiceWithCompaction log context =
-        Category(context, Cart.Stream.Category, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot, Equinox.CachingStrategy.NoCaching)
+        Category(context, Cart.CategoryName, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot, Equinox.CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log
         |> Cart.create
     #endif
 
     let createServiceWithCaching log context cache =
         let sliding20m = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Category(context, Cart.Stream.Category, codec, fold, initial, AccessStrategy.Unoptimized, caching = sliding20m)
+        Category(context, Cart.CategoryName, codec, fold, initial, AccessStrategy.Unoptimized, caching = sliding20m)
         |> Equinox.Decider.forStream log
         |> Cart.create
 
     #if STORE_MESSAGEDB
     let createServiceWithSnapshottingAndCaching log context cache =
             let sliding20m = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-            Category(context, Cart.Stream.Category, codec, fold, initial, AccessStrategy.AdjacentSnapshots snapshot, sliding20m)
+            Category(context, Cart.CategoryName, codec, fold, initial, AccessStrategy.AdjacentSnapshots snapshot, sliding20m)
             |> Equinox.Decider.forStream log
             |> Cart.create
     #else
     let createServiceWithCompactionAndCaching log context cache =
         let sliding20m = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Category(context, Cart.Stream.Category, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot, sliding20m)
+        Category(context, Cart.CategoryName, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot, sliding20m)
         |> Equinox.Decider.forStream log
         |> Cart.create
     #endif
@@ -150,21 +150,21 @@ module ContactPreferences =
     let codec = ContactPreferences.Events.codec
     let createServiceWithoutOptimization log connection =
         let context = createContext connection defaultBatchSize
-        Category(context, ContactPreferences.Stream.Category, codec, fold, initial, AccessStrategy.Unoptimized, Equinox.CachingStrategy.NoCaching)
+        Category(context, ContactPreferences.CategoryName, codec, fold, initial, AccessStrategy.Unoptimized, Equinox.CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log
         |> ContactPreferences.create
 
     let createService log connection =
-        Category(createContext connection 1, ContactPreferences.Stream.Category, codec, fold, initial, AccessStrategy.LatestKnownEvent, Equinox.CachingStrategy.NoCaching)
+        Category(createContext connection 1, ContactPreferences.CategoryName, codec, fold, initial, AccessStrategy.LatestKnownEvent, Equinox.CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log
         |> ContactPreferences.create
 
 let addAndThenRemoveItems optimistic exceptTheLastOne context cartId skuId (service: Cart.Service) count =
-        service.ExecuteManyAsync(cartId, optimistic, seq {
+        service.SyncItems(cartId, optimistic, seq {
             for i in 1..count do
-                yield Cart.SyncItem (context, skuId, Some i, None)
+                yield (context, skuId, Some i, None)
                 if not exceptTheLastOne || i <> count then
-                    yield Cart.SyncItem (context, skuId, Some 0, None) })
+                    yield (context, skuId, Some 0, None) })
 let addAndThenRemoveItemsManyTimes context cartId skuId service count =
     addAndThenRemoveItems false false context cartId skuId service count
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service count =
@@ -253,7 +253,7 @@ type GeneralTests(testOutputHelper) =
                     return Some (skuId, addRemoveCount) }
 
         let act prepare (service: Cart.Service) skuId count =
-            service.ExecuteManyAsync(cartId, false, prepare = prepare, commands = [ Cart.SyncItem (ctx, skuId, Some count, None) ])
+            service.SyncItems(cartId, false, prepare = prepare, items = [ (ctx, skuId, Some count, None) ])
 
         let eventWaitSet () = let e = new ManualResetEvent(false) in (Async.AwaitWaitHandle e |> Async.Ignore), async { e.Set() |> ignore }
         let w0, s0 = eventWaitSet ()
@@ -363,7 +363,7 @@ type GeneralTests(testOutputHelper) =
         // Trigger 10 events, then reload
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne ctx cartId skuId service1 5
         test <@ batchForwardAndAppend = capture.ExternalCalls @>
-        let! resStale = service2.ReadStale cartId
+        let! resStale = service2.ReadAnyCachedValue cartId
         test <@ batchForwardAndAppend = capture.ExternalCalls @>
         let! resFresh = service2.Read cartId
         // Because we're caching writes, stale vs fresh reads are equivalent
@@ -380,7 +380,7 @@ type GeneralTests(testOutputHelper) =
         // While we now have 12 events, we should be able to read them with a single call
         capture.Clear()
         // Do a stale read - we will see outs
-        let! res = service2.ReadStale cartId
+        let! res = service2.ReadAnyCachedValue cartId
         // result after 10 should be different to result after 12
         test <@ res <> resFresh @>
         // but we don't do a roundtrip to get it

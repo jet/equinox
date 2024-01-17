@@ -17,7 +17,7 @@ type AutoDataAttribute() =
 let createMemoryStore () = VolatileStore<_>()
 
 let createServiceMemory log store =
-    let cat = MemoryStoreCategory(store, Cart.Stream.Category, FsCodec.Box.Codec.Create(), Cart.Fold.fold, Cart.Fold.initial)
+    let cat = MemoryStoreCategory(store, Cart.CategoryName, FsCodec.Box.Codec.Create(), Cart.Fold.fold, Cart.Fold.initial)
     cat |> Equinox.Decider.forStream log |> Cart.create
 
 type Tests(testOutputHelper) =
@@ -28,18 +28,18 @@ type Tests(testOutputHelper) =
         | Some c -> Some (max 1 c)
 
     [<AutoData>]
-    let ``Basic tracer bullet, sending a command and verifying the folded result directly and via a reload``
+    let ``Basic tracer bullet, sending an update and verifying the folded result directly and via a reload``
             cartId1 cartId2 (ctx,skuId,NonZero quantity,waive) = async {
         let store = createMemoryStore ()
         let service = createServiceMemory log store
-        let command = Cart.SyncItem (ctx,skuId,quantity,waive)
+        let item = (ctx,skuId,quantity,waive)
 
         // Act: Run the decision twice...
         let actTrappingStateAsSaved cartId =
-            service.Run(cartId, false, [command])
+            service.RunInternal(cartId, false, [ item ])
 
         let actLoadingStateSeparately cartId = async {
-            let! _ = service.ExecuteManyAsync(cartId, false, [command])
+            let! _ = service.SyncItems(cartId, false, [ item ])
             return! service.Read cartId }
         let! expected = cartId1 |> actTrappingStateAsSaved
         let! actual = cartId2 |> actLoadingStateSeparately
@@ -58,7 +58,7 @@ type Tests(testOutputHelper) =
     }
 
 let createFavoritesServiceMemory store log : Favorites.Service =
-    let cat = MemoryStoreCategory(store, Favorites.Stream.Category, FsCodec.Box.Codec.Create(), Favorites.Fold.fold, Favorites.Fold.initial)
+    let cat = MemoryStoreCategory(store, Favorites.CategoryName, FsCodec.Box.Codec.Create(), Favorites.Fold.fold, Favorites.Fold.initial)
     cat |> Equinox.Decider.forStream log |> Favorites.create
 
 type ChangeFeed(testOutputHelper) =
@@ -74,7 +74,7 @@ type ChangeFeed(testOutputHelper) =
             List.ofArray xs
         use _ = store.Committed.Subscribe(fun struct (sn, xs) -> events.Add(FsCodec.StreamName.toString sn, List.ofArray xs))
         let service = createFavoritesServiceMemory store log
-        let expectedStream = Favorites.Stream.name clientId |> FsCodec.StreamName.toString
+        let expectedStream = Favorites.streamName clientId |> FsCodec.StreamName.toString
 
         do! service.Favorite(clientId, [sku])
         let written = takeCaptured ()

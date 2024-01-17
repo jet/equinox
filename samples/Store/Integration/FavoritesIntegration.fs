@@ -5,31 +5,31 @@ open Equinox
 open Equinox.CosmosStore.Integration.CosmosFixtures
 open Swensen.Unquote
 
-let [<Literal>] Category = Favorites.Stream.Category
+let [<Literal>] CategoryName = Favorites.CategoryName
 let fold, initial = Favorites.Fold.fold, Favorites.Fold.initial
 let snapshot = Favorites.Fold.Snapshot.config
 
 let createMemoryStore () = MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
-    MemoryStore.MemoryStoreCategory(store, Category, FsCodec.Box.Codec.Create(), fold, initial)
+    MemoryStore.MemoryStoreCategory(store, CategoryName, FsCodec.Box.Codec.Create(), fold, initial)
     |> Decider.forStream log
     |> Favorites.create
 
 let codec = Favorites.Events.codec
 let codecJe = Favorites.Events.codecJe
 let createServiceGes log context =
-    EventStoreDb.EventStoreCategory(context, Category, codec, fold, initial, EventStoreDb.AccessStrategy.RollingSnapshots snapshot, CachingStrategy.NoCaching)
+    EventStoreDb.EventStoreCategory(context, CategoryName, codec, fold, initial, EventStoreDb.AccessStrategy.RollingSnapshots snapshot, CachingStrategy.NoCaching)
     |> Decider.forStream log
     |> Favorites.create
 
 let createServiceCosmosSnapshotsUncached log context =
-    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, CosmosStore.AccessStrategy.Snapshot snapshot, CachingStrategy.NoCaching)
+    CosmosStore.CosmosStoreCategory(context, CategoryName, codecJe, fold, initial, CosmosStore.AccessStrategy.Snapshot snapshot, CachingStrategy.NoCaching)
     |> Decider.forStream log
     |> Favorites.create
 
 let createServiceCosmosRollingStateUncached log context =
     let access = CosmosStore.AccessStrategy.RollingState Favorites.Fold.Snapshot.generate
-    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, access, CachingStrategy.NoCaching)
+    CosmosStore.CosmosStoreCategory(context, CategoryName, codecJe, fold, initial, access, CachingStrategy.NoCaching)
     |> Decider.forStream log
     |> Favorites.create
 
@@ -38,7 +38,7 @@ let createServiceCosmosUnoptimizedButCached log context =
     let caching =
         let cache = Cache ("name", 10)
         CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
-    CosmosStore.CosmosStoreCategory(context, Category, codecJe, fold, initial, access, caching)
+    CosmosStore.CosmosStoreCategory(context, CategoryName, codecJe, fold, initial, access, caching)
     |> Decider.forStream log
     |> Favorites.create
 

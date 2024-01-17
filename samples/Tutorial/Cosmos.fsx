@@ -38,13 +38,12 @@ module Log =
 
 module Favorites =
 
-    module Stream =
-        let Category = "Favorites"
-        let id = FsCodec.StreamId.gen id
+    let [<Literal>] private CategoryName = "Favorites"
+    let private streamId = FsCodec.StreamId.gen id
 
     module Events =
 
-        type Item = { sku : string }
+        type Item = { sku: string }
         type Event =
             | Added of Item
             | Removed of Item
@@ -60,27 +59,28 @@ module Favorites =
             | Events.Removed { sku = sku } -> state |> List.filter (fun x -> x <> sku)
         let fold s xs = Array.fold evolve s xs
 
-    type Command =
-        | Add of string
-        | Remove of string
-    let interpret command state = [|
-        match command with
-        | Add sku -> if state |> List.contains sku |> not then Events.Added { sku = sku }
-        | Remove sku -> if state |> List.contains sku then Events.Removed { sku = sku } |]
+    module Decisions =
+        
+        let add sku state = [|
+            if not (state |> List.contains sku) then
+                Events.Added { sku = sku } |]
+        let remove sku state = [|
+            if state |> List.contains sku then
+                Events.Removed { sku = sku } |]
 
-    type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
+    type Service internal (resolve: string -> Equinox.Decider<Events.Event, Fold.State>) =
 
         member _.Favorite(clientId, sku) =
             let decider = resolve clientId
-            decider.Transact(interpret (Add sku))
-        member _.Unfavorite(clientId, skus) =
+            decider.Transact(Decisions.add sku)
+        member _.Unfavorite(clientId, sku) =
             let decider = resolve clientId
-            decider.Transact(interpret (Remove skus))
+            decider.Transact(Decisions.remove sku)
         member _.List clientId: Async<string list> =
             let decider = resolve clientId
             decider.Query id
 
-    let create cat = Service(Stream.id >> Equinox.Decider.forStream Log.log cat)
+    let create cat = Service(streamId >> Equinox.Decider.forStream Log.log cat)
 
     module Cosmos =
 
@@ -88,7 +88,7 @@ module Favorites =
         let accessStrategy = AccessStrategy.Unoptimized // Or Snapshot etc https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#access-strategies
         let category (context, cache) =
             let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-            CosmosStoreCategory(context, Stream.Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
+            CosmosStoreCategory(context, CategoryName, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
 
 let [<Literal>] appName = "equinox-tutorial"
 

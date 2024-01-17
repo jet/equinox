@@ -31,34 +31,34 @@ type Store(store) =
         | Store.Config.Mdb (context, caching) ->
             MessageDb.MessageDbCategory<'event,'state,_>(context, name, codec, fold, initial, MessageDb.AccessStrategy.Unoptimized, caching)
 
-type ServiceBuilder(storageConfig, handlerLog) =
+type ServiceBuilder(storageConfig, storeLog) =
      let store = Store storageConfig
 
      member _.CreateFavoritesService() =
         let fold, initial = Favorites.Fold.fold, Favorites.Fold.initial
         let snapshot = Favorites.Fold.Snapshot.config
-        store.Category(Favorites.Stream.Category, Favorites.Events.codec, fold, initial, snapshot)
-        |> Decider.forStream handlerLog
+        store.Category(Favorites.CategoryName, Favorites.Events.codec, fold, initial, snapshot)
+        |> Decider.forStream storeLog
         |> Favorites.create
 
      member _.CreateSaveForLaterService() =
         let fold, initial = SavedForLater.Fold.fold, SavedForLater.Fold.initial
         let snapshot = SavedForLater.Fold.Snapshot.config
-        store.Category(SavedForLater.Stream.Category, SavedForLater.Events.codec, fold, initial, snapshot)
-        |> Decider.forStream handlerLog
+        store.Category(SavedForLater.CategoryName, SavedForLater.Events.codec, fold, initial, snapshot)
+        |> Decider.forStream storeLog
         |> SavedForLater.create 50
 
      member _.CreateTodosService() =
         let fold, initial = TodoBackend.Fold.fold, TodoBackend.Fold.initial
         let snapshot = TodoBackend.Fold.Snapshot.config
-        store.Category(TodoBackend.Stream.Category, TodoBackend.Events.codec, fold, initial, snapshot)
-        |> Decider.forStream handlerLog
+        store.Category(TodoBackend.CategoryName, TodoBackend.Events.codec, fold, initial, snapshot)
+        |> Decider.forStream storeLog
         |> TodoBackend.create
 
-let register (services : IServiceCollection, storageConfig, handlerLog) =
+let register (services : IServiceCollection, storageConfig, storeLog) =
     let regF (factory : IServiceProvider -> 'T) = services.AddSingleton<'T>(fun (sp: IServiceProvider) -> factory sp) |> ignore
 
-    regF <| fun _sp -> ServiceBuilder(storageConfig, handlerLog)
+    regF <| fun _sp -> ServiceBuilder(storageConfig, storeLog)
 
     regF <| fun sp -> sp.GetService<ServiceBuilder>().CreateFavoritesService()
     regF <| fun sp -> sp.GetService<ServiceBuilder>().CreateSaveForLaterService()

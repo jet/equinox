@@ -50,9 +50,8 @@ module Types =
 
 module FulfilmentCenter =
 
-    module Stream =
-        let [<Literal>] Category = "FulfilmentCenter"
-        let id = FsCodec.StreamId.gen id
+    let [<Literal>] CategoryName = "FulfilmentCenter"
+    let streamId = FsCodec.StreamId.gen id
 
     module Events =
 
@@ -79,41 +78,41 @@ module FulfilmentCenter =
             | Events.FcDetailsChanged x -> { state with details = Some x.details }
         let fold = Array.fold evolve
 
-    type Command =
-        | Register of FcName
-        | UpdateAddress of Address
-        | UpdateContact of ContactInformation
-        | UpdateDetails of FcDetails
+    module Decisions =
 
-    let interpret command state = [|
-        match command with
-        | Register c when state.name = Some c -> ()
-        | Register c -> Events.FcCreated c
-        | UpdateAddress c when state.address = Some c -> ()
-        | UpdateAddress c -> Events.FcAddressChanged { address = c }
-        | UpdateContact c when state.contact = Some c -> ()
-        | UpdateContact c -> Events.FcContactChanged { contact = c }
-        | UpdateDetails c when state.details = Some c -> ()
-        | UpdateDetails c -> Events.FcDetailsChanged { details = c } |]
+        let register n state = [|
+            if state.name <> Some n then
+                Events.FcCreated n |]
+        let updateAddress a state = [|
+            if state.address <> Some a then
+                Events.FcAddressChanged { address = a } |]
+        let updateContact c state = [|
+            if state.contact <> Some c then
+                Events.FcContactChanged { contact = c } |]
+        let updateDetails d state= [|
+            if state.details <> Some d then
+                Events.FcDetailsChanged { details = d } |]
 
-    type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
+    type Service internal (resolve: string -> Equinox.Decider<Events.Event, Fold.State>) =
 
-        let execute fc command : Async<unit> =
+        member _.UpdateName(fc, value) =
             let decider = resolve fc
-            decider.Transact(interpret command)
-        let read fc : Async<Summary> =
+            decider.Transact(Decisions.register value)
+        member _.UpdateAddress(fc, value) =
+            let decider = resolve fc
+            decider.Transact(Decisions.updateAddress value)
+        member _.UpdateContact(fc, value) =
+            let decider = resolve fc
+            decider.Transact(Decisions.updateContact value)
+        member _.UpdateDetails(fc, value) =
+            let decider = resolve fc
+            decider.Transact(Decisions.updateDetails value)
+        member _.Read fc : Async<Summary> =
             let decider = resolve fc
             decider.Query id
-        let queryEx fc (projection : Fold.State -> 't) : Async<int64*'t> =
+        member _.QueryWithVersion(fc, render : Fold.State -> 'res) : Async<int64*'res> =
             let decider = resolve fc
-            decider.QueryEx(fun c -> c.Version, projection c.State)
-
-        member _.UpdateName(id, value) = execute id (Register value)
-        member _.UpdateAddress(id, value) = execute id (UpdateAddress value)
-        member _.UpdateContact(id, value) = execute id (UpdateContact value)
-        member _.UpdateDetails(id, value) = execute id (UpdateDetails value)
-        member _.Read id : Async<Summary> = read id
-        member _.QueryWithVersion(id, render : Fold.State -> 'res) : Async<int64*'res> = queryEx id render
+            decider.QueryEx(fun c -> c.Version, render c.State)
 
 open Equinox.CosmosStore
 
@@ -145,8 +144,8 @@ module Store =
 open FulfilmentCenter
 
 let service =
-    let cat = CosmosStoreCategory(Store.context, Stream.Category, Events.codec, Fold.fold, Fold.initial, AccessStrategy.Unoptimized, Store.cacheStrategy)
-    Service(Stream.id >> Equinox.Decider.forStream Log.log cat)
+    let cat = CosmosStoreCategory(Store.context, CategoryName, Events.codec, Fold.fold, Fold.initial, AccessStrategy.Unoptimized, Store.cacheStrategy)
+    Service(streamId >> Equinox.Decider.forStream Log.log cat)
 
 let fc = "fc0"
 service.UpdateName(fc, { code="FC000"; name="Head" }) |> Async.RunSynchronously
@@ -157,9 +156,8 @@ Log.dumpMetrics ()
 /// Manages ingestion of summary events tagged with the version emitted from FulfilmentCenter.Service.QueryWithVersion
 module FulfilmentCenterSummary =
 
-    module Stream =
-        let [<Literal>] Category = "FulfilmentCenter"
-        let id = FsCodec.StreamId.gen id
+    let [<Literal>] private CategoryName = "$FulfilmentCenter"
+    let private streamId = FsCodec.StreamId.gen id
 
     module Events =
         type UpdatedData = { version : int64; state : Summary }
@@ -175,18 +173,15 @@ module FulfilmentCenterSummary =
         | Events.Updated v -> Some v
     let fold = Array.fold evolve
 
-    type Command =
-        | Update of version : int64 * Types.Summary
-    let interpret command (state: State) = [|
-        match command with
-        | Update (uv, _us) when state |> Option.exists (fun s -> s.version > uv) -> ()
-        | Update (uv, us) -> Events.Updated { version = uv; state = us } |]
+    let decideIngest version summary (state: State) = [|
+        if state |> Option.exists (fun s -> s.version > version) |> not then
+            Events.Updated { version = version; state = summary } |]
 
     type Service internal (resolve: string -> Equinox.Decider<Events.Event, State>) =
 
         member _.Update(id, version, value) =
             let decider = resolve id
-            decider.Transact(interpret (Update (version, value)))
+            decider.Transact(decideIngest version value)
         member _.TryRead id: Async<Summary option> =
             let decider = resolve id
             decider.Query(Option.map (fun s -> s.state))

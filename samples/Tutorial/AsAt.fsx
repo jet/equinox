@@ -40,14 +40,13 @@
 
 open System
 
-module Stream =
-    let [<Literal>] Category = "Account"
-    let id = FsCodec.StreamId.gen id
+let [<Literal>] private CategoryName = "Account"
+let private streamId = FsCodec.StreamId.gen id
 
 module Events =
 
-    type Delta = { count : int }
-    type SnapshotInfo = { balanceLog : int[] }
+    type Delta = { count: int }
+    type SnapshotInfo = { balanceLog: int[] }
     type Contract =
         | Added of Delta
         | Removed of Delta
@@ -97,31 +96,26 @@ module Fold =
     // Recognize a relevant snapshot when we meet one in the chain
     let isValid : Events.Event -> bool = function _, Events.Snapshot _ -> true | _ -> false
 
-type Command =
-    | Add of int
-    | Remove of int
-let interpret command state = [|
-    match command with
-    | Add delta -> -1L, Events.Added { count = delta }
-    | Remove delta ->
-        let bal = state |> Fold.State.balance
-        if bal < delta then invalidArg "delta" $"delta %d{delta} exceeds balance %d{bal}"
-        else -1L, Events.Removed { count = delta } |]
+let decideAdd delta _state = [| -1L, Events.Added { count = delta } |]
+let decideRemove delta state = [|
+    let bal = state |> Fold.State.balance
+    if bal < delta then invalidArg "delta" $"delta %d{delta} exceeds balance %d{bal}"
+    else -1L, Events.Removed { count = delta } |]
 
-type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (resolve: string -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    let execute clientId command : Async<unit> =
+    member _.Add(clientId, count) =
         let decider = resolve clientId
-        decider.Transact(interpret command)
-
-    let query clientId projection : Async<int> =
+        decider.Transact(decideAdd count)
+    member _.Remove(clientId, count) =
         let decider = resolve clientId
-        decider.Query projection
-
-    member _.Add(clientId, count) = execute clientId (Add count)
-    member _.Remove(clientId, count) = execute clientId (Remove count)
-    member _.Read(clientId) = query clientId Fold.State.balance
-    member _.AsAt(clientId,index) = query clientId (fun state -> state[index])
+        decider.Transact(decideRemove count)
+    member _.Read(clientId) =
+        let decider = resolve clientId
+        decider.Query Fold.State.balance
+    member _.AsAt(clientId,index)  =
+        let decider = resolve clientId
+        decider.Query(fun state -> state[index])
 
 module Log =
     open Serilog
@@ -156,7 +150,7 @@ module EventStore =
     let context = EventStoreContext(connection, batchSize = snapshotWindow)
     // rig snapshots to be injected as events into the stream every `snapshotWindow` events
     let accessStrategy = AccessStrategy.RollingSnapshots (Fold.isValid,Fold.snapshot)
-    let cat = EventStoreCategory(context, Stream.Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
+    let cat = EventStoreCategory(context, CategoryName, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
     let resolve = Equinox.Decider.forStream Log.log cat
 
 module Cosmos =
@@ -170,11 +164,11 @@ module Cosmos =
     let client = connector.Connect(databaseId, [| containerId |]) |> Async.RunSynchronously
     let context = CosmosStoreContext(client, databaseId, containerId, tipMaxEvents = 10)
     let accessStrategy = AccessStrategy.Snapshot (Fold.isValid,Fold.snapshot)
-    let cat = CosmosStoreCategory(context, Stream.Category, Events.codecJe, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
+    let cat = CosmosStoreCategory(context, CategoryName, Events.codecJe, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
     let resolve = Equinox.Decider.forStream Log.log cat
 
-let service = Service(Stream.id >> EventStore.resolve)
-//let service= Service(Stream.id >> Cosmos.resolve)
+let service = Service(streamId >> EventStore.resolve)
+//let service= Service(streamId >> Cosmos.resolve)
 
 let client = "ClientA"
 service.Add(client, 1) |> Async.RunSynchronously

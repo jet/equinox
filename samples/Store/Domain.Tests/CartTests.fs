@@ -18,9 +18,9 @@ type Command =
     | RemoveItem of Context * SkuId
 
 let interpret = function
-    | AddItem (c, s, q, w) ->   SyncItem (c, s, Some q, w)    |> interpret
-    | PatchItem (c, s, q, w) -> SyncItem (c, s, q, w)         |> interpret
-    | RemoveItem (c, s) ->      SyncItem (c, s, Some 0, None) |> interpret
+    | AddItem (c, s, q, w) ->   (c, s, Some q, w)    |> interpretSync
+    | PatchItem (c, s, q, w) -> (c, s, q, w)         |> interpretSync
+    | RemoveItem (c, s) ->      (c, s, Some 0, None) |> interpretSync
 
 /// As a basic sanity check, verify the basic properties we'd expect per command if we were to run it on an empty stream
 // Note validating basics like this is not normally that useful a property; in this instance (I think) it takes some

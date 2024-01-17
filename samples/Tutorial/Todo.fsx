@@ -26,9 +26,8 @@ open System
 (* NB It's recommended to look at Favorites.fsx first as it establishes the groundwork
    This tutorial stresses different aspects *)
 
-module Stream =
-    let Category = "Todos"
-    let id = FsCodec.StreamId.gen id
+let [<Literal>] private CategoryName = "Todos"
+let private streamId = FsCodec.StreamId.gen id
 
 type Todo =             { id: int; order: int; title: string; completed: bool }
 type DeletedInfo =      { id: int }
@@ -52,53 +51,48 @@ module Snapshot =
     let config = isOrigin, generate
     
 let private evolve s = function
-    | Added item -> { s with items = item :: s.items; nextId = s.nextId + 1 }
+    | Added item -> { items = item :: s.items; nextId = s.nextId + 1 }
     | Updated value -> { s with items = s.items |> List.map (function { id = id } when id = value.id -> value | item -> item) }
-    | Deleted { id=id } -> { s with items = s.items |> List.filter (fun x -> x.id <> id) }
+    | Deleted { id = id } -> { s with items = s.items |> List.filter (fun x -> x.id <> id) }
     | Cleared -> { s with items = [] }
     | Snapshotted { items=items } -> { s with items = List.ofArray items }
 let fold = Array.fold evolve
 
-type Command = Add of Todo | Update of Todo | Delete of id: int | Clear
-let interpret c (state : State) = [|
-    match c with
-    | Add value -> Added { value with id = state.nextId }
-    | Update value ->
+module Decisions =
+
+    let add value (state: State) = [|
+        Added { value with id = state.nextId } |]
+    let update (value: Todo) (state: State) = [|
         match state.items |> List.tryFind (function { id = id } -> id = value.id) with
         | Some current when current <> value -> Updated value
-        | _ -> ()
-    | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then Deleted { id = id }
-    | Clear -> if state.items |> List.isEmpty |> not then Cleared |]
+        | _ -> () |]
+    let delete id (state: State) = [|
+        if state.items |> List.exists (fun x -> x.id = id) then
+            Deleted { id = id } |]
+    let clear (state: State) = [|
+        if state.items |> List.isEmpty |> not then
+            Cleared |]
 
-type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
+type Service internal (resolve: string -> Equinox.Decider<Event, State>) =
 
-    let execute clientId command : Async<unit> =
+    member _.List(clientId): Async<Todo seq> =
         let decider = resolve clientId
-        decider.Transact(interpret command)
-    let handle clientId command : Async<Todo list> =
-        let decider = resolve clientId
-        decider.Transact(fun state ->
-            let events = interpret command state
-            let state' = fold state events
-            state'.items, events)
-    let query clientId (projection : State -> 't) : Async<'t> =
-        let decider = resolve clientId
-        decider.Query projection
-
-    member _.List clientId : Async<Todo seq> =
-        query clientId (fun s -> s.items |> Seq.ofList)
+        decider.Query(fun s -> s.items |> Seq.ofList)
     member _.TryGet(clientId, id) =
-        query clientId (fun x -> x.items |> List.tryFind (fun x -> x.id = id))
-    member _.Execute(clientId, command) : Async<unit> =
-        execute clientId command
-    member _.Create(clientId, template: Todo) : Async<Todo> = async {
-        let! state' = handle clientId (Add template)
-        return List.head state' }
-    member _.Patch(clientId, item: Todo) : Async<Todo> = async {
-        let! state' = handle clientId (Update item)
-        return List.find (fun x -> x.id = item.id) state' }
-    member _.Clear clientId : Async<unit> =
-        execute clientId Clear
+        let decider = resolve clientId
+        decider.Query(fun s -> s.items |> List.tryFind (fun x -> x.id = id))
+    member _.Create(clientId, template: Todo): Async<Todo> =
+        let decider = resolve clientId
+        decider.Transact(Decisions.add template, fun s -> s.items |> List.head)
+    member _.Patch(clientId, item: Todo): Async<Todo> =
+        let decider = resolve clientId
+        decider.Transact(Decisions.update item, fun s -> s.items |> List.find (fun x -> x.id = item.id))
+    member _.Delete(clientId, id): Async<unit> =
+        let decider = resolve clientId
+        decider.Transact(Decisions.delete id)
+    member _.Clear(clientId): Async<unit> =
+        let decider = resolve clientId
+        decider.Transact(Decisions.clear)
 
 (*
  * EXERCISE THE SERVICE
@@ -138,9 +132,9 @@ module Store =
     let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
 
     let access = AccessStrategy.Snapshot Snapshot.config
-    let category = CosmosStoreCategory(context, Stream.Category, codec, fold, initial, access, cacheStrategy)
+    let category = CosmosStoreCategory(context, CategoryName, codec, fold, initial, access, cacheStrategy)
 
-let service = Service(Stream.id >> Equinox.Decider.forStream log Store.category)
+let service = Service(streamId >> Equinox.Decider.forStream log Store.category)
 
 let client = "ClientJ"
 let item = { id = 0; order = 0; title = "Feed cat"; completed = false }
@@ -154,7 +148,7 @@ service.List(client) |> Async.RunSynchronously
 //                       order = 0;
 //                       title = "Feed cat";
 //                       completed = false;}]
-service.Execute(client, Clear) |> Async.RunSynchronously
+service.Clear(client) |> Async.RunSynchronously
 //val it : unit = ()
 
 service.TryGet(client,42) |> Async.RunSynchronously
@@ -182,7 +176,7 @@ service.Patch(client, itemH) |> Async.RunSynchronously
 //                 order = 0;
 //                 title = "Feed horse";
 //                 completed = false;}
-service.Execute(client, Delete 1) |> Async.RunSynchronously
+service.Delete(client, 1) |> Async.RunSynchronously
 //[05:47:18 INF] EqxCosmos Tip 304 224ms rc=1
 //Deleted 1[05:47:19 INF] EqxCosmos Sync 1+1 230ms rc=13.91
 //val it : unit = ()

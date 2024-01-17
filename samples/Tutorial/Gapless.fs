@@ -4,9 +4,8 @@ module Gapless
 
 open System
 
-module Stream =
-    let [<Literal>] Category = "Gapless"
-    let id = FsCodec.StreamId.gen SequenceId.toString
+let [<Literal>] private CategoryName = "Gapless"
+let private streamId = FsCodec.StreamId.gen SequenceId.toString
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -79,14 +78,14 @@ type Service internal (resolve: SequenceId -> Equinox.Decider<Events.Event, Fold
 
 let [<Literal>] appName = "equinox-tutorial-gapless"
 
-let create cat = Service(Stream.id >> Equinox.Decider.forStream Serilog.Log.Logger cat)
+let create cat = Service(streamId >> Equinox.Decider.forStream Serilog.Log.Logger cat)
 
 module Cosmos =
 
     open Equinox.CosmosStore
     let private category (context, cache, accessStrategy) =
         let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        CosmosStoreCategory(context, Stream.Category, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
+        CosmosStoreCategory(context, CategoryName, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
 
     module Snapshot =
 
