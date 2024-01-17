@@ -54,7 +54,7 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
         let decider = resolve clientId
         decider.QueryEx _.Version
 
-    member _.ReadStale(clientId) =
+    member _.ReadAnyCachedValue(clientId) =
         let decider = resolve clientId
         decider.Query(id, Equinox.LoadOption.AnyCachedValue)
 

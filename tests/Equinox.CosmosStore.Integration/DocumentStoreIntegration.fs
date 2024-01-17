@@ -337,7 +337,7 @@ type Tests(testOutputHelper) =
         let! result = service.Read id
         test <@ value = result @>
 
-        let! result = service.ReadStale id // should not trigger roundtrip
+        let! result = service.ReadAnyCachedValue id // should not trigger roundtrip
         test <@ value = result @>
 
         test <@ [EqxAct.TipNotModified; EqxAct.Append; EqxAct.TipNotModified] = capture.ExternalCalls @> }
