@@ -928,7 +928,7 @@ module Prune =
             let handle (batches: BatchIndices[], rc) = task {
                 let mutable delCharges, batchesDeleted, trimCharges, batchesTrimmed, eventsDeleted, eventsDeferred = 0., 0, 0., 0, 0, 0
                 let mutable lwm = None
-                for x in batches |> Seq.takeWhile (fun x -> isRelevant x || lwm = None) do
+                for x in batches |> Seq.takeWhile (fun x -> isRelevant x || Option.isNone lwm) do
                     let batchSize = x.n - x.i |> int
                     let eligibleEvents = max 0 (min batchSize (int (indexInclusive + 1L - x.i)))
                     if isTip x then // Even if we remove the last event from the Tip, we need to retain a) unfolds b) position (n)
