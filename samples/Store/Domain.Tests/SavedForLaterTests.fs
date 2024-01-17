@@ -84,10 +84,10 @@ let ``Event aggregation should carry set semantics`` (commands: Command list) =
         match event with
         | Events.Added appended -> state.UnionWith appended.skus
         | Events.Removed removed -> state.ExceptWith removed.skus
-        | Events.Merged merged -> state.UnionWith (merged.items |> Seq.map (fun s -> s.skuId))
+        | Events.Merged merged -> state.UnionWith(merged.items |> Seq.map _.skuId)
         | Events.Compacted compacted ->
             state.Clear()
-            state.UnionWith (compacted.items |> Seq.map (fun s -> s.skuId))
+            state.UnionWith(compacted.items |> Seq.map _.skuId)
         state
 
     let state',events = run commands

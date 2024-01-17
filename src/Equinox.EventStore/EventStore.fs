@@ -539,12 +539,12 @@ module private Discovery =
     let buildDns np (f: DnsClusterSettingsBuilder -> DnsClusterSettingsBuilder) =
         ClusterSettings.Create().DiscoverClusterViaDns().KeepDiscovering()
         |> fun s -> match np with NodePreference.Random -> s.PreferRandomNode() | NodePreference.PreferSlave -> s.PreferFollowerNode() | _ -> s
-        |> f |> fun s -> s.Build()
+        |> f |> _.Build()
 
     let buildSeeded np (f: GossipSeedClusterSettingsBuilder -> GossipSeedClusterSettingsBuilder) =
         ClusterSettings.Create().DiscoverClusterViaGossipSeeds().KeepDiscovering()
         |> fun s -> match np with NodePreference.Random -> s.PreferRandomNode() | NodePreference.PreferSlave -> s.PreferFollowerNode() | _ -> s
-        |> f |> fun s -> s.Build()
+        |> f |> _.Build()
 
     let configureDns clusterDns maybeManagerPort (x: DnsClusterSettingsBuilder) =
         x.SetClusterDns(clusterDns)
@@ -599,7 +599,7 @@ type EventStoreConnector
         |> fun s -> match clientConnectionTimeout with Some v -> s.WithConnectionTimeoutOf v | None -> s // default: 1000 ms
         |> fun s -> match log with Some log -> log.Configure s | None -> s
         |> fun s -> match custom with Some c -> c s | None -> s
-        |> fun s -> s.Build()
+        |> _.Build()
 
     /// Yields an IEventStoreConnection configured and Connect()ed to a node (or the cluster) per the supplied `discovery` and `clusterNodePreference` preference
     member _.Connect

@@ -46,10 +46,10 @@ module Fold =
             { reserved = state.reserved; confirmed = Set.empty; released = Set.empty; next = state.next }
     let fold (state: State) (xs: Events.Event[]): State =
         let s = State.toInternal state
-        let state' = (s, xs) ||> Array.fold (fun s -> s.Evolve)
+        let state' = (s, xs) ||> Array.fold _.Evolve
         state'.ToState()
 
-let decideReserve count (state : Fold.State) : int64[] * Events.Event[] =
+let decideReserve count (state : Fold.State): int64[] * Events.Event[] =
     failwith "TODO"
 
 let decideConfirm item (state : Fold.State) : Events.Event[] =

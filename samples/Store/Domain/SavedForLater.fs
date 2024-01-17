@@ -127,8 +127,8 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
 
     member _.Remove(clientId, resolveSkus: (SkuId -> bool) -> Async<SkuId[]>): Async<unit> =
         let decider = resolve clientId
-        decider.Transact(fun state-> async {
-            let contents = state |> Seq.map (fun i -> i.skuId) |> set
+        decider.Transact(fun state -> async {
+            let contents = state |> Seq.map _.skuId |> set
             let! skusToRemove = resolveSkus contents.Contains
             return (), decide maxSavedItems (Remove skusToRemove) state |> snd })
 

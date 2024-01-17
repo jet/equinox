@@ -24,7 +24,7 @@ type TestResultAggregate with
 
         let testCountByOutcome =
             testResults
-            |> Seq.countBy (fun t -> t.OutcomeType)
+            |> Seq.countBy _.OutcomeType
             |> Seq.sortByDescending snd
             |> Seq.toArray
 
@@ -90,8 +90,8 @@ module Observable =
         Observable.Buffer(source, bucketSize)
         |> Observable.filter (fun bucket -> bucket.Count > 0)
         |> Observable.map (fun bucket ->
-            let agg = bucket |> Seq.map (fun e -> e.payload) |> TestResultAggregate.FromEventBucket bucketSize
-            let e = bucket |> Seq.maxBy (fun e -> e.timestamp)
+            let agg = bucket |> Seq.map _.payload |> TestResultAggregate.FromEventBucket bucketSize
+            let e = bucket |> Seq.maxBy _.timestamp
             { payload = agg ; timestamp = e.timestamp ; hostname = e.hostname })
         |> Observable.filter (fun agg -> agg.payload.count > 0 || agg.payload.sessionErrors.Length > 0)
 

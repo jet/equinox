@@ -184,4 +184,4 @@ module FulfilmentCenterSummary =
             decider.Transact(decideIngest version value)
         member _.TryRead id: Async<Summary option> =
             let decider = resolve id
-            decider.Query(Option.map (fun s -> s.state))
+            decider.Query(Option.map _.state)
