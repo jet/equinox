@@ -4,7 +4,6 @@
 #r "System.Runtime.Caching.dll"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
-#r "Newtonsoft.Json.dll"
 #r "Equinox.dll"
 #r "FSharp.UMX.dll"
 #r "FsCodec.dll"
@@ -16,7 +15,6 @@
 #else
 #r "nuget:Equinox.MemoryStore, *-*"
 #r "nuget:Equinox.CosmosStore, *-*"
-#r "nuget:FsCodec.NewtonsoftJson, *-*"
 #r "nuget:FsCodec.SystemTextJson, *-*"
 #r "nuget:Serilog.Sinks.Console"
 #r "nuget:Serilog.Sinks.Seq"
@@ -44,8 +42,8 @@ module Types =
             state       : string
             zip         : string
             isBusiness  : bool option
-            isWeekendDeliveries  : bool option
-            businessName  : string option }
+            isWeekendDeliveries : bool option
+            businessName : string option }
     type Summary = { name : FcName option; address : Address option; contact : ContactInformation option; details : FcDetails option }
 
 module FulfilmentCenter =
@@ -107,10 +105,10 @@ module FulfilmentCenter =
         member _.UpdateDetails(fc, value) =
             let decider = resolve fc
             decider.Transact(Decisions.updateDetails value)
-        member _.Read fc : Async<Summary> =
+        member _.Read fc: Async<Summary> =
             let decider = resolve fc
             decider.Query id
-        member _.QueryWithVersion(fc, render : Fold.State -> 'res) : Async<int64*'res> =
+        member _.QueryWithVersion(fc, render: Fold.State -> 'res): Async<int64*'res> =
             let decider = resolve fc
             decider.QueryEx(fun c -> c.Version, render c.State)
 

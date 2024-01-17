@@ -5,7 +5,6 @@
 #r "System.Runtime.Caching.dll"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
-#r "Newtonsoft.Json.dll"
 #r "TypeShape.dll"
 #r "Equinox.dll"
 #r "FSharp.UMX.dll"
