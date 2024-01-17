@@ -1,4 +1,4 @@
-#if !LOCAL
+#if LOCAL
 #I "bin/Debug/net6.0/"
 #r "System.Net.Http"
 #r "System.Runtime.Caching.dll"

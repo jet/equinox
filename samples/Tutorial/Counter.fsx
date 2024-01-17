@@ -1,4 +1,4 @@
-#if !LOCAL
+#if LOCAL
 // Compile Tutorial.fsproj before attempting to send this to FSI with Alt-Enter by either:
 // a) right-clicking or
 // b) typing dotnet build samples/Tutorial
@@ -13,7 +13,7 @@
 #r "FsCodec.Box.dll"
 #else
 #r "nuget:Equinox.MemoryStore, *-*"
-#r "nuget:FsCodec.Box"
+#r "nuget:FsCodec.Box, *-*"
 #r "nuget:Serilog.Sinks.Console"
 #endif
 
