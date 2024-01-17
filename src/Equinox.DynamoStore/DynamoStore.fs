@@ -160,7 +160,7 @@ module Batch =
         let (d, D), (m, M) = InternalBody.toStreamAndEncoding x.d, InternalBody.toStreamAndEncoding x.m
         { t = x.t; d = d; D = D; m = m; M = M; x = x.correlationId; y = x.causationId }
     let eventsToSchema (xs: Event[]): (*case*) string[] * EventSchema[] =
-        xs |> Array.map (fun x -> x.c), xs |> Array.map toEventSchema
+        xs |> Array.map _.c, xs |> Array.map toEventSchema
     let private toUnfoldSchema (x: Unfold): UnfoldSchema =
         let (d, D), (m, M) = InternalBody.toStreamAndEncoding x.d, InternalBody.toStreamAndEncoding x.m
         { i = x.i; t = x.t; c = x.c; d = d; D = D; m = m; M = M }
@@ -366,7 +366,7 @@ module Log =
                         rows <- rows + 1
                     | _ -> ()
                 if rows > 1 then logActivity "TOTAL" totalCount (totalRRu + totalWRu) totalMs
-                let measures: (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
+                let measures: (string * (TimeSpan -> float)) list = [ "s", _.TotalSeconds(*; "m", _.TotalMinutes; "h", _.TotalHours*) ]
                 let logPeriodicRate name count rru wru = log.Information("{table} {rru:n1}R/{wru:n1}W CU @ {count:n0} rp{unit}", table, rru, wru, count, name)
                 for uom, f in measures do let d = f res.Elapsed in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRRu/d) (totalWRu/d)
 
@@ -671,7 +671,7 @@ module internal Tip =
         | Res.NotModified -> return Res.NotModified
         | Res.NotFound -> return Res.NotFound
         | Res.Found tip ->
-            let minIndex = maybePos |> Option.map (fun x -> x.index)
+            let minIndex = maybePos |> Option.map _.index
             return Res.Found (Position.fromTip tip, Batch.baseIndex tip, tip |> enumEventsAndUnfolds (minIndex, maxIndex)) }
 
 module internal Query =
@@ -921,7 +921,7 @@ module internal Prune =
         // need to sort by n to guarantee we don't ever leave an observable gap in the sequence
         let query ct = table.QueryIAndNOrderByNAscending(stream, maxItems, ct)
         let mapPage (i, t: StopwatchInterval, batches: BatchIndices[], rc) =
-            let next = Array.tryLast batches |> Option.map (fun x -> x.n)
+            let next = Array.tryLast batches |> Option.map _.n
             let reqMetric = Log.metric table.Name stream t -1 batches.Length rc
             let log = let evt = Log.Metric.PruneResponse reqMetric in log |> Log.prop "batchIndex" i |> Log.event evt
             log.Information("EqxDynamo {action:l} {batches} {ms:f1}ms n={next} {ru}RU",

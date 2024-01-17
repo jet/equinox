@@ -52,7 +52,7 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
 
     member _.ReadVersion(clientId) =
         let decider = resolve clientId
-        decider.QueryEx(fun x -> x.Version)
+        decider.QueryEx _.Version
 
     member _.ReadStale(clientId) =
         let decider = resolve clientId

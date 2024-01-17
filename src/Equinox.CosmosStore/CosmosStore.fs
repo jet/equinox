@@ -338,7 +338,7 @@ module Log =
             // Yes, there's a minor race here between the use of the values and the reset
             let duration = Stats.LogSink.Restart()
             if rows > 1 then logActivity "TOTAL" totalCount (totalRRu + totalWRu) totalMs
-            let measures: (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
+            let measures: (string * (TimeSpan -> float)) list = [ "s", _.TotalSeconds(*; "m", _.TotalMinutes; "h", _.TotalHours*) ]
             let logPeriodicRate name count rru wru = log.Information("{rru:n1}R/{wru:n1}W CU @ {count:n0} rp{unit}", rru, wru, count, name)
             for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRRu/d) (totalWRu/d)
 
@@ -630,7 +630,7 @@ module internal Tip =
         | ReadResult.NotModified -> return Result.NotModified
         | ReadResult.NotFound -> return Result.NotFound
         | ReadResult.Found tip ->
-            let minIndex = maybePos |> Option.map (fun x -> x.index)
+            let minIndex = maybePos |> Option.map _.index
             return Result.Found (Position.fromEtagAndIndex (tip._etag, tip.n), tip.i, Enum.EventsAndUnfolds(tip, ?maxIndex = maxIndex, ?minIndex = minIndex) |> Array.ofSeq) }
     let tryFindOrigin (tryDecode: ITimelineEvent<EventBody> -> 'event voption, isOrigin: 'event -> bool) xs =
         let stack = ResizeArray()
@@ -917,7 +917,7 @@ module Prune =
              container.GetItemQueryIterator<_>("SELECT c.id, c.i, c.n FROM c ORDER by c.i", requestOptions = qro)
         let mapPage i (t: StopwatchInterval) (page: FeedResponse<BatchIndices>) =
             let batches, rc, ms = Array.ofSeq page, page.RequestCharge, t.ElapsedMilliseconds
-            let next = Array.tryLast batches |> Option.map (fun x -> x.n)
+            let next = Array.tryLast batches |> Option.map _.n
             let reqMetric: Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = batches.Length; ru = rc }
             let log = let evt = Log.Metric.PruneResponse reqMetric in log |> Log.prop "batchIndex" i |> Log.event evt
             log.Information("EqxCosmos {action:l} {batches} {ms:f1}ms n={next} {ru}RU", "PruneResponse", batches.Length, ms, Option.toNullable next, rc)
@@ -1410,7 +1410,7 @@ type EventsContext
         return pos', data }
 
     let getRange direction startPos =
-        let startPos = startPos |> Option.map (fun x -> x.index)
+        let startPos = startPos |> Option.map _.index
         match direction with
         | Direction.Forward -> startPos, None
         | Direction.Backward -> None, startPos
