@@ -315,9 +315,8 @@ highly recommended to use the following canonical skeleton layout:
 ```fsharp
 module Aggregate
 
-module private Stream =
-    let [<Literal>] CategoryName = "category"
-    let id = FsCodec.StreamId.gen Id.toString
+  let [<Literal>] private CategoryName = "category"
+  let private streamId = FsCodec.StreamId.gen Id.toString
 
 (* Optionally (rarely) Helpers/Types *)
 
@@ -342,26 +341,26 @@ Some notes about the intents being satisfied here:
   sibling code in adjacent `module`s should not be using them directly (in
   general interaction should be via the `type Service`)
 
-✅ DO use tupled arguments for the `Stream.id` function
+✅ DO use tupled arguments for the `streamId` function
 
 All the inputs of which the `StreamId` is composed should be represented as one argument:
 
 ```fsharp
-✅ let id struct (tenantId, clientId) = FsCodec.StreamId.gen2 TenantId.toString ClientId.toString (tenantId, clientId)
-✅ let id = FsCodec.StreamId.gen2 TenantId.toString ClientId.toString
-❌ let id tenantId clientId = FsCodec.StreamId.gen2 TenantId.toString ClientId.toString (tenantId, clientId)
+✅ let streamId = FsCodec.StreamId.gen2 TenantId.toString ClientId.toString
+✅ let streamId struct (tenantId, clientId) = FsCodec.StreamId.gen2 TenantId.toString ClientId.toString (tenantId, clientId)
+❌ let streamId tenantId clientId = FsCodec.StreamId.gen2 TenantId.toString ClientId.toString (tenantId, clientId)
 ```
 
-✅ DO keep `module Stream` visibility `private`, present via `module Reactions`
+✅ DO keep `CategoryName` and `streamId` visibility `private`, present via `module Reactions`
 
 If the composition of stream names is relevant for Reactions processing, expose relevant helpers in a `module Reactions` facade.
-For instance, rather than having external reaction logic refer to `Aggregate.Stream.CategoryName`, expose a facade such as:
+For instance, rather than having external reaction logic refer to `Aggregate.CategoryName`, expose a facade such as:
 
 ```fsharp
 module Reactions =
 
-    let streamName = Stream.name
-    let deletionNamePrefix tenantIdStr = $"%s{Stream.CategoryName}-%s{tenantIdStr}"
+    let streamName = streamName
+    let deletionNamePrefix tenantIdStr = $"%s{CategoryName}-%s{tenantIdStr}"
     let [<return: Struct>] (|For|_|) = Stream.tryDecode
     let [<return: Struct>] (|Decode|_|) = function
         | struct (For id, _) & Streams.Decode dec events -> ValueSome struct (id, events)
@@ -434,7 +433,7 @@ type Service internal (resolve: Id -> Equinox.Decider<Events.Event, Fold.State) 
     member x.ReadCachedXyz(id): Async<Queries.XyzInfo> =
         x.Query(TimeSpan.FromSeconds 10, Queries.renderXyz)
 
-let create category = Service(Stream.id >> Equinox.Decider.forStream Serilog.Log.Logger category)
+let create category = Service(streamId >> Equinox.Decider.forStream Serilog.Log.Logger category)
 ```
 
 - `Service`'s constructor is `internal`; `create` is the main way in which one
@@ -465,12 +464,12 @@ let cacheStrategy cache = Equinox.CosmosStore.CachingStrategy.SlidingWindow (cac
 module EventStore =
     let accessStrategy = Equinox.EventStoreDb.AccessStrategy.RollingSnapshots Fold.Snapshot.config
     let category (context, cache) =
-        Equinox.EventStore.EventStoreCategory(context, Stream.CategoryName, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy cache)
+        Equinox.EventStore.EventStoreCategory(context, CategoryName, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy cache)
 
 module Cosmos =
     let accessStrategy = Equinox.CosmosStore.AccessStrategy.Snapshot Fold.Snapshot.config
     let category (context, cache) =
-        Equinox.CosmosStore.CosmosStoreCategory(context, Stream.CategoryName, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy cache)
+        Equinox.CosmosStore.CosmosStoreCategory(context, CategoryName, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy cache)
 ```
 
 ### `MemoryStore` Storage Binding Module
@@ -482,7 +481,7 @@ can use the `MemoryStore` in the context of your tests:
 ```fsharp
 module MemoryStore =
     let category (store: Equinox.MemoryStore.VolatileStore) =
-        Equinox.MemoryStore.MemoryStoreCategory(store, Stream.CategoryName, Events.codec, Fold.fold, Fold.initial)
+        Equinox.MemoryStore.MemoryStoreCategory(store, CategoryName, Events.codec, Fold.fold, Fold.initial)
 ```
 
 Typically that binding module can live with your test helpers rather than
@@ -494,10 +493,10 @@ In F#, independent of the Store being used, the Equinox programming model
 involves (largely by convention, see [FAQ](README.md#FAQ)), per aggregation of
 events on a given category of stream:
 
-- `Stream.CategoryName`: the common part of the [Stream Name](https://github.com/fscodec#streamname),
+- `CategoryName`: the common part of the [Stream Name](https://github.com/fscodec#streamname),
   i.e., the `"Favorites"` part of the `"Favorites-clientId"`
 
-- `Stream.id`: function responsible for mapping from the input elements that define the Aggregate's identity
+- `streamId`: function responsible for mapping from the input elements that define the Aggregate's identity
   to the `streamId` portion of the `{categoryName}-{streamId}` StreamName that's used within the concrete store.
   In general, the inputs should be [strongly typed ids](https://github.com/jet/FsCodec#strongly-typed-stream-ids-using-fsharpumx)
 
@@ -590,10 +589,8 @@ brevity, that implements all the relevant functions above:
 
 ```fsharp
 (* Event stream naming + schemas *)
-
-module Stream =
-    let [<Literal>] CategoryName = "Favorites"
-    let id = FsCodec.StreamId.gen ClientId.toString
+let [<Literal>] private CategoryName = "Favorites"
+let private streamId = FsCodec.StreamId.gen ClientId.toString
 
 type Item = { id: int; name: string; added: DateTimeOffset }
 type Event =
@@ -633,7 +630,7 @@ let toSnapshot state = [| Event.Snapshotted (Array.ofList state) |]
 (*
  * The Service defines operations in business terms, neutral to any concrete
  * store selection or implementation supplied only a `resolve` function that can
- * be used to map from ids (as supplied to the `Stream.id` function) to an
+ * be used to map from ids (as supplied to the `streamId` function) to an
  * Equinox.Decider; Typically the service should be a stateless Singleton
  *)
 
@@ -650,7 +647,7 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
         decider.Query id
 
 let create resolve: Service =
-    Service(Stream.id >> resolve)
+    Service(streamId >> resolve)
 ```
 
 <a name="api"></a>
@@ -865,9 +862,8 @@ context
 #### `Decider` usage
 
 ```fsharp
-module Stream =
-    let [<Literal>] CategoryName = "Favorites"
-    let id = FsCodec.StreamId.gen ClientId.toString
+let [<Literal>] private CategoryName = "Favorites"
+let private streamId = FsCodec.StreamId.gen ClientId.toString
 
 type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
@@ -879,7 +875,7 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
         let decider = resolve clientId
         decider.Query id
 
-let create resolve = Service(Stream.id >> resolve)
+let create resolve = Service(streamId >> resolve)
 ```
 
 `read` above will do a roundtrip to the Store in order to fetch the most recent
@@ -1116,7 +1112,7 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
        and/or simplifications when compared to aspects that might present in a
        more complete implementation.
 
-- the `Stream.id` helper (and optional [`Parse` Active Patterns](https://github.com/jet/fscodec#adding-matchers-to-the-event-contract))
+- the `streamId` helper (and optional [`Decode` Active Patterns](https://github.com/jet/fscodec#adding-matchers-to-the-event-contract))
   provide succinct ways to map an incoming `clientId` (which is not a `string`
   in the real implementation but instead an id using
   [`FSharp.UMX`](https://github.com/fsprojects/FSharp.UMX) in an unobtrusive

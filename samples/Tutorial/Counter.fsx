@@ -30,13 +30,12 @@ type Event =
     | Cleared of Cleared
     interface TypeShape.UnionContract.IUnionContract
 
-module Stream =
-    // Events for a given DDD aggregate are considered to be in the same 'Category' for indexing purposes
-    // When reacting to events (using Propulsion), the CategoryName will be a key thing to filter events based on
-    let [<Literal>] CategoryName = "Counter"
-    // Maps from an app-level counter name (perhaps a strongly typed id), to a well-formed StreamId that can be stored in the Event Store
-    // For this sample, we let callers just pass a string, and we trust it's suitable for use as a StreamId directly
-    let id = FsCodec.StreamId.gen id
+// Events for a given DDD aggregate are considered to be in the same 'Category' for indexing purposes
+// When reacting to events (using Propulsion), the CategoryName will be a key thing to filter events based on
+let [<Literal>] private CategoryName = "Counter"
+// Maps from an app-level counter name (perhaps a strongly typed id), to a well-formed StreamId that can be stored in the Event Store
+// For this sample, we let callers just pass a string, and we trust it's suitable for use as a StreamId directly
+let private streamId = FsCodec.StreamId.gen id
 
 type State = State of int
 let initial : State = State 0
@@ -98,8 +97,8 @@ let logEvents sn (events : FsCodec.ITimelineEvent<_>[]) =
 let store = Equinox.MemoryStore.VolatileStore()
 let _ = store.Committed.Subscribe(fun struct (sn, xs) -> logEvents sn xs)
 let codec = FsCodec.Box.Codec.Create()
-let cat = Equinox.MemoryStore.MemoryStoreCategory(store, Stream.CategoryName, codec, fold, initial)
-let service = Service(Stream.id >> Equinox.Decider.forStream log cat)
+let cat = Equinox.MemoryStore.MemoryStoreCategory(store, CategoryName, codec, fold, initial)
+let service = Service(streamId >> Equinox.Decider.forStream log cat)
 
 let clientId = "ClientA"
 service.Read(clientId) |> Async.RunSynchronously

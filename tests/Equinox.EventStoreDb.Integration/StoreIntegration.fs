@@ -97,7 +97,7 @@ module SimplestThing =
     let evolve (_state: Event) (event: Event) = event
     let fold = Array.fold evolve
     let initial = StuffHappened
-    let [<Literal>] CategoryName = "SimplestThing"
+    let [<Literal>] private CategoryName = "SimplestThing"
     let streamId = FsCodec.StreamId.gen Guid.toStringN
     let decider log context id =
         let cat = Category(context, CategoryName, codec, fold, initial, AccessStrategy.Unoptimized, Equinox.CachingStrategy.NoCaching)
@@ -107,40 +107,40 @@ module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
     let codec = Cart.Events.codec
     let createServiceWithoutOptimization log context =
-        Category(context, Cart.Stream.CategoryName, codec, fold, initial, AccessStrategy.Unoptimized, Equinox.CachingStrategy.NoCaching)
+        Category(context, Cart.CategoryName, codec, fold, initial, AccessStrategy.Unoptimized, Equinox.CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log
         |> Cart.create
 
     #if STORE_MESSAGEDB
     let snapshot = Cart.Fold.Snapshot.eventCaseName, Cart.Fold.Snapshot.generate
     let createServiceWithAdjacentSnapshotting log context =
-        Category(context, Cart.Stream.CategoryName, codec, fold, initial, AccessStrategy.AdjacentSnapshots snapshot, Equinox.CachingStrategy.NoCaching)
+        Category(context, Cart.CategoryName, codec, fold, initial, AccessStrategy.AdjacentSnapshots snapshot, Equinox.CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log
         |> Cart.create
     #else
     let snapshot = Cart.Fold.Snapshot.config
     let createServiceWithCompaction log context =
-        Category(context, Cart.Stream.CategoryName, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot, Equinox.CachingStrategy.NoCaching)
+        Category(context, Cart.CategoryName, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot, Equinox.CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log
         |> Cart.create
     #endif
 
     let createServiceWithCaching log context cache =
         let sliding20m = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Category(context, Cart.Stream.CategoryName, codec, fold, initial, AccessStrategy.Unoptimized, caching = sliding20m)
+        Category(context, Cart.CategoryName, codec, fold, initial, AccessStrategy.Unoptimized, caching = sliding20m)
         |> Equinox.Decider.forStream log
         |> Cart.create
 
     #if STORE_MESSAGEDB
     let createServiceWithSnapshottingAndCaching log context cache =
             let sliding20m = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-            Category(context, Cart.Stream.CategoryName, codec, fold, initial, AccessStrategy.AdjacentSnapshots snapshot, sliding20m)
+            Category(context, Cart.CategoryName, codec, fold, initial, AccessStrategy.AdjacentSnapshots snapshot, sliding20m)
             |> Equinox.Decider.forStream log
             |> Cart.create
     #else
     let createServiceWithCompactionAndCaching log context cache =
         let sliding20m = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Category(context, Cart.Stream.CategoryName, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot, sliding20m)
+        Category(context, Cart.CategoryName, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot, sliding20m)
         |> Equinox.Decider.forStream log
         |> Cart.create
     #endif
@@ -150,12 +150,12 @@ module ContactPreferences =
     let codec = ContactPreferences.Events.codec
     let createServiceWithoutOptimization log connection =
         let context = createContext connection defaultBatchSize
-        Category(context, ContactPreferences.Stream.CategoryName, codec, fold, initial, AccessStrategy.Unoptimized, Equinox.CachingStrategy.NoCaching)
+        Category(context, ContactPreferences.CategoryName, codec, fold, initial, AccessStrategy.Unoptimized, Equinox.CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log
         |> ContactPreferences.create
 
     let createService log connection =
-        Category(createContext connection 1, ContactPreferences.Stream.CategoryName, codec, fold, initial, AccessStrategy.LatestKnownEvent, Equinox.CachingStrategy.NoCaching)
+        Category(createContext connection 1, ContactPreferences.CategoryName, codec, fold, initial, AccessStrategy.LatestKnownEvent, Equinox.CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log
         |> ContactPreferences.create
 

@@ -4,9 +4,8 @@ open Domain
 
 // The TodoBackend spec does not dictate having multiple lists, tenants or clients
 // Here, we implement such a discriminator in order to allow each virtual client to maintain independent state
-module Stream =
-    let [<Literal>] CategoryName = "Todos"
-    let id = FsCodec.StreamId.gen ClientId.toString
+let [<Literal>] CategoryName = "Todos"
+let private streamId = FsCodec.StreamId.gen ClientId.toString
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -82,4 +81,4 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
         let decider = resolve clientId
         decider.Transact(Decisions.clear)
 
-let create resolve = Service(Stream.id >> resolve)
+let create resolve = Service(streamId >> resolve)

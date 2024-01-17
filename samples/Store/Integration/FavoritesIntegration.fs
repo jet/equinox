@@ -5,7 +5,7 @@ open Equinox
 open Equinox.CosmosStore.Integration.CosmosFixtures
 open Swensen.Unquote
 
-let [<Literal>] CategoryName = Favorites.Stream.CategoryName
+let [<Literal>] CategoryName = Favorites.CategoryName
 let fold, initial = Favorites.Fold.fold, Favorites.Fold.initial
 let snapshot = Favorites.Fold.Snapshot.config
 

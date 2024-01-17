@@ -50,9 +50,8 @@ module Types =
 
 module FulfilmentCenter =
 
-    module Stream =
-        let [<Literal>] CategoryName = "FulfilmentCenter"
-        let id = FsCodec.StreamId.gen id
+    let [<Literal>] CategoryName = "FulfilmentCenter"
+    let streamId = FsCodec.StreamId.gen id
 
     module Events =
 
@@ -81,16 +80,16 @@ module FulfilmentCenter =
 
     module Decisions =
 
-        let register name = [|
-            if state.name <> Some c then
-                Events.FcCreated name |]
-        let updateAddress a = [|
+        let register n state = [|
+            if state.name <> Some n then
+                Events.FcCreated n |]
+        let updateAddress a state = [|
             if state.address <> Some a then
                 Events.FcAddressChanged { address = a } |]
-        let updateContact c = [|
+        let updateContact c state = [|
             if state.contact <> Some c then
                 Events.FcContactChanged { contact = c } |]
-        let updateDetails d = [|
+        let updateDetails d state= [|
             if state.details <> Some d then
                 Events.FcDetailsChanged { details = d } |]
 
@@ -98,7 +97,7 @@ module FulfilmentCenter =
 
         member _.UpdateName(fc, value) =
             let decider = resolve fc
-            decider.Transact(Decisions.Register value)
+            decider.Transact(Decisions.register value)
         member _.UpdateAddress(fc, value) =
             let decider = resolve fc
             decider.Transact(Decisions.updateAddress value)
@@ -145,8 +144,8 @@ module Store =
 open FulfilmentCenter
 
 let service =
-    let cat = CosmosStoreCategory(Store.context, Stream.CategoryName, Events.codec, Fold.fold, Fold.initial, AccessStrategy.Unoptimized, Store.cacheStrategy)
-    Service(Stream.id >> Equinox.Decider.forStream Log.log cat)
+    let cat = CosmosStoreCategory(Store.context, CategoryName, Events.codec, Fold.fold, Fold.initial, AccessStrategy.Unoptimized, Store.cacheStrategy)
+    Service(streamId >> Equinox.Decider.forStream Log.log cat)
 
 let fc = "fc0"
 service.UpdateName(fc, { code="FC000"; name="Head" }) |> Async.RunSynchronously
@@ -157,9 +156,8 @@ Log.dumpMetrics ()
 /// Manages ingestion of summary events tagged with the version emitted from FulfilmentCenter.Service.QueryWithVersion
 module FulfilmentCenterSummary =
 
-    module Stream =
-        let [<Literal>] CategoryName = "FulfilmentCenter"
-        let id = FsCodec.StreamId.gen id
+    let [<Literal>] private CategoryName = "$FulfilmentCenter"
+    let private streamId = FsCodec.StreamId.gen id
 
     module Events =
         type UpdatedData = { version : int64; state : Summary }

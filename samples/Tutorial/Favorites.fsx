@@ -75,7 +75,7 @@ let _removeBAgainEffect = Decisions.remove "b" favesCa
 //val _removeBAgainEffect : Event list = []
 
 // related streams are termed a Category; Each client will have it's own Stream.
-let [<Literal>] CategoryName = "Favorites"
+let [<Literal>] private CategoryName = "Favorites"
 let clientAFavoritesStreamId = FsCodec.StreamId.gen id "ClientA"
 
 // For test purposes, we use the in-memory store

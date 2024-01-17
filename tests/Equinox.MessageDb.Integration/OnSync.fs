@@ -4,7 +4,6 @@ open Dapper
 open Domain
 open Equinox.MessageDb
 open Swensen.Unquote
-open Xunit
 
 let defaultBatchSize = 500
 let connectionString = "Host=localhost; Username=postgres; Password=; Database=message_store; Port=5432; Maximum Pool Size=10; Search Path=message_store, public"
@@ -51,7 +50,7 @@ module ContactPreferences =
     let createWithOnSync log connection onSync =
         let access = AccessStrategy.LatestKnownEvent
         let caching = Equinox.CachingStrategy.NoCaching
-        Category(createContext connection 1, ContactPreferences.Stream.CategoryName, codec, fold, initial, access, caching, onSync)
+        Category(createContext connection 1, ContactPreferences.CategoryName, codec, fold, initial, access, caching, onSync)
         |> Equinox.Decider.forStream log
         |> ContactPreferences.create
     let create log connection = createWithOnSync log connection Projection.project

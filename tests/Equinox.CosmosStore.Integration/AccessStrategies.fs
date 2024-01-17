@@ -33,9 +33,8 @@ module WiringHelpers =
 /// This is especially relevant when events are spread between a Tip page and preceding pages as the Tip reading logic is special cased compared to querying
 module SequenceCheck =
 
-    module Stream =
-        let [<Literal>] CategoryName = "_SequenceCheck"
-        let id = FsCodec.StreamId.gen (fun (g : Guid) -> g.ToString "N")
+    let [<Literal>] private CategoryName = "_SequenceCheck"
+    let private streamId = FsCodec.StreamId.gen (fun (g : Guid) -> g.ToString "N")
 
     module Events =
 
@@ -72,14 +71,14 @@ module SequenceCheck =
             decider.Transact(decide (value, count), id)
 
     let private create resolve =
-        Service(Stream.id >> resolve)
+        Service(streamId >> resolve)
 
     module Config =
 
         let createUncached log context =
-            createCategoryUnoptimizedUncached Stream.CategoryName Events.codec Fold.initial Fold.fold context |> Equinox.Decider.forStream log |> create
+            createCategoryUnoptimizedUncached CategoryName Events.codec Fold.initial Fold.fold context |> Equinox.Decider.forStream log |> create
         let create log (context, cache) =
-            createCategoryUnoptimized Stream.CategoryName Events.codec Fold.initial Fold.fold (context, cache) |> Equinox.Decider.forStream log |> create
+            createCategoryUnoptimized CategoryName Events.codec Fold.initial Fold.fold (context, cache) |> Equinox.Decider.forStream log |> create
 
 module Props =
     open FsCheck

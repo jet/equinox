@@ -1,9 +1,8 @@
 ﻿module Domain.Cart
 
-module Stream =
-    let [<Literal>] CategoryName = "Cart"
-    let id = FsCodec.StreamId.gen CartId.toString
-    let name = id >> FsCodec.StreamName.create CategoryName
+let [<Literal>] CategoryName = "Cart"
+let private streamId = FsCodec.StreamId.gen CartId.toString
+let streamName = streamId >> FsCodec.StreamName.create CategoryName
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 [<RequireQualifiedAccess>]
@@ -133,4 +132,4 @@ type Service internal (resolve: CartId -> Equinox.Decider<Events.Event, Fold.Sta
         decider.Query(id, Equinox.LoadOption.AnyCachedValue)
 
 let create resolve =
-    Service(Stream.id >> resolve)
+    Service(streamId >> resolve)

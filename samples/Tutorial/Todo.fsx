@@ -26,9 +26,8 @@ open System
 (* NB It's recommended to look at Favorites.fsx first as it establishes the groundwork
    This tutorial stresses different aspects *)
 
-module Stream =
-    let CategoryName = "Todos"
-    let id = FsCodec.StreamId.gen id
+let [<Literal>] private CategoryName = "Todos"
+let private streamId = FsCodec.StreamId.gen id
 
 type Todo =             { id: int; order: int; title: string; completed: bool }
 type DeletedInfo =      { id: int }
@@ -52,7 +51,7 @@ module Snapshot =
     let config = isOrigin, generate
     
 let private evolve s = function
-    | Added item -> { s with items = item :: s.items; nextId = s.nextId + 1 }
+    | Added item -> { items = item :: s.items; nextId = s.nextId + 1 }
     | Updated value -> { s with items = s.items |> List.map (function { id = id } when id = value.id -> value | item -> item) }
     | Deleted { id=id } -> { s with items = s.items |> List.filter (fun x -> x.id <> id) }
     | Cleared -> { s with items = [] }
@@ -61,31 +60,31 @@ let fold = Array.fold evolve
 
 module Decisions =
 
-    let add value (state: Fold.State) = [|
-        Events.Added { value with id = state.nextId } |]
-    let update (value: Events.Todo) (state: Fold.State) = [|
+    let add value (state: State) = [|
+        Added { value with id = state.nextId } |]
+    let update (value: Todo) (state: State) = [|
         match state.items |> List.tryFind (function { id = id } -> id = value.id) with
-        | Some current when current <> value -> Events.Updated value
+        | Some current when current <> value -> Updated value
         | _ -> () |]
-    let delete id (state: Fold.State) = [|
+    let delete id (state: State) = [|
         if state.items |> List.exists (fun x -> x.id = id) then
-            Events.Deleted { id = id } |]
-    let clear (state: Fold.State) = [|
+            Deleted { id = id } |]
+    let clear (state: State) = [|
         if state.items |> List.isEmpty |> not then
-            Events.Cleared |]
+            Cleared |]
 
 type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
 
-    member _.List(clientId): Async<Events.Todo seq> =
+    member _.List(clientId): Async<Todo seq> =
         let decider = resolve clientId
         decider.Query(fun s -> s.items |> Seq.ofList)
     member _.TryGet(clientId, id) =
         let decider = resolve clientId
         decider.Query(fun s -> s.items |> List.tryFind (fun x -> x.id = id))
-    member _.Create(clientId, template: Events.Todo): Async<Events.Todo> =
+    member _.Create(clientId, template: Todo): Async<Todo> =
         let decider = resolve clientId
         decider.Transact(Decisions.add template, fun s -> s.items |> List.head)
-    member _.Patch(clientId, item: Events.Todo): Async<Events.Todo> =
+    member _.Patch(clientId, item: Todo): Async<Todo> =
         let decider = resolve clientId
         decider.Transact(Decisions.update item, fun s -> s.items |> List.find (fun x -> x.id = item.id))
     member _.Delete(clientId, id): Async<unit> =
@@ -133,9 +132,9 @@ module Store =
     let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
 
     let access = AccessStrategy.Snapshot Snapshot.config
-    let category = CosmosStoreCategory(context, Stream.CategoryName, codec, fold, initial, access, cacheStrategy)
+    let category = CosmosStoreCategory(context, CategoryName, codec, fold, initial, access, cacheStrategy)
 
-let service = Service(Stream.id >> Equinox.Decider.forStream log Store.category)
+let service = Service(streamId >> Equinox.Decider.forStream log Store.category)
 
 let client = "ClientJ"
 let item = { id = 0; order = 0; title = "Feed cat"; completed = false }

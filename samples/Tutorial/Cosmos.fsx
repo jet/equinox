@@ -38,9 +38,8 @@ module Log =
 
 module Favorites =
 
-    module Stream =
-        let Categoryname = "Favorites"
-        let id = FsCodec.StreamId.gen id
+    let [<Literal>] private CategoryName = "Favorites"
+    let private streamId = FsCodec.StreamId.gen id
 
     module Events =
 
@@ -60,11 +59,11 @@ module Favorites =
             | Events.Removed { sku = sku } -> state |> List.filter (fun x -> x <> sku)
         let fold s xs = Array.fold evolve s xs
 
-     let decideAdd sku state = [|
-         if state |> List.contains sku |> not then
+    let decideAdd sku state = [|
+        if state |> List.contains sku |> not then
             Events.Added { sku = sku } |]
-     let decideRemove sku state = [|
-         if state |> List.contains sku then
+    let decideRemove sku state = [|
+        if state |> List.contains sku then
             Events.Removed { sku = sku } |]
 
     type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
@@ -79,7 +78,7 @@ module Favorites =
             let decider = resolve clientId
             decider.Query id
 
-    let create cat = Service(Stream.id >> Equinox.Decider.forStream Log.log cat)
+    let create cat = Service(streamId >> Equinox.Decider.forStream Log.log cat)
 
     module Cosmos =
 
@@ -87,7 +86,7 @@ module Favorites =
         let accessStrategy = AccessStrategy.Unoptimized // Or Snapshot etc https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#access-strategies
         let category (context, cache) =
             let cacheStrategy = Equinox.CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-            CosmosStoreCategory(context, Stream.Categoryname, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
+            CosmosStoreCategory(context, CategoryName, Events.codec, Fold.fold, Fold.initial, accessStrategy, cacheStrategy)
 
 let [<Literal>] appName = "equinox-tutorial"
 
