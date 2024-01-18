@@ -119,7 +119,7 @@ module Log =
             // Yes, there's a minor race here between the use of the values and the reset
             let duration = Stats.LogSink.Restart()
             if rows > 1 then logActivity "TOTAL" totalCount totalMs
-            let measures: (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
+            let measures: (string * (TimeSpan -> float)) list = [ "s", _.TotalSeconds(*; "m", _.TotalMinutes; "h", _.TotalHours*) ]
             let logPeriodicRate name count = log.Information("rp{name} {count:n0}", name, count)
             for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64)
 

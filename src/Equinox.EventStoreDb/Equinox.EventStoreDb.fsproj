@@ -17,7 +17,7 @@
   <ItemGroup>
     <PackageReference Include="MinVer" Version="4.2.0" PrivateAssets="All" />
 
-    <PackageReference Include="FSharp.Core" Version="6.0.7"><ExcludeAssets>contentfiles</ExcludeAssets></PackageReference> 
+    <PackageReference Include="FSharp.Core" Version="6.0.7" ExcludeAssets="contentfiles" />
     <PackageReference Include="EventStore.Client.Grpc.Streams" Version="22.0.0" />
     <PackageReference Include="FSharp.Control.TaskSeq" Version="0.4.0-alpha.1" />
   </ItemGroup>

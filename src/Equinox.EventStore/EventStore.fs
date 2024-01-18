@@ -121,7 +121,7 @@ module Log =
             // Yes, there's a minor race here between the use of the values and the reset
             let duration = Stats.LogSink.Restart()
             if rows > 1 then logActivity "TOTAL" totalCount totalMs
-            let measures: (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
+            let measures: (string * (TimeSpan -> float)) list = [ "s", _.TotalSeconds(*; "m", _.TotalMinutes; "h", _.TotalHours*) ]
             let logPeriodicRate name count = log.Information("rp{name} {count:n0}", name, count)
             for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64)
 
@@ -539,12 +539,12 @@ module private Discovery =
     let buildDns np (f: DnsClusterSettingsBuilder -> DnsClusterSettingsBuilder) =
         ClusterSettings.Create().DiscoverClusterViaDns().KeepDiscovering()
         |> fun s -> match np with NodePreference.Random -> s.PreferRandomNode() | NodePreference.PreferSlave -> s.PreferFollowerNode() | _ -> s
-        |> f |> fun s -> s.Build()
+        |> f |> _.Build()
 
     let buildSeeded np (f: GossipSeedClusterSettingsBuilder -> GossipSeedClusterSettingsBuilder) =
         ClusterSettings.Create().DiscoverClusterViaGossipSeeds().KeepDiscovering()
         |> fun s -> match np with NodePreference.Random -> s.PreferRandomNode() | NodePreference.PreferSlave -> s.PreferFollowerNode() | _ -> s
-        |> f |> fun s -> s.Build()
+        |> f |> _.Build()
 
     let configureDns clusterDns maybeManagerPort (x: DnsClusterSettingsBuilder) =
         x.SetClusterDns(clusterDns)
@@ -599,7 +599,7 @@ type EventStoreConnector
         |> fun s -> match clientConnectionTimeout with Some v -> s.WithConnectionTimeoutOf v | None -> s // default: 1000 ms
         |> fun s -> match log with Some log -> log.Configure s | None -> s
         |> fun s -> match custom with Some c -> c s | None -> s
-        |> fun s -> s.Build()
+        |> _.Build()
 
     /// Yields an IEventStoreConnection configured and Connect()ed to a node (or the cluster) per the supplied `discovery` and `clusterNodePreference` preference
     member _.Connect

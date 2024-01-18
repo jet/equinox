@@ -49,7 +49,7 @@ type Stream private () =
          System.Func<_, _>(fun sid -> cat.Stream(log, req, sid) |> DeciderCore<'event, 'state>)
     [<System.Runtime.CompilerServices.Extension>]
     static member Resolve(cat: Category<'event, 'state, unit>, log): System.Func<FsCodec.StreamId, DeciderCore<'event, 'state>> =
-        Stream.Resolve(cat, log, ())
+        cat.Resolve(log, ())
 
 module Decider =
     let forRequest log (cat: Category<'event, 'state, 'req>) context streamId =

@@ -38,8 +38,8 @@ module Fold =
     module Snapshot =
 
         let generate (s: State) =
-            Events.Snapshotted <|
-            { items = [| for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } |] }
+            Events.Snapshotted
+                { items = [| for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } |] }
         let isOrigin = function Events.Snapshotted _ -> true | _ -> false
         let config = isOrigin, generate
         let hydrate (s: Events.Compaction.State): State =

@@ -32,7 +32,7 @@ module Fold =
 
     type private InternalState(input: State) =
         let dict = System.Collections.Generic.Dictionary<SkuId, Events.Favorited>()
-        let favorite (e: Events.Favorited) =   dict.[e.skuId] <- e
+        let favorite (e: Events.Favorited) =   dict[e.skuId] <- e
         let favoriteAll (xs: Events.Favorited seq) = for x in xs do favorite x
         do favoriteAll input
         member _.ReplaceAllWith xs =           dict.Clear(); favoriteAll xs
@@ -53,7 +53,7 @@ let has skuId (state: Fold.State) = state |> Array.exists (fun x -> x.skuId = sk
 
 let decideFavorite date skuIds state = [|
     for skuId in Seq.distinct skuIds do
-        if state |> has skuId |> not then
+        if not (state |> has skuId) then
             Events.Favorited { date = date; skuId = skuId } |]
 
 let decideUnfavorite skuId state = [|
@@ -76,10 +76,10 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
 
     member _.ListWithVersion clientId: Async<int64 * Events.Favorited []> =
         let decider = resolve clientId
-        decider.QueryEx(fun ctx -> ctx.Version, ctx.State)
+        decider.QueryEx(fun c -> c.Version, c.State)
 
     // NOTE not a real world example - used for an integration test; TODO get a better example where it's actually relevant
-    member _.UnfavoriteWithPostVersion(clientId, sku) =
+    member _.UnfavoriteWithPostVersion(clientId, sku): Async<int64> =
         let decider = resolve clientId
         decider.TransactEx((fun c -> decideUnfavorite sku c.State), render = _.Version)
 

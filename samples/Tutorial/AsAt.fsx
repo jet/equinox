@@ -11,7 +11,7 @@
 // - the same general point applies to over-using querying of streams for read purposes as we do here;
 //   applying CQRS principles can often lead to a better model regardless of raw necessity
 
-#if !LOCAL
+#if LOCAL
 // Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
 #I "bin/Debug/net6.0/"
@@ -19,7 +19,6 @@
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Serilog.Sinks.Seq.dll"
-#r "Newtonsoft.Json.dll"
 #r "FSharp.UMX.dll"
 #r "FsCodec.dll"
 #r "Equinox.dll"

@@ -34,4 +34,4 @@ type TestOutput(testOutput: Xunit.Abstractions.ITestOutputHelper) =
             .WriteTo.Sink(testOutputAndTrace)
             .WriteTo.Seq("http://localhost:5341")
             |> fun c -> match sink with Some s -> c.WriteTo.Sink(s) | None -> c
-            |> fun c -> c.CreateLogger()
+            |> _.CreateLogger()

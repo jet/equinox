@@ -119,4 +119,4 @@ type internal MessageDbReader (connectionString: string, leaderConnectionString:
         use cmd = ReadStream.prepareCommand conn streamName fromPosition batchSize
         use! reader = cmd.ExecuteReaderAsync(ct)
 
-        return [| while reader.Read() do yield parseRow reader |] }
+        return [| while reader.Read() do parseRow reader |] }
