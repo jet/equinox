@@ -17,7 +17,6 @@ type FsCheckGenerators =
 type DomainPropertyAttribute() =
     inherit FsCheck.Xunit.PropertyAttribute(QuietOnSuccess = true, Arbitrary=[| typeof<FsCheckGenerators> |])
 
-let rnd = Random()
 // https://www.rosettacode.org/wiki/Knuth_shuffle#F.23
 let knuthShuffle (array: 'a[]) =
     let swap i j =
@@ -26,7 +25,7 @@ let knuthShuffle (array: 'a[]) =
         array[j] <- item
     let ln = array.Length
     for i in 0.. (ln - 2) do        // For all indices except the last
-        swap i (rnd.Next(i, ln))    // swap th item at the index with a random one following it (or itself)
+        swap i (Random.Shared.Next(i, ln))    // swap th item at the index with a random one following it (or itself)
     array
 
 module IdTypes =

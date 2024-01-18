@@ -14,8 +14,7 @@ type Command =
     | Favorite      of date: DateTimeOffset * skuIds: SkuId list
     | Unfavorite    of skuId: SkuId
 
-let interpret (command: Command) =
-    match command with
+let interpret = function
     | Favorite (date, skus) ->  decideFavorite date skus
     | Unfavorite sku ->         decideUnfavorite sku
 

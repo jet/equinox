@@ -3,68 +3,71 @@
 open Domain
 open Domain.SavedForLater
 open Domain.SavedForLater.Fold
-open Swensen.Unquote.Assertions
+open Swensen.Unquote
 open System
 open System.Collections.Generic
 open Xunit
 
 (* Test execution helpers *)
 
-let decide cmd state: bool * Events.Event[] =
-    decide Int32.MaxValue cmd state
+type Command =
+    | Merge of merges: Events.Item []
+    | Remove of skuIds: SkuId []
+    | Add of dateSaved: DateTimeOffset * skuIds: SkuId []
+let decide_ maxItems = function
+    | Add (d, skus) -> Decisions.add maxItems (d, skus)
+    | Merge xs -> Decisions.merge maxItems xs
+    | Remove skus -> fun state -> true, Decisions.remove skus state
+let decide = decide_ Int32.MaxValue
 let interpret cmd state: Events.Event[] =
     decide cmd state |> snd
-let run (commands: Command list): State * Events.Event[] =
-    let e = ResizeArray()
-    let s' =
-        (initial, commands) ||> List.fold (fun s c ->
-            let events = interpret c s
-            e.AddRange events
-            fold s events)
-    s', e.ToArray()
+let establish commands =
+    let mutable state = initial
+    let events = [|
+        for command in commands do
+            let events = interpret command state
+            state <- fold state events
+            yield! events |]
+    state, events
 
 (* State extraction helpers *)
 
 let contains sku (state: State) = state |> Array.exists (fun s -> s.skuId = sku)
 let find sku (state: State) = state |> Array.find (fun s -> s.skuId = sku)
 
-let genSku () = Guid.NewGuid() |> SkuId
+module SkuId = let gen () = Guid.NewGuid() |> SkuId
 
 [<Fact>]
 let ``Adding one item to mysaves should appear in aggregate`` () =
-    let sku = genSku()
-    let state',_ = run [ Add(DateTimeOffset.Now, [| sku |]) ]
+    let sku = SkuId.gen ()
+    let state', _ = establish [ Add(DateTimeOffset.Now, [| sku |]) ]
     test <@ state'.Length = 1
             && (state' |> contains sku) @>
 
 [<Fact>]
 let ``Adding two items to mysaves should appear in aggregate`` () =
-    let sku1, sku2 = genSku(), genSku()
-    let state',_ = run [ Add(DateTimeOffset.Now, [| sku1; sku2 |])]
+    let sku1, sku2 = SkuId.gen (), SkuId.gen ()
+    let state', _ = establish [ Add(DateTimeOffset.Now, [| sku1; sku2 |])]
     test <@ state'.Length = 2
             && (state' |> contains sku1)
             && (state' |> contains sku2) @>
 
 [<Fact>]
 let ``Added items should record date of addition`` () =
-    let sku1, sku2 = genSku(), genSku()
+    let sku1, sku2 = SkuId.gen (), SkuId.gen ()
     let date = DateTimeOffset.Now
-    let state',_ = run [ Add(date, [|sku1; sku2|])]
+    let state',_ = establish [ Add(date, [|sku1; sku2|])]
     test <@ state'.Length = 2
             && date = (state' |> find sku1).dateSaved
             && date = (state' |> find sku2).dateSaved @>
 
 [<DomainProperty>]
-let ``Adding the same sku many times should surface the most recent date`` (dates: DateTimeOffset []) =
-    match dates with
-    | null | [||] -> ()
-    | _ ->
-
+let ``Adding the same sku many times should surface the most recent date`` (FsCheck.NonEmptyArray dates) =
     let mostRecentDate = Array.max dates
 
-    let sku = genSku()
+    let sku = SkuId.gen ()
     let folder s d =
-        let c = Add (d,[|sku|])
+        let c = Add (d, [| sku |])
         interpret c s |> fold s
     let state' = dates |> Array.fold folder initial
     test <@ ({ skuId = sku; dateSaved = mostRecentDate }: Events.Item) = Array.exactlyOne state' @>
@@ -72,7 +75,7 @@ let ``Adding the same sku many times should surface the most recent date`` (date
 [<DomainProperty>]
 let ``Commands that push saves above the limit should fail to process`` (state: State) (command: Command) =
     let maxItems = state.Length
-    let result = SavedForLater.decide maxItems command state
+    let result = decide_ maxItems command state
     test <@ match result with
             | true, events -> (fold state events).Length <= maxItems
             | false, _ -> true @>
@@ -90,22 +93,20 @@ let ``Event aggregation should carry set semantics`` (commands: Command list) =
             state.UnionWith(compacted.items |> Seq.map _.skuId)
         state
 
-    let state',events = run commands
+    let state',events = establish commands
     let expectedSkus = (HashSet(), events) ||> Array.fold evolveSet
-    let actualSkus = seq { for item in state' -> item.skuId }
+    let actualSkus = state' |> Seq.map _.skuId
     test <@ expectedSkus.SetEquals actualSkus @>
 
 [<DomainProperty>]
 let ``State should produce a stable output for skus with the same saved date`` (skus: SkuId []) =
     let now = DateTimeOffset.Now
 
-    let shuffledSkus =
-        let rnd = new Random()
-        skus |> Array.sortBy (fun _ -> rnd.Next())
+    let shuffledSkus = skus |> Array.copy |> knuthShuffle
 
     let getSimplifiedState skus =
-        let state',_ = run [ Add(now, skus)]
-        [| for item in state' -> item.skuId |]
+        let state', _ = establish [ Add(now, skus)]
+        state' |> Array.map _.skuId
 
     let skusState = getSimplifiedState skus
     let shuffledSkusState = getSimplifiedState shuffledSkus
@@ -113,7 +114,7 @@ let ``State should produce a stable output for skus with the same saved date`` (
     test <@ skusState = shuffledSkusState @>
 
 module Specification =
-    let mkAppendDated d skus = if Array.isEmpty skus then [] else [ Events.Added { dateSaved = d; skus = skus }]
+    let mkAppendDated d = function [||] -> [] | skus -> [ Events.Added { dateSaved = d; skus = skus } ]
     let mkMerged items = [ Events.Merged { items = items } ]
 
     /// Processing should allow for any given Command to be retried at will, without avoidable side-effects
@@ -130,7 +131,7 @@ module Specification =
 
     let (|TakeHalf|) items = items |> Seq.mapi (fun i x -> if i % 2 = 0 then Some x else None) |> Seq.choose id |> Seq.toArray
     let mkAppend skus = mkAppendDated DateTimeOffset.Now skus
-    let asSkus (s: State) = seq { for x in s -> x.skuId }
+    let asSkus: State -> SkuId seq = Seq.map _.skuId
     let asSkuToState (s: State) = seq { for x in s -> x.skuId, x } |> dict
 
     /// Put the aggregate into a state where the command should trigger an event; verify correct state achieved and correct events yielded
@@ -174,10 +175,10 @@ module Specification =
                         && e.skus |> Seq.forall updated.ContainsKey @>
             | x -> x |> failwithf "unexpected %A"
             // Verify the post state is correct and there is no remaining work
-            let updatedIsSameOrNewerThan date sku = not (updated.[sku] |> Fold.isSupersededAt date)
+            let updatedIsSameOrNewerThan date sku = not (updated[sku] |> isSupersededAt date)
             test <@ original |> Seq.forall updated.ContainsKey
                     && skus |> Seq.forall (updatedIsSameOrNewerThan date) @>
-        // Any merge event should onl reflect variances from current contet
+        // Any merge event should onl reflect variances from current content
         | Merge donorState,    events ->
             let original, updated = state |> asSkuToState, state' |> asSkuToState
             // Verify the request maps to the event (or absence thereof) correctly
@@ -186,12 +187,12 @@ module Specification =
             | [| Events.Merged e |] ->
                 let originalIsSupersededByMerged (item: Events.Item) =
                     match original.TryGetValue item.skuId with
-                    | true, originalItem -> originalItem |> Fold.isSupersededAt item.dateSaved
+                    | true, originalItem -> originalItem |> isSupersededAt item.dateSaved
                     | false, _ -> true
                 test <@ e.items |> Seq.forall originalIsSupersededByMerged @>
             | x -> x |> failwithf "Unexpected %A"
             // Verify the post state is correct and there is no remaining work
-            let updatedIsSameOrNewerThan (item: Events.Item) = not (updated.[item.skuId] |> Fold.isSupersededAt item.dateSaved)
+            let updatedIsSameOrNewerThan (item: Events.Item) = not (updated[item.skuId] |> isSupersededAt item.dateSaved)
             let combined = Seq.append state donorState |> Array.ofSeq
             let combinedSkus = combined |> asSkus |> set
             test <@ combined |> Seq.forall updatedIsSameOrNewerThan
@@ -200,5 +201,5 @@ module Specification =
 
     [<DomainProperty>]
     let ``Command -> Event -> State flows`` variant (cmd: Command) (state: State) =
-        //verifyIdempotency cmd state
         verify variant cmd state
+        verifyIdempotency cmd state

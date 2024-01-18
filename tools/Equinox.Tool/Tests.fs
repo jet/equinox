@@ -42,22 +42,19 @@ let executeLocal (container: ServiceProvider) test: ClientId -> Async<unit> =
         let service = container.GetRequiredService<SavedForLater.Service>()
         fun clientId -> async {
             let skus = [mkSkuId (); mkSkuId (); mkSkuId ()]
-            let! saved = service.Save(clientId,skus)
-            if saved then
+            match! service.Save(clientId,skus) with
+            | true ->
                 let! items = service.List clientId
                 if skus |> List.forall (fun sku -> items |> Array.exists (fun x -> x.skuId = sku)) |> not then invalidOp "Added item not found"
-            else
-                let! current = service.List clientId
-                let resolveSkus _hasSku = async {
-                    return [|for x in current -> x.skuId|] }
-                return! service.Remove(clientId, resolveSkus) }
+            | false ->
+                return! service.RemoveAll(clientId) }
     | Todo size ->
         let service = container.GetRequiredService<TodoBackend.Service>()
         fun clientId -> async {
-            let! items = service.List(clientId)
-            if Seq.length items > 1000 then
+            match! service.List(clientId) with
+            | items when Seq.length items > 1000 ->
                 return! service.Clear(clientId)
-            else
+            | _ ->
                 let! _ = service.Create(clientId, TodoBackend.Events.Todo.Create size)
                 return ()}
 
@@ -78,12 +75,12 @@ let executeRemote (client: HttpClient) test =
             let client = session.Saves
             async {
                 let skus = [| mkSkuId (); mkSkuId (); mkSkuId () |]
-                let! saved = client.Save skus
-                if saved then
+                match! client.Save skus with
+                | true ->
                     let! items = client.List
                     // NB this can happen if we overload the system and the next operation for this virtual client takes the other leg and removes it
                     if skus |> Array.forall (fun sku -> items |> Array.exists (fun x -> x.skuId = sku)) |> not then invalidOp "Added item not found"
-                else
+                | false ->
                     let! current = client.List
                     return! client.Remove [|for x in current -> x.skuId|] }
     | Todo size ->

@@ -12,24 +12,21 @@ type SavesController(service : SavedForLater.Service) =
 
     [<HttpGet>]
     member _.Get
-        (   [<FromClientIdHeader>]clientId : ClientId) = async {
+        (   [<FromClientIdHeader>]clientId: ClientId) = async {
         let! res = service.List(clientId)
-        return ActionResult<_> res
-    }
+        return ActionResult<_> res }
 
     // Returns 400 if item limit exceeded
     [<HttpPost>]
     member x.Save
-        (   [<FromClientIdHeader>]clientId : ClientId,
-            [<FromBody>]skuIds : SkuId[]) : Async<ActionResult> = async {
-        let! ok = service.Save(clientId, List.ofArray skuIds)
-        if ok then return x.NoContent() :> _ else return x.BadRequest("Exceeded maximum number of items in Saved list; please validate before requesting Save.") :> _
-    }
+        (   [<FromClientIdHeader>]clientId: ClientId,
+            [<FromBody>]skuIds: SkuId[]): Async<ActionResult> = async {
+        match! service.Save(clientId, List.ofArray skuIds) with
+        | true -> return x.NoContent()
+        | false -> return x.BadRequest("Exceeded maximum number of items in Saved list; please validate before requesting Save.") }
 
     [<HttpDelete>]
     member _.Remove
-        (   [<FromClientIdHeader>]clientId : ClientId,
-            [<FromBody>]skuIds : SkuId[]) : Async<unit> = async {
-        let resolveSkus _hasSavedSku = async { return skuIds }
-        return! service.Remove(clientId, resolveSkus)
-    }
+        (   [<FromClientIdHeader>]clientId: ClientId,
+            [<FromBody>]skuIds: SkuId[]): Async<unit> =
+        service.Remove(clientId, skuIds)

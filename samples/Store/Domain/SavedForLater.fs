@@ -36,11 +36,10 @@ module Fold =
     open Events
     let isSupersededAt effectiveDate (item: Item) = item.dateSaved < effectiveDate
     type private InternalState(externalState: seq<Item>) =
-        let index = Dictionary<_,_>()
-        do for i in externalState do index[i.skuId] <- i
+        let index = Dictionary(seq { for i in externalState -> KeyValuePair(i.skuId, i) })
 
         member _.Replace (skus: seq<Item>) =
-            index.Clear() ; for s in skus do index[s.skuId] <- s
+            index.Clear(); for s in skus do index[s.skuId] <- s
         member _.Append(skus: seq<Item>) =
             for sku in skus do
                 let ok,found = index.TryGetValue sku.skuId
@@ -70,18 +69,13 @@ module Fold =
             | Added { dateSaved = d; skus = skus } ->
                 index.Append(seq { for sku in skus -> { skuId = sku; dateSaved = d }})
         index.ToExternalState()
+    let containsSku: State -> SkuId -> bool = Seq.map _.skuId >> HashSet >> _.Contains
     let proposedEventsWouldExceedLimit maxSavedItems events state =
         let newState = fold state events
         Array.length newState > maxSavedItems
 
-type Command =
-    | Merge of merges: Events.Item []
-    | Remove of skuIds: SkuId []
-    | Add of dateSaved: DateTimeOffset * skuIds: SkuId []
-
 type private Index(state: Events.Item seq) =
-    let index = Dictionary<_,_>()
-    do for i in state do do index[i.skuId] <- i
+    let index = Dictionary(seq { for i in state -> KeyValuePair(i.skuId, i) })
 
     member _.DoesNotAlreadyContainSameOrMoreRecent effectiveDate sku =
         match index.TryGetValue sku with
@@ -90,26 +84,29 @@ type private Index(state: Events.Item seq) =
     member this.DoesNotAlreadyContainItem(item: Events.Item) =
         this.DoesNotAlreadyContainSameOrMoreRecent item.dateSaved item.skuId
 
-// yields true if the command was executed, false if it would have breached the invariants
-let decide (maxSavedItems: int) (cmd: Command) (state: Fold.State): bool * Events.Event[] =
-    let validateAgainstInvariants events =
+// true if the command was executed, false if it would have breached the invariants
+module Decisions =
+
+    let private validateAgainstInvariants maxSavedItems state events =
         if Fold.proposedEventsWouldExceedLimit maxSavedItems events state then false, [||]
         else true, events
-    match cmd with
-    | Merge merges ->
+
+    let add maxSavedItems (dateSaved, skus) state =
+        let index = Index state
+        let net = skus |> Array.distinct |> Array.filter (index.DoesNotAlreadyContainSameOrMoreRecent dateSaved)
+        if Array.isEmpty net then true, [||]
+        else validateAgainstInvariants maxSavedItems state [| Events.Added { skus = net ; dateSaved = dateSaved } |]
+
+    let merge maxSavedItems (merges: Events.Item []) state =
         let net = merges |> Array.filter (Index state).DoesNotAlreadyContainItem
         if Array.isEmpty net then true, [||]
-        else validateAgainstInvariants [| Events.Merged { items = net } |]
-    | Remove skuIds ->
-        let content = seq { for item in state -> item.skuId } |> set
-        let net = skuIds |> Array.filter content.Contains
-        if Array.isEmpty net then true, [||]
-        else true, [| Events.Removed { skus = net } |]
-    | Add (dateSaved, skus) ->
-        let index = Index state
-        let net = skus |> Array.filter (index.DoesNotAlreadyContainSameOrMoreRecent dateSaved)
-        if Array.isEmpty net then true, [||]
-        else validateAgainstInvariants [| Events.Added { skus = net ; dateSaved = dateSaved } |]
+        else validateAgainstInvariants maxSavedItems state [| Events.Merged { items = net } |]
+
+    let remove skuIds (state: Fold.State) = [|
+        let hasSku = Fold.containsSku state
+        match [| for x in Seq.distinct skuIds do if hasSku x then x |] with
+        | [||] -> ()
+        | net -> Events.Removed { skus = net } |]
 
 type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.State>, maxSavedItems) =
 
@@ -123,19 +120,20 @@ type Service internal (resolve: ClientId -> Equinox.Decider<Events.Event, Fold.S
 
     member _.Save(clientId, skus: seq<SkuId>): Async<bool> =
         let decider = resolve clientId
-        decider.Transact(decide maxSavedItems <| Add (DateTimeOffset.Now, Seq.toArray skus))
-
-    member _.Remove(clientId, resolveSkus: (SkuId -> bool) -> Async<SkuId[]>): Async<unit> =
-        let decider = resolve clientId
-        decider.Transact(fun state -> async {
-            let contents = state |> Seq.map _.skuId |> set
-            let! skusToRemove = resolveSkus contents.Contains
-            return (), decide maxSavedItems (Remove skusToRemove) state |> snd })
+        decider.Transact(Decisions.add maxSavedItems (DateTimeOffset.Now, Seq.toArray skus))
 
     member x.Merge(clientId, targetId): Async<bool> = async {
-        let! state = x.List clientId
+        let! sourceContent = x.List clientId
         let decider = resolve targetId
-        return! decider.Transact(decide maxSavedItems (Merge state)) }
+        return! decider.Transact(Decisions.merge maxSavedItems sourceContent) }
+
+    member _.Remove(clientId, skuIds: SkuId[]): Async<unit> =
+        let decider = resolve clientId
+        decider.Transact(Decisions.remove skuIds)
+
+    member _.RemoveAll(clientId): Async<unit> =
+        let decider = resolve clientId
+        decider.Transact(fun state -> Decisions.remove (state |> Seq.map _.skuId) state)
 
 let create maxSavedItems resolve =
     Service(streamId >> resolve, maxSavedItems)

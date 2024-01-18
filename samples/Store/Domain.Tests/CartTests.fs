@@ -109,7 +109,7 @@ let (|ValidOriginState|): Fold.State -> Fold.State =
     updateItems (List.choose (function { quantity = q } as x when q > 0 -> Some x | _ -> None))
 
 [<DomainProperty>]
-let ``interpret yields correct events, idempotently`` (cmd: Command) (ValidOriginState originState) =
+let ``interpret yields correct events, idempotently`` (ValidOriginState originState) (cmd: Command) =
     if not (isValid cmd) then () else
     verifyCanProcessInOriginState cmd originState
     verifyCorrectEventGenerationWhenAppropriate cmd originState
