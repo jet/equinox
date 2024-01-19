@@ -1128,6 +1128,8 @@ type internal StoreCategory<'event, 'state, 'req>
 
 module ConnectionString =
 
+    let [<Literal>] DefaultEmulatorEndpoint = "https://localhost:8081"
+    let [<Literal>] DefaultEmulatorAccountKey = "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw=="
     let (|AccountEndpoint|) connectionString =
         match System.Data.Common.DbConnectionStringBuilder(ConnectionString = connectionString).TryGetValue "AccountEndpoint" with
         | true, (:? string as s) when not (String.IsNullOrEmpty s) -> s
@@ -1169,19 +1171,31 @@ open Equinox.CosmosStore.Core
 open Microsoft.Azure.Cosmos
 open System
 
+module Discovery =
+
+    /// <summary>Use <c>Equinox.CosmosStore.Core.ConnectionString.defaultEmulatorEndpoint</c> and <c>Equinox.CosmosStore.Core.ConnectionString.defaultEmulatorAccountKey</c>; force <c>bypassCertificateValidation</c>.</summary>
+    let [<Literal>] TrustLocalEmulatorConnectionString = "TrustLocalEmulator=true"
+
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =
     /// Separated Account Uri and Key (for interop with previous versions)
     | AccountUriAndKey of accountUri: Uri * key: string
-    /// Cosmos SDK Connection String
+    /// <summary>Cosmos SDK Connection String<br/>
+    /// NOTE the magic value <c>TrustLocalEmulator=true</c> overrides the mode to <c>Discovery.TrustLocalEmulator</c></summary>
     | ConnectionString of connectionString: string
+    /// <summary>Use <c>Equinox.CosmosStore.Core.ConnectionString.DefaultEmulatorEndpoint</c> and <c>Equinox.CosmosStore.Core.ConnectionString.DefaultEmulatorAccountKey</c>; force <c>bypassCertificateValidation</c>.<br/>
+    /// See https://learn.microsoft.com/en-us/azure/cosmos-db/local-emulator for details.</summary>
+    | TrustLocalEmulator
     member x.ToDiscoveryMode() = x |> function
         | Discovery.AccountUriAndKey (u, k) -> DiscoveryMode.AccountUriAndKey (string u, k)
+        | Discovery.ConnectionString Discovery.TrustLocalEmulatorConnectionString
+        | Discovery.TrustLocalEmulator -> DiscoveryMode.AccountUriAndKey (Core.ConnectionString.DefaultEmulatorEndpoint, Core.ConnectionString.DefaultEmulatorAccountKey)
         | Discovery.ConnectionString c -> DiscoveryMode.ConnectionString c
 
 /// Manages establishing a CosmosClient, which is used by CosmosStoreClient to read from the underlying Cosmos DB Container.
 type CosmosStoreConnector
     (   // CosmosDB endpoint/credentials specification.
+        // NOTE using the Default Local Emulator endpoint causes bypassCertificateValidation to default to true
         discovery: Discovery,
         // Timeout to apply to individual reads/write round-trips going to CosmosDB. CosmosDB Default: 1m.
         requestTimeout: TimeSpan,
@@ -1194,16 +1208,20 @@ type CosmosStoreConnector
         [<O; D null>] ?mode: ConnectionMode,
         // consistency mode (default: use configuration specified for Database)
         [<O; D null>] ?defaultConsistencyLevel: ConsistencyLevel,
-        // Inhibits certificate verification when set to `true`. Default: false.
+        // Inhibits certificate verification when set to `true`.
+        // Defaults to `true` when targeting Local Emulator, otherwise `false`.
         [<O; D null>] ?bypassCertificateValidation: bool,
         [<O; D null>] ?customize: Action<CosmosClientOptions>) =
     let discoveryMode = discovery.ToDiscoveryMode()
+    let bypassCertificateValidation =
+        defaultArg bypassCertificateValidation false
+        || (match discoveryMode with DiscoveryMode.AccountUriAndKey (ConnectionString.DefaultEmulatorEndpoint, _) -> true | _ -> false)
     let factory =
         let o = CosmosClientFactory.CreateDefaultOptions(requestTimeout, maxRetryAttemptsOnRateLimitedRequests, maxRetryWaitTimeOnRateLimitedRequests)
         mode |> Option.iter (fun x -> o.ConnectionMode <- x)
         defaultConsistencyLevel |> Option.iter (fun x -> o.ConsistencyLevel <- x)
         // https://github.com/Azure/azure-cosmos-dotnet-v3/blob/1ef6e399f114a0fd580272d4cdca86b9f8732cf3/Microsoft.Azure.Cosmos.Samples/Usage/HttpClientFactory/Program.cs#L96
-        if defaultArg bypassCertificateValidation false then
+        if bypassCertificateValidation then
             let cb = System.Net.Http.HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
             let ch = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = cb)
             o.HttpClientFactory <- fun () -> new System.Net.Http.HttpClient(ch)
