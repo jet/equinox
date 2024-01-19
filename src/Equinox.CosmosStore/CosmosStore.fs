@@ -1194,19 +1194,12 @@ type CosmosStoreConnector
         [<O; D null>] ?mode: ConnectionMode,
         // consistency mode (default: use configuration specified for Database)
         [<O; D null>] ?defaultConsistencyLevel: ConsistencyLevel,
-        // Inhibits certificate verification when set to `true`. Default: false.
-        [<O; D null>] ?bypassCertificateValidation: bool,
         [<O; D null>] ?customize: Action<CosmosClientOptions>) =
     let discoveryMode = discovery.ToDiscoveryMode()
     let factory =
         let o = CosmosClientFactory.CreateDefaultOptions(requestTimeout, maxRetryAttemptsOnRateLimitedRequests, maxRetryWaitTimeOnRateLimitedRequests)
         mode |> Option.iter (fun x -> o.ConnectionMode <- x)
         defaultConsistencyLevel |> Option.iter (fun x -> o.ConsistencyLevel <- x)
-        // https://github.com/Azure/azure-cosmos-dotnet-v3/blob/1ef6e399f114a0fd580272d4cdca86b9f8732cf3/Microsoft.Azure.Cosmos.Samples/Usage/HttpClientFactory/Program.cs#L96
-        if defaultArg bypassCertificateValidation false then
-            let cb = System.Net.Http.HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-            let ch = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = cb)
-            o.HttpClientFactory <- fun () -> new System.Net.Http.HttpClient(ch)
         customize |> Option.iter (fun c -> c.Invoke o)
         CosmosClientFactory o
 
