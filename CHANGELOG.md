@@ -68,10 +68,10 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 
 - `Equinox.ISyncContext.CreateMemento` [#413](https://github.com/jet/equinox/pull/413)
-- Stores: `*StoreCategory.FromMemento` [#413](https://github.com/jet/equinox/pull/413)
 - Stores: Removed `Equinox.Core` dependency; everything a store needs is either inlined privately, or lives in `Equinox` [#420](https://github.com/jet/equinox/pull/420)
 - Remove explicit `net461` handling; minimum target now `net6.0` / `FSharp.Core` v `6.0.0` [#310](https://github.com/jet/equinox/pull/310) [#323](https://github.com/jet/equinox/pull/323) [#354](https://github.com/jet/equinox/pull/354)
 - Remove `Equinox.Core.ICache` (there is/was only one impl, and the interface has changed as part of [#386](https://github.com/jet/equinox/pull/386)) [#389](https://github.com/jet/equinox/pull/389)
+- `CosmosStore.CosmosStoreConnector`: Removed `bypassCertificateValidation` (superseded by connection string `IgnoreEndpointCertificate`) [#443](https://github.com/jet/equinox/pull/443)
 
 ### Fixed
 
