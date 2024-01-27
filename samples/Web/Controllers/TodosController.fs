@@ -1,6 +1,5 @@
 ﻿namespace TodoBackend.Controllers
 
-open Domain
 open Microsoft.AspNetCore.Mvc
 open TodoBackend
 

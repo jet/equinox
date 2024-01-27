@@ -1,7 +1,6 @@
 ﻿[<AutoOpen>]
 module Samples.Store.Integration.CodecIntegration
 
-open Domain
 open Swensen.Unquote
 open TypeShape.UnionContract
 

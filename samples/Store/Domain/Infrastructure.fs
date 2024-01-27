@@ -1,8 +1,6 @@
-﻿[<AutoOpen>]
-module Domain.Infrastructure
+﻿namespace global
 
 open FSharp.UMX
-open Newtonsoft.Json
 open System
 
 /// Endows any type that inherits this class with standard .NET comparison semantics using a supplied token identifier
@@ -24,30 +22,55 @@ type StringId<'TComp when 'TComp :> Comparable<'TComp, string>>(token: string) =
     inherit Comparable<'TComp,string>(token)
     override _.ToString() = token
 
+// If using >1 serializer, it can be useful to set up a type alias
+// even if you're not, putting a type Alias in `namespace global` can make type definitions cleaner to read/remove opens
+type Converter = Newtonsoft.Json.JsonConverterAttribute
+type StjConverter = System.Text.Json.Serialization.JsonConverterAttribute
+type StjName = System.Text.Json.Serialization.JsonPropertyNameAttribute
+
+type StringConverter<'T> = FsCodec.NewtonsoftJson.JsonIsomorphism<'T, string>
+type StjStringConverter<'T> = FsCodec.SystemTextJson.JsonIsomorphism<'T, string>
+
+[<AbstractClass>]
+type StringIdConverter<'T when 'T :> StringId<'T> >(parse: string -> 'T) =
+    inherit StringConverter<'T>()
+    override _.Pickle value = value.ToString()
+    override _.UnPickle input = parse input
+[<AbstractClass>]
+type StjStringIdConverter<'T when 'T :> StringId<'T> >(parse: string -> 'T) =
+    inherit StjStringConverter<'T>()
+    override _.Pickle value = value.ToString()
+    override _.UnPickle input = parse input
+
+[<AbstractClass>]
+type GuidStringIdConverter<'T when 'T :> StringId<'T> >(ofGuid: Guid -> 'T) =
+    inherit StringIdConverter<'T>(Guid.Parse >> ofGuid)
+
+(* Benefit of using JsonIsomorphism rather than binding direct to the API is that the code should be identical across serializers *)
+[<AbstractClass>]
+type StjGuidStringIdConverter<'T when 'T :> StringId<'T> >(ofGuid: Guid -> 'T) =
+    inherit StjStringIdConverter<'T>(Guid.Parse >> ofGuid)
+
 module Guid =
     let inline toStringN (x: Guid) = x.ToString "N"
 
 /// SkuId strongly typed id
-/// - Ensures canonical rendering without dashes via ToString + Newtonsoft.Json
+/// - Ensures canonical rendering without dashes via ToString + Newtonsoft.Json OR System.Text.Json
 /// - Guards against XSS by only permitting initialization based on Guid.Parse
 /// - Implements comparison/equality solely to enable tests to leverage structural equality
-[<Sealed; AutoSerializable(false); JsonConverter(typeof<SkuIdJsonConverter>); System.Text.Json.Serialization.JsonConverter(typeof<SkuIdJsonConverterStj>)>]
+[<Sealed; AutoSerializable(false); Converter(typeof<SkuIdJsonConverter>); StjConverter(typeof<SkuIdStjConverter>)>]
 type SkuId =
     inherit StringId<SkuId>
-    new(value: Guid) = { inherit StringId<SkuId>(value.ToString "N") }
-    /// Required to support empty
+    new(value: Guid) = { inherit StringId<SkuId>(Guid.toStringN value) }
+    /// Required to support TypeShape.Empty
+    /// See FsCheckGenerators.SkuId for how to define it otherwise
     [<Obsolete>] new() = SkuId(Guid.NewGuid())
-/// Represent as a Guid.ToString("N") output externally
-and private SkuIdJsonConverter() =
-    inherit FsCodec.NewtonsoftJson.JsonIsomorphism<SkuId, string>()
-    /// Renders as per `Guid.ToString("N")`, i.e. no dashes
-    override _.Pickle value = string value
-    /// Input must be a `Guid.Parse`able value
-    override _.UnPickle input = Guid.Parse input |> SkuId
-and private SkuIdJsonConverterStj() =
-    inherit FsCodec.SystemTextJson.JsonIsomorphism<SkuId, string>()
-    override _.Pickle value = string value
-    override _.UnPickle input = Guid.Parse input |> SkuId
+and private SkuIdJsonConverter() = inherit GuidStringIdConverter<SkuId>(SkuId)
+and private SkuIdStjConverter() = inherit StjGuidStringIdConverter<SkuId>(SkuId)
+
+(* Per type, an associated module for parsing, generating or converting etc works well *)
+module SkuId =
+    let gen () = Guid.NewGuid() |> SkuId
 
 /// RequestId strongly typed id, represented internally as a string
 /// - Ensures canonical rendering without dashes via ToString, Newtonsoft.Json, sprintf "%s" etc
@@ -74,6 +97,27 @@ module ClientId = let toString (value: ClientId): string = Guid.toStringN %value
 type InventoryItemId = Guid<inventoryItemId>
 and [<Measure>] inventoryItemId
 module InventoryItemId = let toString (value: InventoryItemId): string = Guid.toStringN %value
+
+(* Single Case Discriminated unions don't give much over the type or FSharp.UMX based approach
+   Before you even think about using one, required reading:
+   - https://paul.blasuc.ci/posts/really-scu.html
+   - https://paul.blasuc.ci/posts/even-more-scu.html
+   - https://paul.blasuc.ci/posts/really-scu.html*)
+
+[<Struct; Converter(typeof<IntIdConverter>); StjConverter(typeof<StjIntIdConverter>)>]
+type IntId =
+    private IntId of int
+and private IntIdConverter() =
+    inherit StringConverter<IntId>()
+    override _.Pickle(IntId value) = string value
+    override _.UnPickle input = input |> Int32.Parse |> IntId
+(* Again, using a JsonIsomorphism means identical code per serializer*)
+and private StjIntIdConverter() =
+    inherit StjStringConverter<IntId>()
+    override _.Pickle(IntId value) = string value
+    override _.UnPickle input = input |> Int32.Parse |> IntId
+module IntId =
+    let create (value: int) = IntId value
 
 module EventCodec =
 

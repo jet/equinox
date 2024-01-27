@@ -1,7 +1,7 @@
 ﻿module Equinox.Tool.Tests
 
 open Domain
-open Infrastructure
+open Equinox.Tool.Infrastructure
 open Microsoft.Extensions.DependencyInjection
 open System
 open System.Net.Http

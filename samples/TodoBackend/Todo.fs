@@ -1,7 +1,5 @@
 ﻿module TodoBackend
 
-open Domain
-
 // The TodoBackend spec does not dictate having multiple lists, tenants or clients
 // Here, we implement such a discriminator in order to allow each virtual client to maintain independent state
 let [<Literal>] CategoryName = "Todos"

@@ -1,6 +1,5 @@
 ﻿module Samples.Store.Domain.Tests.FavoritesTests
 
-open Domain
 open Domain.Favorites
 open Domain.Favorites.Events
 open Domain.Favorites.Fold

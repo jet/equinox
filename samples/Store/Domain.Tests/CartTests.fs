@@ -1,6 +1,5 @@
 ﻿module Samples.Store.Domain.Tests.CartTests
 
-open Domain
 open Domain.Cart
 open Domain.Cart.Fold
 open Swensen.Unquote

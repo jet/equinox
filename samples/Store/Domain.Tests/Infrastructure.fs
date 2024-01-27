@@ -1,7 +1,6 @@
 ﻿[<AutoOpen>]
 module Samples.Store.Domain.Tests.Infrastructure
 
-open Domain
 open FsCheck.FSharp
 open FSharp.UMX
 open Swensen.Unquote
@@ -29,6 +28,7 @@ let knuthShuffle (array: 'a[]) =
     array
 
 module IdTypes =
+
     [<Fact>]
     let ``CartId has structural equality and Guid rendering semantics`` () =
         let x = Guid.NewGuid() in let xs, xn = x.ToString(), x.ToString "N"

@@ -1,6 +1,5 @@
 ﻿module Samples.Store.Domain.Tests.SavedForLaterTests
 
-open Domain
 open Domain.SavedForLater
 open Domain.SavedForLater.Fold
 open Swensen.Unquote
@@ -34,8 +33,6 @@ let establish commands =
 
 let contains sku (state: State) = state |> Array.exists (fun s -> s.skuId = sku)
 let find sku (state: State) = state |> Array.find (fun s -> s.skuId = sku)
-
-module SkuId = let gen () = Guid.NewGuid() |> SkuId
 
 [<Fact>]
 let ``Adding one item to mysaves should appear in aggregate`` () =

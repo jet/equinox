@@ -1,7 +1,6 @@
 ﻿module Equinox.Tool.Program
 
 open Argu
-open Domain.Infrastructure
 open Equinox.Tool.Infrastructure
 open FSharp.AWS.DynamoDB // Throughput
 open FSharp.Control
