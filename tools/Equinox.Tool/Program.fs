@@ -613,7 +613,9 @@ module Query =
             | Criteria.SingleStream sn -> $"c.p = \"{sn}\""
             | Criteria.CatName n -> $"c.p LIKE \"{n}-%%\""
             | Criteria.CatLike pat -> $"c.p LIKE \"{pat}\""
-            | Criteria.Unfiltered -> Log.Warning "No StreamName or CategoryName/CategoryLike specified - Unfold Criteria better be unambiguous"; "1=1"
+            | Criteria.Unfiltered ->
+                let message = "No StreamName or CategoryName/CategoryLike specified - Unfold Criteria better be unambiguous"
+                (if Option.isNone a.Filepath then Log.Warning else Log.Information) message; "1=1"
         let selectedFields =
             match a.Mode with
             | Mode.ReadOnly -> "c.u"
@@ -630,7 +632,7 @@ module Query =
         $"SELECT {selectedFields} FROM c WHERE {partitionKeyCriteria} AND {unfoldFilter}"
     let private makeQuery (a: QueryArguments) =
         let sql = composeSql a
-        Log.Information("Querying {q}", sql)
+        Log.Information("Querying {mode}: {q}", a.Mode, sql)
         let storeConfig = a.ConfigureStore(Log.Logger)
         let container = match storeConfig with Store.Config.Cosmos (cc, _, _) -> cc.Container | _ -> failwith "Query requires Cosmos"
         let opts = Microsoft.Azure.Cosmos.QueryRequestOptions(MaxItemCount = a.CosmosArgs.QueryMaxItems)
@@ -639,7 +641,7 @@ module Query =
         let sw, sw2 = System.Diagnostics.Stopwatch(), System.Diagnostics.Stopwatch.StartNew()
         let serdes = if a.Pretty then Dump.prettySerdes.Value else FsCodec.SystemTextJson.Serdes.Default
         let maybeFileStream = a.Filepath |> Option.map (fun p ->
-            Log.Information("Dumping content to {path}", System.IO.FileInfo(p).FullName)
+            Log.Information("Dumping {mode} content to {path}", a.Mode, System.IO.FileInfo(p).FullName)
             System.IO.File.Open(p, System.IO.FileMode.Create))
         use query = makeQuery a
 
