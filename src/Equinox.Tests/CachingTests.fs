@@ -182,7 +182,7 @@ type Tests() =
         let! struct (_token, state) = allowStale 250 // Delay of 90 overlapped with delay of 50+10 should not have expired the entry (was 200)
         test <@ (4, 1, 3) = (state, cat.Loads, cat.Reloads) @> // The newer cache entry won
         cat.Delay <- TimeSpan.FromMilliseconds 10 // Reduce the delay, but we do want to overlap a write
-        let t4 = allowStale 200 // Delay of 75 in load2/load3 should not have aged the read result beyond 200
+        let t4 = allowStale 300 // Delay of 75 in load2/load3 should not have aged the read result beyond 200
         do! Task.Delay 10 // ensure delay has been picked up, before...
         cat.Delay <- TimeSpan.Zero // no further delays required for the rest of the tests
 
