@@ -145,6 +145,8 @@ and [<RequireQualifiedAccess>] Mode = ReadOnly | ReadWithStream | Default | Raw
 and [<RequireQualifiedAccess>] Criteria = SingleStream of string | CatName of string | CatLike of string | Unfiltered
 and QueryArguments(p: ParseResults<QueryParameters>) =
     member val Mode = p.GetResult(Mode, Mode.Default)
+    member val Pretty = p.Contains QueryParameters.Pretty
+    member val TeeConsole = p.Contains Console
     member val Criteria =
         match p.TryGetResult StreamName, p.TryGetResult CategoryName, p.TryGetResult CategoryLike with
         | Some sn, None, None -> Criteria.SingleStream sn
@@ -606,6 +608,18 @@ module Query =
             let ok, p = x.RootElement.TryGetProperty("_ts")
             if ok then p.GetDouble() |> unixEpoch.AddSeconds |> Some else None
     let composeQuery (a: QueryArguments) =
+        let partitionKeyCriteria =
+            match a.Criteria with
+            | Criteria.SingleStream sn -> $"c.p = \"{sn}\""
+            | Criteria.CatName n -> $"c.p LIKE \"{n}-%%\""
+            | Criteria.CatLike pat -> $"c.p LIKE \"{pat}\""
+            | Criteria.Unfiltered -> Log.Warning "No StreamName or CategoryName/CategoryLike specified - Unfold Criteria better be unambiguous"; "1=1"
+        let selectedFields =
+            match a.Mode with
+            | Mode.ReadOnly -> "c.u"
+            | Mode.ReadWithStream -> "c.p, c.u"
+            | Mode.Default -> "c.p, c.u, c._etag"
+            | Mode.Raw -> "*"
         let unfoldFilter =
             let exists cond = $"EXISTS (SELECT VALUE u FROM u IN c.u WHERE {cond})"
             match [| match a.UnfoldName with None -> () | Some un -> $"u.c = \"{un}\""
@@ -613,51 +627,36 @@ module Query =
             | [||] -> "1=1"
             | [| x |] -> x |> exists
             | xs -> String.Join(" AND ", xs) |> exists
-        let selectedFields =
-            match a.Mode with
-            | Mode.ReadOnly -> "c.u"
-            | Mode.ReadWithStream -> "c.p, c.u"
-            | Mode.Default -> "c.p, c.u, c._etag"
-            | Mode.Raw -> "*"
-        let partitionKeyCriteria =
-            match a.Criteria with
-            | Criteria.SingleStream sn -> $"c.p = \"{sn}\""
-            | Criteria.CatName n -> $"c.p LIKE \"{n}-%%\""
-            | Criteria.CatLike pat -> $"c.p LIKE \"{pat}\""
-            | Criteria.Unfiltered -> Log.Warning "No StreamName or CategoryName/CategoryLike specified - Unfold Criteria better be unambiguous"; "1=1"
         $"SELECT {selectedFields} FROM c WHERE {partitionKeyCriteria} AND {unfoldFilter}"
-    let run (log: ILogger) (p: ParseResults<QueryParameters>) = async {
-        let a = QueryArguments p
-        let storeConfig = a.ConfigureStore(log)
-        let container = match storeConfig with Store.Config.Cosmos (cc, _, _) -> cc.Container | _ -> failwith "Query requires Cosmos"
-        let sw, sw2 = System.Diagnostics.Stopwatch(), System.Diagnostics.Stopwatch.StartNew()
+    let inline arrayLen x = if isNull x then 0 else Array.length x
+    let run (log: ILogger) (a: QueryArguments) = async {
         let sql = composeQuery a
         Log.Information("Querying {q}", sql)
+        let storeConfig = a.ConfigureStore(log)
+        let container = match storeConfig with Store.Config.Cosmos (cc, _, _) -> cc.Container | _ -> failwith "Query requires Cosmos"
         let opts = Microsoft.Azure.Cosmos.QueryRequestOptions(MaxItemCount = a.CosmosArgs.QueryMaxItems)
         use query = container.GetItemQueryIterator<System.Text.Json.JsonDocument>(sql, requestOptions = opts)
-        let mutable lens, rus, bytes, pos = 0L, 0., 0L, 0L
-        let cats = System.Collections.Generic.HashSet()
+
+        let serdes = if a.Pretty then Dump.prettySerdes.Value else FsCodec.SystemTextJson.Serdes.Default
         let maybeFileStream = a.Filepath |> Option.map (fun p ->
             Log.Information("Dumping content to {path}", System.IO.FileInfo(p).FullName)
             System.IO.File.Open(p, System.IO.FileMode.Create))
-        let serdes = if p.Contains QueryParameters.Pretty then Dump.prettySerdes.Value else FsCodec.SystemTextJson.Serdes.Default
+
+        let sw, sw2 = System.Diagnostics.Stopwatch(), System.Diagnostics.Stopwatch.StartNew()
+        let mutable accCount, accRus, accBytesRead = 0L, 0., 0L
+        let cats = System.Collections.Generic.HashSet()
         try while query.HasMoreResults do
                 sw.Restart()
                 let! res = query.ReadNextAsync(CancellationToken.None) |> Async.AwaitTaskCorrect
-                let mutable lastTs, mib = None, 0
-                let items = [|
-                    for x in res.Resource ->
-                        lastTs <- x.Timestamp
-                        mib <- mib + x.RootElement.Size
-                        x.Cast<Equinox.CosmosStore.Core.Tip>() |]
-                bytes <- bytes + int64 mib
-                let inline len x = if isNull x then 0 else Array.length x
+                let pageSize = res.Resource |> Seq.sumBy _.RootElement.Size
+                let newestAge = res.Resource |> Seq.choose _.Timestamp |> Seq.tryLast |> Option.map (fun ts -> ts - DateTime.UtcNow)
+                let items = [| for x in res.Resource -> x.Cast<Equinox.CosmosStore.Core.Tip>() |]
+                let count, us, es = items.Length, items |> Seq.sumBy (_.u >> arrayLen), items |> Seq.sumBy (_.e >> arrayLen)
                 Log.Information("Page {count}s, {us}u, {es}e {ru}RU {s:N1}s {mib:N1}MiB age {age:dddd\.hh\:mm\:ss}",
-                                items.Length, items |> Seq.sumBy (_.u >> len), items |> Seq.sumBy (_.e >> len),
-                                res.RequestCharge, sw.Elapsed.TotalSeconds, miB mib,
-                                lastTs |> Option.map (fun t -> t - DateTime.UtcNow) |> Option.toNullable)
-                lens <- lens + int64 items.Length
-                rus <- rus + res.RequestCharge
+                                count, us, es, res.RequestCharge, sw.Elapsed.TotalSeconds, miB pageSize, Option.toNullable newestAge)
+                accBytesRead <- accBytesRead + int64 pageSize
+                accCount <- accCount + int64 count
+                accRus <- accRus + res.RequestCharge
                 for x in items do
                     if not (isNull x.p) then
                         let struct (categoryName, _sid) = x.p |> FsCodec.StreamName.parse |> FsCodec.StreamName.split
@@ -666,14 +665,13 @@ module Query =
                     for x in res.Resource do
                         serdes.SerializeToStream(x, stream)
                         stream.WriteByte(byte '\n'))
-                if p.Contains Console then
+                if a.TeeConsole then
                     res.Resource |> Seq.iter (serdes.Serialize >> Console.WriteLine)
         finally
-            maybeFileStream |> Option.iter (fun stream ->
-                pos <- stream.Position
-                stream.Close())
+            let fileSize = maybeFileStream |> Option.map _.Position |> Option.defaultValue 0
+            maybeFileStream |> Option.iter _.Close() // Before we log so time includes flush time and no confusion
             Log.Information("TOTALS {cats}c, {count:N0}s, {ru:N2}RU R/W {mib:N1}/{mib:N1}MiB {s:N1}s",
-                            cats.Count, lens, rus, miB bytes, miB pos, sw2.Elapsed.TotalSeconds) }
+                            cats.Count, accCount, accRus, miB accBytesRead, miB fileSize, sw2.Elapsed.TotalSeconds) }
 
 [<EntryPoint>]
 let main argv =
@@ -687,7 +685,7 @@ let main argv =
                 | Init a ->     (CosmosInit.containerAndOrDb log a CancellationToken.None).Wait()
                 | InitAws a ->  DynamoInit.table log a |> Async.RunSynchronously
                 | Config a ->   SqlInit.databaseOrSchema log a |> Async.RunSynchronously
-                | Query a ->    Query.run log a |> Async.RunSynchronously
+                | Query a ->    Query.run log (QueryArguments a) |> Async.RunSynchronously
                 | Dump a ->     Dump.run (log, verboseConsole, maybeSeq) a
                 | Stats a ->    CosmosStats.run (log, verboseConsole, maybeSeq) a |> Async.RunSynchronously
                 | Run a ->      let n = p.GetResult(LogFile, Arguments.programName () + ".log")
