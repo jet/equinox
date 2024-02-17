@@ -607,7 +607,7 @@ module Query =
         member x.Timestamp =
             let ok, p = x.RootElement.TryGetProperty("_ts")
             if ok then p.GetDouble() |> unixEpoch.AddSeconds |> Some else None
-    let composeQuery (a: QueryArguments) =
+    let private composeSql (a: QueryArguments) =
         let partitionKeyCriteria =
             match a.Criteria with
             | Criteria.SingleStream sn -> $"c.p = \"{sn}\""
@@ -628,50 +628,52 @@ module Query =
             | [| x |] -> x |> exists
             | xs -> String.Join(" AND ", xs) |> exists
         $"SELECT {selectedFields} FROM c WHERE {partitionKeyCriteria} AND {unfoldFilter}"
-    let inline arrayLen x = if isNull x then 0 else Array.length x
-    let run (log: ILogger) (a: QueryArguments) = async {
-        let sql = composeQuery a
+    let private makeQuery (a: QueryArguments) =
+        let sql = composeSql a
         Log.Information("Querying {q}", sql)
-        let storeConfig = a.ConfigureStore(log)
+        let storeConfig = a.ConfigureStore(Log.Logger)
         let container = match storeConfig with Store.Config.Cosmos (cc, _, _) -> cc.Container | _ -> failwith "Query requires Cosmos"
         let opts = Microsoft.Azure.Cosmos.QueryRequestOptions(MaxItemCount = a.CosmosArgs.QueryMaxItems)
-        use query = container.GetItemQueryIterator<System.Text.Json.JsonDocument>(sql, requestOptions = opts)
-
+        container.GetItemQueryIterator<System.Text.Json.JsonDocument>(sql, requestOptions = opts)
+    let run (a: QueryArguments) = async {
+        let sw, sw2 = System.Diagnostics.Stopwatch(), System.Diagnostics.Stopwatch.StartNew()
         let serdes = if a.Pretty then Dump.prettySerdes.Value else FsCodec.SystemTextJson.Serdes.Default
         let maybeFileStream = a.Filepath |> Option.map (fun p ->
             Log.Information("Dumping content to {path}", System.IO.FileInfo(p).FullName)
             System.IO.File.Open(p, System.IO.FileMode.Create))
+        use query = makeQuery a
 
-        let sw, sw2 = System.Diagnostics.Stopwatch(), System.Diagnostics.Stopwatch.StartNew()
-        let mutable accCount, accRus, accBytesRead = 0L, 0., 0L
-        let cats = System.Collections.Generic.HashSet()
+        let mutable accCount, accRus, accBytesRead, accCategories = 0L, 0., 0L, System.Collections.Generic.HashSet()
         try while query.HasMoreResults do
                 sw.Restart()
-                let! res = query.ReadNextAsync(CancellationToken.None) |> Async.AwaitTaskCorrect
-                let pageSize = res.Resource |> Seq.sumBy _.RootElement.Size
-                let newestAge = res.Resource |> Seq.choose _.Timestamp |> Seq.tryLast |> Option.map (fun ts -> ts - DateTime.UtcNow)
-                let items = [| for x in res.Resource -> x.Cast<Equinox.CosmosStore.Core.Tip>() |]
+                let! page = query.ReadNextAsync(CancellationToken.None) |> Async.AwaitTaskCorrect
+                let pageSize = page.Resource |> Seq.sumBy _.RootElement.Size
+                let newestAge = page.Resource |> Seq.choose _.Timestamp |> Seq.tryLast |> Option.map (fun ts -> ts - DateTime.UtcNow)
+                let items = [| for x in page.Resource -> x.Cast<Equinox.CosmosStore.Core.Tip>() |]
+                let inline arrayLen x = if isNull x then 0 else Array.length x
                 let count, us, es = items.Length, items |> Seq.sumBy (_.u >> arrayLen), items |> Seq.sumBy (_.e >> arrayLen)
                 Log.Information("Page {count}s, {us}u, {es}e {ru}RU {s:N1}s {mib:N1}MiB age {age:dddd\.hh\:mm\:ss}",
-                                count, us, es, res.RequestCharge, sw.Elapsed.TotalSeconds, miB pageSize, Option.toNullable newestAge)
-                accBytesRead <- accBytesRead + int64 pageSize
-                accCount <- accCount + int64 count
-                accRus <- accRus + res.RequestCharge
-                for x in items do
-                    if not (isNull x.p) then
-                        let struct (categoryName, _sid) = x.p |> FsCodec.StreamName.parse |> FsCodec.StreamName.split
-                        cats.Add categoryName |> ignore
+                                count, us, es, page.RequestCharge, sw.Elapsed.TotalSeconds, miB pageSize, Option.toNullable newestAge)
+
                 maybeFileStream |> Option.iter (fun stream ->
-                    for x in res.Resource do
+                    for x in page.Resource do
                         serdes.SerializeToStream(x, stream)
                         stream.WriteByte(byte '\n'))
                 if a.TeeConsole then
-                    res.Resource |> Seq.iter (serdes.Serialize >> Console.WriteLine)
+                    page.Resource |> Seq.iter (serdes.Serialize >> Console.WriteLine)
+
+                accBytesRead <- accBytesRead + int64 pageSize
+                accCount <- accCount + int64 count
+                accRus <- accRus + page.RequestCharge
+                for x in items do
+                    if not (isNull x.p) then
+                        let struct (categoryName, _sid) = x.p |> FsCodec.StreamName.parse |> FsCodec.StreamName.split
+                        accCategories.Add categoryName |> ignore
         finally
             let fileSize = maybeFileStream |> Option.map _.Position |> Option.defaultValue 0
             maybeFileStream |> Option.iter _.Close() // Before we log so time includes flush time and no confusion
             Log.Information("TOTALS {cats}c, {count:N0}s, {ru:N2}RU R/W {mib:N1}/{mib:N1}MiB {s:N1}s",
-                            cats.Count, accCount, accRus, miB accBytesRead, miB fileSize, sw2.Elapsed.TotalSeconds) }
+                            accCategories.Count, accCount, accRus, miB accBytesRead, miB fileSize, sw2.Elapsed.TotalSeconds) }
 
 [<EntryPoint>]
 let main argv =
@@ -685,7 +687,7 @@ let main argv =
                 | Init a ->     (CosmosInit.containerAndOrDb log a CancellationToken.None).Wait()
                 | InitAws a ->  DynamoInit.table log a |> Async.RunSynchronously
                 | Config a ->   SqlInit.databaseOrSchema log a |> Async.RunSynchronously
-                | Query a ->    Query.run log (QueryArguments a) |> Async.RunSynchronously
+                | Query a ->    Query.run (QueryArguments a) |> Async.RunSynchronously
                 | Dump a ->     Dump.run (log, verboseConsole, maybeSeq) a
                 | Stats a ->    CosmosStats.run (log, verboseConsole, maybeSeq) a |> Async.RunSynchronously
                 | Run a ->      let n = p.GetResult(LogFile, Arguments.programName () + ".log")
