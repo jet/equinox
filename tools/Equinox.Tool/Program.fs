@@ -63,7 +63,7 @@ and CosmosInitArguments(p : ParseResults<InitParameters>) =
     let rusOrDefault (value: int) = p.GetResult(Rus, value)
     let throughput auto = if auto then CosmosInit.Throughput.Autoscale (rusOrDefault 4000) else CosmosInit.Throughput.Manual (rusOrDefault 400)
     member val ProvisioningMode =
-        match p.GetResult(Mode, CosmosModeType.Container), p.Contains Autoscale with
+        match p.GetResult(InitParameters.Mode, CosmosModeType.Container), p.Contains Autoscale with
         | CosmosModeType.Container, auto -> CosmosInit.Provisioning.Container (throughput auto)
         | CosmosModeType.Db, auto ->        CosmosInit.Provisioning.Database (throughput auto)
         | CosmosModeType.Serverless, auto when auto || p.Contains Rus -> p.Raise "Cannot specify RU/s or Autoscale in Serverless mode"
@@ -116,36 +116,45 @@ and [<NoComparison; NoEquality; RequireSubcommand>] StatsParameters =
             | Cosmos _ ->                   "Cosmos Connection parameters."
             | Dynamo _ ->                   "Dynamo Connection parameters."
 and [<NoComparison; NoEquality; RequireSubcommand>] QueryParameters =
+    | [<AltCommandLine "-sn"; Unique>]      StreamName of string
     | [<AltCommandLine "-cn"; Unique>]      CategoryName of string
     | [<AltCommandLine "-cl"; Unique>]      CategoryLike of string
     | [<AltCommandLine "-un"; Unique>]      UnfoldName of string
     | [<AltCommandLine "-uc"; Unique>]      UnfoldCriteria of string
-    | [<AltCommandLine "-S"; Unique>]       IncludeStreamName
-    | [<AltCommandLine "-R"; Unique>]       ReadOnly
+    | [<AltCommandLine "-m"; Unique>]       Mode of Mode
+    | [<AltCommandLine "-o"; Unique>]       File of string
+    | [<AltCommandLine "-P"; Unique>]       Pretty
+    | [<AltCommandLine "-C"; Unique>]       Console
     | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Store.Cosmos.Parameters>
     interface IArgParserTemplate with
         member a.Usage = a |> function
+            | StreamName _ ->               "Specify stream name to match against `p`, e.g. `$UserServices-f7c1ce63389a45bdbea1cccebb1b3c8a`."
             | CategoryName _ ->             "Specify category name to match against `p`, e.g. `$UserServices`."
             | CategoryLike _ ->             "Specify category name to match against `p` as a Cosmos LIKE expression (with `%` as wildcard, e.g. `$UserServices-%`."
             | UnfoldName _ ->               "Specify unfold Name to match against `u.c`, e.g. `Snapshotted`"
             | UnfoldCriteria _ ->           "Specify constraints on Unfold (reference unfold fields via `u.d.`, top level fields via `c.`), e.g. `u.d.name = \"TenantName1\"`."
-            | ReadOnly ->                   "Only read `u`nfolds, not `_etag`. Default; Retrieve full data (u, p, _etag)"
-            | IncludeStreamName ->          "(For ReadOnly mode) Include StreamName (`p`). Default: Omit"
+            | Mode _ ->                     "readOnly: Only read `u`nfolds, not `_etag`.\n" +
+                                            "readWithStream: Read `u`nfolds and `p` (stream name), but not `_etag`.\n" +
+                                            "default: Retrieve full data (p, u, _etag).\n" +
+                                            "raw: Read all Items(documents) in full.\n"
+            | File _ ->                     "Export retrieved JSON to file"
+            | Pretty ->                     "Render the JSON indented over multiple lines"
+            | Console ->                    "Also emit the JSON to the console. Default: Gather statistics (and, optionally, write to specified file)"
             | Cosmos _ ->                   "Parameters for CosmosDB."
-and [<RequireQualifiedAccess>] CategoryCriteria = Name of string | Like of string | Unfiltered
-and [<RequireQualifiedAccess>] Fetch = UnfoldsOnly | UnfoldsAndName | Full
+and [<RequireQualifiedAccess>] Mode = ReadOnly | ReadWithStream | Default | Raw
+and [<RequireQualifiedAccess>] Criteria = SingleStream of string | CatName of string | CatLike of string | Unfiltered
 and QueryArguments(p: ParseResults<QueryParameters>) =
-    member val CategoryCriteria =
-        match p.TryGetResult CategoryName, p.TryGetResult CategoryLike with
-        | Some cn, None -> CategoryCriteria.Name cn
-        | None, Some cl -> CategoryCriteria.Like cl
-        | None, None -> CategoryCriteria.Unfiltered
-        | Some _, Some _ -> p.Raise "CategoryLike and CategoryName are mutually exclusive"
-    member val Fields =
-        match p.Contains ReadOnly, p.Contains IncludeStreamName with
-        | true, false -> Fetch.UnfoldsOnly
-        | true, true -> Fetch.UnfoldsAndName
-        | false, _ -> Fetch.Full
+    member val Mode = p.GetResult(Mode, Mode.Default)
+    member val Criteria =
+        match p.TryGetResult StreamName, p.TryGetResult CategoryName, p.TryGetResult CategoryLike with
+        | Some sn, None, None -> Criteria.SingleStream sn
+        | Some _, Some _, _
+        | Some _, _, Some _ -> p.Raise "StreamName and CategoryLike/CategoryName mutually exclusive"
+        | None, Some cn, None -> Criteria.CatName cn
+        | None, None, Some cl -> Criteria.CatLike cl
+        | None, None, None -> Criteria.Unfiltered
+        | None, Some _, Some _ -> p.Raise "CategoryLike and CategoryName are mutually exclusive"
+    member val Filepath = p.TryGetResult File
     member val UnfoldName = p.TryGetResult UnfoldName
     member val UnfoldCriteria = p.TryGetResult UnfoldCriteria
     member val CosmosArgs =
@@ -519,6 +528,10 @@ module CosmosStats =
 
 module Dump =
 
+    let prettySerdes = lazy FsCodec.SystemTextJson.Serdes(FsCodec.SystemTextJson.Options.Create(indent = true))
+    let private prettifyJson (json: string) =
+        use parsed = System.Text.Json.JsonDocument.Parse json
+        prettySerdes.Value.Serialize parsed
     let run (log : ILogger, verboseConsole, maybeSeq) (p : ParseResults<DumpParameters>) =
         let a = DumpArguments p
         let createStoreLog storeVerbose = createStoreLog storeVerbose verboseConsole maybeSeq
@@ -532,14 +545,9 @@ module Dump =
         let tryDecode (x : FsCodec.ITimelineEvent<ReadOnlyMemory<byte>>) = ValueSome x
         let idCodec = FsCodec.Codec.Create((fun _ -> failwith "No encoding required"), tryDecode, (fun _ _ -> failwith "No mapCausation"))
         let isOriginAndSnapshot = (fun (event : FsCodec.ITimelineEvent<_>) -> not doE && event.IsUnfold), fun _state -> failwith "no snapshot required"
-        let indentedOptions = FsCodec.SystemTextJson.Options.Create(indent = true)
         let formatUnfolds, formatEvents =
-            let prettify (json : string) : string =
-                use parsed = System.Text.Json.JsonDocument.Parse json
-                let prettySerdes = FsCodec.SystemTextJson.Serdes indentedOptions
-                prettySerdes.Serialize parsed
-            if p.Contains FlattenUnfolds then id else prettify
-            , if p.Contains Pretty then prettify else id
+            if p.Contains FlattenUnfolds then id else prettifyJson
+            , if p.Contains Pretty then prettifyJson else id
         let mutable payloadBytes = 0
         let render format (data : ReadOnlyMemory<byte>) =
             payloadBytes <- payloadBytes + data.Length
@@ -585,10 +593,19 @@ module Dump =
         log.Information("Total Event Bodies Payload {kib:n1}KiB", float payloadBytes / 1024.)
         if verboseConsole then
             dumpStats log storeConfig
+
 module Query =
-    let run (log: ILogger) (p: ParseResults<QueryParameters>) = async {
-        let a = QueryArguments p
-        let storeConfig = a.ConfigureStore(log)
+
+    let inline miB x = float x / 1024. / 1024.
+    let private unixEpoch = DateTime.UnixEpoch
+    type System.Text.Json.JsonElement with
+        member x.Size = if x.ValueKind = System.Text.Json.JsonValueKind.Null then 0 else x.GetRawText().Length
+    type System.Text.Json.JsonDocument with
+        member x.Cast<'T>() = System.Text.Json.JsonSerializer.Deserialize<'T>(x.RootElement)
+        member x.Timestamp =
+            let ok, p = x.RootElement.TryGetProperty("_ts")
+            if ok then p.GetDouble() |> unixEpoch.AddSeconds |> Some else None
+    let composeQuery (a: QueryArguments) =
         let unfoldFilter =
             let exists cond = $"EXISTS (SELECT VALUE u FROM u IN c.u WHERE {cond})"
             match [| match a.UnfoldName with None -> () | Some un -> $"u.c = \"{un}\""
@@ -596,39 +613,67 @@ module Query =
             | [||] -> "1=1"
             | [| x |] -> x |> exists
             | xs -> String.Join(" AND ", xs) |> exists
-        let fields =
-            match a.Fields with
-            | Fetch.UnfoldsOnly -> "c.u"
-            | Fetch.UnfoldsAndName -> "c.u, c.p"
-            | Fetch.Full -> "c.u, c.p, c._etag"
-        let criteria =
-            match a.CategoryCriteria with
-            | CategoryCriteria.Name n -> $"c.p LIKE \"{n}-%%\""
-            | CategoryCriteria.Like pat -> $"c.p LIKE \"{pat}\""
-            | CategoryCriteria.Unfiltered -> Log.Warning "No CategoryName/CategoryLike specified - Unfold Criteria better be unambiguous"; "1=1"
-        let q = $"SELECT {fields} FROM c WHERE {criteria} AND {unfoldFilter}"
-        Log.Information("Querying {q}", q)
+        let selectedFields =
+            match a.Mode with
+            | Mode.ReadOnly -> "c.u"
+            | Mode.ReadWithStream -> "c.p, c.u"
+            | Mode.Default -> "c.p, c.u, c._etag"
+            | Mode.Raw -> "*"
+        let partitionKeyCriteria =
+            match a.Criteria with
+            | Criteria.SingleStream sn -> $"c.p = \"{sn}\""
+            | Criteria.CatName n -> $"c.p LIKE \"{n}-%%\""
+            | Criteria.CatLike pat -> $"c.p LIKE \"{pat}\""
+            | Criteria.Unfiltered -> Log.Warning "No StreamName or CategoryName/CategoryLike specified - Unfold Criteria better be unambiguous"; "1=1"
+        $"SELECT {selectedFields} FROM c WHERE {partitionKeyCriteria} AND {unfoldFilter}"
+    let run (log: ILogger) (p: ParseResults<QueryParameters>) = async {
+        let a = QueryArguments p
+        let storeConfig = a.ConfigureStore(log)
         let container = match storeConfig with Store.Config.Cosmos (cc, _, _) -> cc.Container | _ -> failwith "Query requires Cosmos"
+        let sw, sw2 = System.Diagnostics.Stopwatch(), System.Diagnostics.Stopwatch.StartNew()
+        let sql = composeQuery a
+        Log.Information("Querying {q}", sql)
         let opts = Microsoft.Azure.Cosmos.QueryRequestOptions(MaxItemCount = a.CosmosArgs.QueryMaxItems)
-        let sw, sw2 = System.Diagnostics.Stopwatch.StartNew(), System.Diagnostics.Stopwatch.StartNew()
-        use query = container.GetItemQueryIterator<Equinox.CosmosStore.Core.Tip>(q, requestOptions = opts)
-        let mutable lens, rus = 0L, 0.
+        use query = container.GetItemQueryIterator<System.Text.Json.JsonDocument>(sql, requestOptions = opts)
+        let mutable lens, rus, bytes, pos = 0L, 0., 0L, 0L
         let cats = System.Collections.Generic.HashSet()
-        while query.HasMoreResults do
-            let! res = query.ReadNextAsync(CancellationToken.None) |> Async.AwaitTaskCorrect
-            let items = res.Resource |> Array.ofSeq
-            let inline len x = if isNull x then 0 else Array.length x
-            Log.Information("Page {count}s, {us}u, {es}e {ru}RU {s:N1}s",
-                            items.Length, items |> Seq.sumBy (_.u >> len), items |> Seq.sumBy (_.e >> len), res.RequestCharge, sw.Elapsed.TotalSeconds)
-            sw.Restart()
-            lens <- lens + int64 items.Length
-            rus <- rus + res.RequestCharge
-            for x in items do
-                if not (isNull x.p) then
-                    let struct (categoryName, _sid) = x.p |> FsCodec.StreamName.parse |> FsCodec.StreamName.split
-                    cats.Add categoryName |> ignore
-        Log.Information("TOTALS {cats}c, {count}s, {ru:N2}RU {s:N1}s",
-                        cats.Count, lens, rus, sw2.Elapsed.TotalSeconds) }
+        let maybeFileStream = a.Filepath |> Option.map (fun p ->
+            Log.Information("Dumping content to {path}", System.IO.FileInfo(p).FullName)
+            System.IO.File.Open(p, System.IO.FileMode.Create))
+        let serdes = if p.Contains QueryParameters.Pretty then Dump.prettySerdes.Value else FsCodec.SystemTextJson.Serdes.Default
+        try while query.HasMoreResults do
+                sw.Restart()
+                let! res = query.ReadNextAsync(CancellationToken.None) |> Async.AwaitTaskCorrect
+                let mutable lastTs, mib = None, 0
+                let items = [|
+                    for x in res.Resource ->
+                        lastTs <- x.Timestamp
+                        mib <- mib + x.RootElement.Size
+                        x.Cast<Equinox.CosmosStore.Core.Tip>() |]
+                bytes <- bytes + int64 mib
+                let inline len x = if isNull x then 0 else Array.length x
+                Log.Information("Page {count}s, {us}u, {es}e {ru}RU {s:N1}s {mib:N1}MiB age {age:dddd\.hh\:mm\:ss}",
+                                items.Length, items |> Seq.sumBy (_.u >> len), items |> Seq.sumBy (_.e >> len),
+                                res.RequestCharge, sw.Elapsed.TotalSeconds, miB mib,
+                                lastTs |> Option.map (fun t -> t - DateTime.UtcNow) |> Option.toNullable)
+                lens <- lens + int64 items.Length
+                rus <- rus + res.RequestCharge
+                for x in items do
+                    if not (isNull x.p) then
+                        let struct (categoryName, _sid) = x.p |> FsCodec.StreamName.parse |> FsCodec.StreamName.split
+                        cats.Add categoryName |> ignore
+                maybeFileStream |> Option.iter (fun stream ->
+                    for x in res.Resource do
+                        serdes.SerializeToStream(x, stream)
+                        stream.WriteByte(byte '\n'))
+                if p.Contains Console then
+                    res.Resource |> Seq.iter (serdes.Serialize >> Console.WriteLine)
+        finally
+            maybeFileStream |> Option.iter (fun stream ->
+                pos <- stream.Position
+                stream.Close())
+            Log.Information("TOTALS {cats}c, {count:N0}s, {ru:N2}RU R/W {mib:N1}/{mib:N1}MiB {s:N1}s",
+                            cats.Count, lens, rus, miB bytes, miB pos, sw2.Elapsed.TotalSeconds) }
 
 [<EntryPoint>]
 let main argv =
