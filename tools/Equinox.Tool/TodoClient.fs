@@ -1,8 +1,8 @@
 ﻿module Equinox.Tool.TodoClient
 
+open System
 open System.Net
 open System.Net.Http
-open System
 
 type Todo = { id: int; url: string; order: int; title: string; completed: bool }
 

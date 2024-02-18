@@ -1,12 +1,12 @@
 ﻿module Equinox.Tool.Tests
 
-open System.Threading
 open Domain
 open Microsoft.Extensions.DependencyInjection
+open Serilog
 open System
 open System.Net.Http
 open System.Text
-open Serilog
+open System.Threading
 
 type TestKind = Favorite | SaveForLater | Todo of size: int
 
@@ -186,7 +186,6 @@ module LoadTest =
                             | Favorite ->     TestKind.Favorite
                             | SaveForLater -> TestKind.SaveForLater
                             | Todo ->         TestKind.Todo (p.GetResult(Size, 100))
-
 
     let private runLoadTest log testsPerSecond duration errorCutoff reportingIntervals (clients : ClientId[]) runSingleTest =
         let mutable idx = -1L
