@@ -1,6 +1,5 @@
 ﻿module Equinox.Tool.StoreClient
 
-open Equinox.Tool.Infrastructure
 open System
 open System.Net
 open System.Net.Http

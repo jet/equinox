@@ -1,6 +1,5 @@
 ﻿module Equinox.Tool.TodoClient
 
-open Equinox.Tool.Infrastructure
 open System.Net
 open System.Net.Http
 open System
