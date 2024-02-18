@@ -18,28 +18,28 @@ module CosmosInit = Equinox.CosmosStore.Core.Initialization
 let [<Literal>] appName = "equinox-tool"
 
 [<NoEquality; NoComparison>]
-type Arguments =
+type Parameters =
     | [<AltCommandLine "-V"; Unique>]       Verbose
     | [<AltCommandLine "-C"; Unique>]       VerboseConsole
     | [<AltCommandLine "-S"; Unique>]       LocalSeq
     | [<AltCommandLine "-l"; Unique>]       LogFile of string
-    | [<CliPrefix(CliPrefix.None); Last>]   Run of ParseResults<TestParameters>
+    | [<CliPrefix(CliPrefix.None); Last>]   Dump of ParseResults<DumpParameters>
+    | [<CliPrefix(CliPrefix.None); Last>]   LoadTest of ParseResults<LoadTestParameters>
     | [<CliPrefix(CliPrefix.None); Last>]   Init of ParseResults<InitParameters>
     | [<CliPrefix(CliPrefix.None); Last>]   InitAws of ParseResults<TableParameters>
-    | [<CliPrefix(CliPrefix.None); Last>]   Config of ParseResults<ConfigParameters>
+    | [<CliPrefix(CliPrefix.None); Last>]   InitSql of ParseResults<InitSqlParameters>
     | [<CliPrefix(CliPrefix.None); Last>]   Stats of ParseResults<StatsParameters>
     | [<CliPrefix(CliPrefix.None); Last>]   Query of ParseResults<QueryParameters>
-    | [<CliPrefix(CliPrefix.None); Last>]   Dump of ParseResults<DumpParameters>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Verbose ->                    "Include low level logging regarding specific test runs."
             | VerboseConsole ->             "Include low level test and store actions logging in on-screen output to console."
             | LocalSeq ->                   "Configures writing to a local Seq endpoint at http://localhost:5341, see https://getseq.net"
             | LogFile _ ->                  "specify a log file to write the result breakdown into (default: eqx.log)."
-            | Run _ ->                      "Run a load test"
+            | LoadTest _ ->                 "Run a load test"
             | Init _ ->                     "Initialize Store/Container (supports `cosmos` stores; also handles RU/s provisioning adjustment)."
             | InitAws _ ->                  "Initialize DynamoDB Table (supports `dynamo` stores; also handles RU/s provisioning adjustment)."
-            | Config _ ->                   "Initialize Database Schema (supports `mssql`/`mysql`/`postgres` SqlStreamStore stores)."
+            | InitSql _ ->                  "Initialize Database Schema (supports `mssql`/`mysql`/`postgres` SqlStreamStore stores)."
             | Stats _ ->                    "inspect store to determine numbers of streams/documents/events and/or config (supports `cosmos` and `dynamo` stores)."
             | Query _ ->                    "Load/Summarise streams based on Cosmos SQL Queries (supports `cosmos` only)."
             | Dump _ ->                     "Load and show events in a specified stream (supports all stores)."
@@ -89,7 +89,7 @@ and DynamoInitArguments(p : ParseResults<TableParameters>) =
     member val Throughput =                 if not onDemand then Throughput.Provisioned (ProvisionedThroughput(p.GetResult ReadCu, p.GetResult WriteCu))
                                             elif onDemand && (p.Contains ReadCu || p.Contains WriteCu) then p.Raise "CUs are not applicable in On-Demand mode"
                                             else Throughput.OnDemand
-and [<NoComparison; NoEquality; RequireSubcommand>] ConfigParameters =
+and [<NoComparison; NoEquality; RequireSubcommand>] InitSqlParameters =
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Store.Sql.Ms.Parameters>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">] MySql    of ParseResults<Store.Sql.My.Parameters>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">] Postgres of ParseResults<Store.Sql.Pg.Parameters>
@@ -232,7 +232,7 @@ and [<NoComparison>] WebParameters =
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Endpoint _ ->                 "Target address. Default: https://localhost:5001"
-and [<NoComparison; NoEquality; RequireSubcommand>] TestParameters =
+and [<NoComparison; NoEquality; RequireSubcommand>] LoadTestParameters =
     | [<AltCommandLine "-t"; Unique>]       Name of Test
     | [<AltCommandLine "-s">]               Size of int
     | [<AltCommandLine "-C">]               Cached
@@ -270,7 +270,7 @@ and [<NoComparison; NoEquality; RequireSubcommand>] TestParameters =
             | Mdb _ ->                      "Run transactions in-process against MessageDB."
             | Web _ ->                      "Run transactions against a Web endpoint."
 and Test = Favorite | SaveForLater | Todo
-and TestArguments(p : ParseResults<TestParameters>) =
+and TestArguments(p : ParseResults<LoadTestParameters>) =
     member val Options =                    p.GetResults Cached @ p.GetResults Unfolds
     member x.Cache =                        x.Options |> List.exists (function Cached ->  true | _ -> false)
     member x.Unfolds =                      x.Options |> List.exists (function Unfolds -> true | _ -> false)
@@ -313,10 +313,6 @@ and TestArguments(p : ParseResults<TestParameters>) =
                         | Favorite ->     Tests.Favorite
                         | SaveForLater -> Tests.SaveForLater
                         | Todo ->         Tests.Todo (p.GetResult(Size, 100))
-module Arguments =
-    let programName () = System.Reflection.Assembly.GetEntryAssembly().GetName().Name
-    let parse argv =
-        ArgumentParser.Create<Arguments>(programName = programName ()).ParseCommandLine(argv)
 
 let writeToStatsSinks (c : LoggerConfiguration) =
     c.WriteTo.Sink(Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink())
@@ -353,69 +349,6 @@ let dumpStats log = function
     | Store.Config.Mdb _ ->    Equinox.MessageDb.Log.InternalMetrics.dump log
     | Store.Config.Memory _ -> ()
 
-module LoadTest =
-
-    open Equinox.Tools.TestHarness
-
-    let private runLoadTest log testsPerSecond duration errorCutoff reportingIntervals (clients : ClientId[]) runSingleTest =
-        let mutable idx = -1L
-        let selectClient () =
-            let clientIndex = Interlocked.Increment(&idx) |> int
-            clients[clientIndex % clients.Length]
-        let selectClient = async { return async { return selectClient() } }
-        Local.runLoadTest log reportingIntervals testsPerSecond errorCutoff duration selectClient runSingleTest
-    let private decorateWithLogger (domainLog : ILogger, verbose) (run: 't -> Async<unit>) =
-        let execute clientId =
-            if not verbose then run clientId
-            else async {
-                domainLog.Information("Executing for client {sessionId}", clientId)
-                try return! run clientId
-                with e -> domainLog.Warning(e, "Test threw an exception"); e.Reraise () }
-        execute
-    let private createResultLog fileName = LoggerConfiguration().WriteTo.File(fileName).CreateLogger()
-    let run (log : ILogger) (verbose, verboseConsole, maybeSeq) reportFilename (p : ParseResults<TestParameters>) =
-        let createStoreLog storeVerbose = createStoreLog storeVerbose verboseConsole maybeSeq
-        let a = TestArguments p
-        let storeLog, storeConfig, httpClient: ILogger * Store.Config option * HttpClient option =
-            match p.GetSubCommand() with
-            | Web p ->
-                let uri = p.GetResult(WebParameters.Endpoint,"https://localhost:5001") |> Uri
-                log.Information("Running web test targeting: {url}", uri)
-                createStoreLog false, None, new HttpClient(BaseAddress = uri) |> Some
-            | _ ->
-                let storeLog, storeConfig = a.ConfigureStore(log, createStoreLog)
-                storeLog, Some storeConfig, None
-        let test, duration = a.Tests, a.Duration
-        let runSingleTest : ClientId -> Async<unit> =
-            match storeConfig, httpClient with
-            | None, Some client ->
-                let execForClient = Tests.executeRemote client test
-                decorateWithLogger (log, verbose) execForClient
-            | Some storeConfig, _ ->
-                let services = ServiceCollection()
-                Services.register(services, storeConfig, storeLog)
-                let container = services.BuildServiceProvider()
-                let execForClient = Tests.executeLocal container test
-                decorateWithLogger (log, verbose) execForClient
-            | None, None -> invalidOp "impossible None, None"
-        let clients = Array.init (a.TestsPerSecond * 2) (fun _ -> % Guid.NewGuid())
-
-        let renderedIds = clients |> Seq.map ClientId.toString |> if verboseConsole then id else Seq.truncate 5
-        log.ForContext((if verboseConsole then "clientIds" else "clientIdsExcerpt"),renderedIds)
-            .Information("Running {test} for {duration} @ {tps} hits/s across {clients} clients; Max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
-            test, a.Duration, a.TestsPerSecond, clients.Length, a.ErrorCutoff, a.ReportingIntervals, reportFilename)
-
-        resetStats ()
-
-        let results = runLoadTest log a.TestsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) a.ErrorCutoff a.ReportingIntervals clients runSingleTest |> Async.RunSynchronously
-
-        let resultFile = createResultLog reportFilename
-        for r in results do
-            resultFile.Information("Aggregate: {aggregate}", r)
-        log.Information("Run completed; Current memory allocation: {bytes:n2} MiB", (GC.GetTotalMemory(true) |> float) / 1024./1024.)
-
-        storeConfig |> Option.iter (dumpStats log)
-
 let createDomainLog verbose verboseConsole maybeSeqEndpoint =
     let c = LoggerConfiguration()
     let c = if verbose then c.MinimumLevel.Debug() else c
@@ -446,44 +379,6 @@ module CosmosInit =
                 l.Information("CosmosStore provisioning in {mode:l} mode with automatic RU/s as configured in account", "Serverless")
             CosmosInit.init log (connector.CreateUninitialized()) (dName, cName) a.ProvisioningMode a.IndexUnfolds a.SkipStoredProc
         | x -> p.Raise $"unexpected subcommand %A{x}"
-
-module DynamoInit =
-
-    open Equinox.DynamoStore
-    open Store.Dynamo
-
-    let table (log : ILogger) (p : ParseResults<TableParameters>) = async {
-        let a = DynamoInitArguments p
-        match p.GetSubCommand() with
-        | TableParameters.Dynamo sp ->
-            let sa = Store.Dynamo.Arguments sp
-            sa.Connector.LogConfiguration(log)
-            let t = a.Throughput
-            match t with
-            | Throughput.Provisioned t ->
-                log.Information("DynamoStore Provisioning Table {table} with {read}R/{write}WCU Provisioned capacity; streaming {streaming}",
-                                sa.Table, t.ReadCapacityUnits, t.WriteCapacityUnits, a.StreamingMode)
-            | Throughput.OnDemand ->
-                log.Information("DynamoStore Provisioning Table {table} with On-Demand capacity management; streaming {streaming}",
-                                sa.Table, a.StreamingMode)
-            let client = sa.Connector.CreateDynamoDbClient()
-            let! t = Core.Initialization.provision client sa.Table (t, a.StreamingMode)
-            log.Information("DynamoStore DynamoDB Streams ARN {streamArn}", Core.Initialization.tryGetActiveStreamsArn t)
-        | x -> p.Raise $"unexpected subcommand %A{x}" }
-
-module SqlInit =
-
-    let databaseOrSchema (log: ILogger) (p : ParseResults<ConfigParameters>) =
-        match p.GetSubCommand() with
-        | ConfigParameters.MsSql p ->
-            let a = Store.Sql.Ms.Arguments(p)
-            Store.Sql.Ms.connect log (a.ConnectionString, a.Credentials, a.Schema, true) |> Async.Ignore
-        | ConfigParameters.MySql p ->
-            let a = Store.Sql.My.Arguments(p)
-            Store.Sql.My.connect log (a.ConnectionString, a.Credentials, true) |> Async.Ignore
-        | ConfigParameters.Postgres p ->
-            let a = Store.Sql.Pg.Arguments(p)
-            Store.Sql.Pg.connect log (a.ConnectionString, a.Credentials, a.Schema, true) |> Async.Ignore
 
 module CosmosStats =
 
@@ -528,9 +423,129 @@ module CosmosStats =
                 log.Information("DynamoStore Table {table} Provisioning Unknown; Streams ARN {streaming}", sa.Table, streamsArn) }
         | x -> p.Raise $"unexpected subcommand %A{x}"
 
+let prettySerdes = lazy FsCodec.SystemTextJson.Serdes(FsCodec.SystemTextJson.Options.Create(indent = true))
+
+module CosmosQuery =
+
+    let inline miB x = float x / 1024. / 1024.
+    let private unixEpoch = DateTime.UnixEpoch
+    type System.Text.Json.JsonElement with
+        member x.Size = if x.ValueKind = System.Text.Json.JsonValueKind.Null then 0 else x.GetRawText().Length
+    type System.Text.Json.JsonDocument with
+        member x.Cast<'T>() = System.Text.Json.JsonSerializer.Deserialize<'T>(x.RootElement)
+        member x.Timestamp =
+            let ok, p = x.RootElement.TryGetProperty("_ts")
+            if ok then p.GetDouble() |> unixEpoch.AddSeconds |> Some else None
+    let private composeSql (a: QueryArguments) =
+        let inline warnOnUnfiltered () =
+            let lel = if a.Mode = Mode.Raw then LogEventLevel.Debug elif a.Filepath = None then LogEventLevel.Warning else LogEventLevel.Information
+            Log.Write(lel, "No StreamName or CategoryName/CategoryLike specified - Unfold Criteria better be unambiguous")
+        let partitionKeyCriteria =
+            match a.Criteria with
+            | Criteria.SingleStream sn -> $"c.p = \"{sn}\""
+            | Criteria.CatName n -> $"c.p LIKE \"{n}-%%\""
+            | Criteria.CatLike pat -> $"c.p LIKE \"{pat}\""
+            | Criteria.Unfiltered -> warnOnUnfiltered (); "1=1"
+        let selectedFields =
+            match a.Mode with
+            | Mode.ReadOnly -> "c.u"
+            | Mode.ReadWithStream -> "c.p, c.u"
+            | Mode.Default -> "c.p, c.u, c._etag"
+            | Mode.Raw -> "*"
+        let unfoldFilter =
+            let exists cond = $"EXISTS (SELECT VALUE u FROM u IN c.u WHERE {cond})"
+            match [| match a.UnfoldName with None -> () | Some un -> $"u.c = \"{un}\""
+                     match a.UnfoldCriteria with None -> () | Some uc -> uc |] with
+            | [||] -> "1=1"
+            | [| x |] -> x |> exists
+            | xs -> String.Join(" AND ", xs) |> exists
+        $"SELECT {selectedFields} FROM c WHERE {partitionKeyCriteria} AND {unfoldFilter}"
+    let private makeQuery (a: QueryArguments) =
+        let sql = composeSql a
+        Log.Information("Querying {mode}: {q}", a.Mode, sql)
+        let storeConfig = a.ConfigureStore(Log.Logger)
+        let container = match storeConfig with Store.Config.Cosmos (cc, _, _) -> cc.Container | _ -> failwith "Query requires Cosmos"
+        let opts = Microsoft.Azure.Cosmos.QueryRequestOptions(MaxItemCount = a.CosmosArgs.QueryMaxItems)
+        container.GetItemQueryIterator<System.Text.Json.JsonDocument>(sql, requestOptions = opts)
+    let run (a: QueryArguments) = async {
+        let sw, sw2 = System.Diagnostics.Stopwatch(), System.Diagnostics.Stopwatch.StartNew()
+        let serdes = if a.Pretty then prettySerdes.Value else FsCodec.SystemTextJson.Serdes.Default
+        let maybeFileStream = a.Filepath |> Option.map (fun p ->
+            Log.Information("Dumping {mode} content to {path}", a.Mode, System.IO.FileInfo(p).FullName)
+            System.IO.File.Open(p, System.IO.FileMode.Create))
+        use query = makeQuery a
+
+        let pageStreams, accStreams = System.Collections.Generic.HashSet(), System.Collections.Generic.HashSet()
+        let mutable accI, accE, accU, accRus, accBytesRead = 0L, 0L, 0L, 0., 0L
+        try while query.HasMoreResults do
+                sw.Restart()
+                let! page = query.ReadNextAsync(CancellationToken.None) |> Async.AwaitTaskCorrect
+                let pageSize = page.Resource |> Seq.sumBy _.RootElement.Size
+                let newestAge = page.Resource |> Seq.choose _.Timestamp |> Seq.tryLast |> Option.map (fun ts -> ts - DateTime.UtcNow)
+                let items = [| for x in page.Resource -> x.Cast<Equinox.CosmosStore.Core.Tip>() |]
+                let inline arrayLen x = if isNull x then 0 else Array.length x
+                pageStreams.Clear(); for x in items do if x.p <> null && pageStreams.Add x.p then accStreams.Add x.p |> ignore
+                let pageI, pageE, pageU = items.Length, items |> Seq.sumBy (_.e >> arrayLen), items |> Seq.sumBy (_.u >> arrayLen)
+                Log.Information("Page {count}i {streams}s {us}e {es}u {ru}RU {s:N1}s {mib:N1}MiB age {age:dddd\.hh\:mm\:ss}",
+                                pageI, pageStreams.Count, pageE, pageU, page.RequestCharge, sw.Elapsed.TotalSeconds, miB pageSize, Option.toNullable newestAge)
+
+                maybeFileStream |> Option.iter (fun stream ->
+                    for x in page.Resource do
+                        serdes.SerializeToStream(x, stream)
+                        stream.WriteByte(byte '\n'))
+                if a.TeeConsole then
+                    page.Resource |> Seq.iter (serdes.Serialize >> Console.WriteLine)
+
+                accI <- accI + int64 pageI; accE <- accE + int64 pageE; accU <- accU + int64 pageU
+                accRus <- accRus + page.RequestCharge; accBytesRead <- accBytesRead + int64 pageSize
+        finally
+            let fileSize = maybeFileStream |> Option.map _.Position |> Option.defaultValue 0
+            maybeFileStream |> Option.iter _.Close() // Before we log so time includes flush time and no confusion
+            let categoryName = FsCodec.StreamName.parse >> FsCodec.StreamName.split >> fun struct (cn, _sid) -> cn
+            let accCategories = accStreams |> Seq.map categoryName |> Seq.distinct |> Seq.length
+            Log.Information("TOTALS {cats}c {streams:N0}s {count:N0}i {count:N0}e {count:N0}u {ru:N2}RU R/W {mib:N1}/{mib:N1}MiB {s:N1}s",
+                            accCategories, accStreams.Count, accI, accE, accU, accRus, miB accBytesRead, miB fileSize, sw2.Elapsed.TotalSeconds) }
+
+module DynamoInit =
+
+    open Equinox.DynamoStore
+    open Store.Dynamo
+
+    let table (log : ILogger) (p : ParseResults<TableParameters>) = async {
+        let a = DynamoInitArguments p
+        match p.GetSubCommand() with
+        | TableParameters.Dynamo sp ->
+            let sa = Store.Dynamo.Arguments sp
+            sa.Connector.LogConfiguration(log)
+            let t = a.Throughput
+            match t with
+            | Throughput.Provisioned t ->
+                log.Information("DynamoStore Provisioning Table {table} with {read}R/{write}WCU Provisioned capacity; streaming {streaming}",
+                                sa.Table, t.ReadCapacityUnits, t.WriteCapacityUnits, a.StreamingMode)
+            | Throughput.OnDemand ->
+                log.Information("DynamoStore Provisioning Table {table} with On-Demand capacity management; streaming {streaming}",
+                                sa.Table, a.StreamingMode)
+            let client = sa.Connector.CreateDynamoDbClient()
+            let! t = Core.Initialization.provision client sa.Table (t, a.StreamingMode)
+            log.Information("DynamoStore DynamoDB Streams ARN {streamArn}", Core.Initialization.tryGetActiveStreamsArn t)
+        | x -> p.Raise $"unexpected subcommand %A{x}" }
+
+module SqlInit =
+
+    let databaseOrSchema (log: ILogger) (p : ParseResults<InitSqlParameters>) =
+        match p.GetSubCommand() with
+        | InitSqlParameters.MsSql p ->
+            let a = Store.Sql.Ms.Arguments(p)
+            Store.Sql.Ms.connect log (a.ConnectionString, a.Credentials, a.Schema, true) |> Async.Ignore
+        | InitSqlParameters.MySql p ->
+            let a = Store.Sql.My.Arguments(p)
+            Store.Sql.My.connect log (a.ConnectionString, a.Credentials, true) |> Async.Ignore
+        | InitSqlParameters.Postgres p ->
+            let a = Store.Sql.Pg.Arguments(p)
+            Store.Sql.Pg.connect log (a.ConnectionString, a.Credentials, a.Schema, true) |> Async.Ignore
+
 module Dump =
 
-    let prettySerdes = lazy FsCodec.SystemTextJson.Serdes(FsCodec.SystemTextJson.Options.Create(indent = true))
     let private prettifyJson (json: string) =
         use parsed = System.Text.Json.JsonDocument.Parse json
         prettySerdes.Value.Serialize parsed
@@ -596,106 +611,95 @@ module Dump =
         if verboseConsole then
             dumpStats log storeConfig
 
-module Query =
+module LoadTest =
 
-    let inline miB x = float x / 1024. / 1024.
-    let private unixEpoch = DateTime.UnixEpoch
-    type System.Text.Json.JsonElement with
-        member x.Size = if x.ValueKind = System.Text.Json.JsonValueKind.Null then 0 else x.GetRawText().Length
-    type System.Text.Json.JsonDocument with
-        member x.Cast<'T>() = System.Text.Json.JsonSerializer.Deserialize<'T>(x.RootElement)
-        member x.Timestamp =
-            let ok, p = x.RootElement.TryGetProperty("_ts")
-            if ok then p.GetDouble() |> unixEpoch.AddSeconds |> Some else None
-    let private composeSql (a: QueryArguments) =
-        let partitionKeyCriteria =
-            match a.Criteria with
-            | Criteria.SingleStream sn -> $"c.p = \"{sn}\""
-            | Criteria.CatName n -> $"c.p LIKE \"{n}-%%\""
-            | Criteria.CatLike pat -> $"c.p LIKE \"{pat}\""
-            | Criteria.Unfiltered ->
-                let message = "No StreamName or CategoryName/CategoryLike specified - Unfold Criteria better be unambiguous"
-                (if Option.isNone a.Filepath then Log.Warning else Log.Information) message; "1=1"
-        let selectedFields =
-            match a.Mode with
-            | Mode.ReadOnly -> "c.u"
-            | Mode.ReadWithStream -> "c.p, c.u"
-            | Mode.Default -> "c.p, c.u, c._etag"
-            | Mode.Raw -> "*"
-        let unfoldFilter =
-            let exists cond = $"EXISTS (SELECT VALUE u FROM u IN c.u WHERE {cond})"
-            match [| match a.UnfoldName with None -> () | Some un -> $"u.c = \"{un}\""
-                     match a.UnfoldCriteria with None -> () | Some uc -> uc |] with
-            | [||] -> "1=1"
-            | [| x |] -> x |> exists
-            | xs -> String.Join(" AND ", xs) |> exists
-        $"SELECT {selectedFields} FROM c WHERE {partitionKeyCriteria} AND {unfoldFilter}"
-    let private makeQuery (a: QueryArguments) =
-        let sql = composeSql a
-        Log.Information("Querying {mode}: {q}", a.Mode, sql)
-        let storeConfig = a.ConfigureStore(Log.Logger)
-        let container = match storeConfig with Store.Config.Cosmos (cc, _, _) -> cc.Container | _ -> failwith "Query requires Cosmos"
-        let opts = Microsoft.Azure.Cosmos.QueryRequestOptions(MaxItemCount = a.CosmosArgs.QueryMaxItems)
-        container.GetItemQueryIterator<System.Text.Json.JsonDocument>(sql, requestOptions = opts)
-    let run (a: QueryArguments) = async {
-        let sw, sw2 = System.Diagnostics.Stopwatch(), System.Diagnostics.Stopwatch.StartNew()
-        let serdes = if a.Pretty then Dump.prettySerdes.Value else FsCodec.SystemTextJson.Serdes.Default
-        let maybeFileStream = a.Filepath |> Option.map (fun p ->
-            Log.Information("Dumping {mode} content to {path}", a.Mode, System.IO.FileInfo(p).FullName)
-            System.IO.File.Open(p, System.IO.FileMode.Create))
-        use query = makeQuery a
+    open Equinox.Tools.TestHarness
 
-        let mutable accCount, accRus, accBytesRead, accCategories = 0L, 0., 0L, System.Collections.Generic.HashSet()
-        try while query.HasMoreResults do
-                sw.Restart()
-                let! page = query.ReadNextAsync(CancellationToken.None) |> Async.AwaitTaskCorrect
-                let pageSize = page.Resource |> Seq.sumBy _.RootElement.Size
-                let newestAge = page.Resource |> Seq.choose _.Timestamp |> Seq.tryLast |> Option.map (fun ts -> ts - DateTime.UtcNow)
-                let items = [| for x in page.Resource -> x.Cast<Equinox.CosmosStore.Core.Tip>() |]
-                let inline arrayLen x = if isNull x then 0 else Array.length x
-                let count, us, es = items.Length, items |> Seq.sumBy (_.u >> arrayLen), items |> Seq.sumBy (_.e >> arrayLen)
-                Log.Information("Page {count}s, {us}u, {es}e {ru}RU {s:N1}s {mib:N1}MiB age {age:dddd\.hh\:mm\:ss}",
-                                count, us, es, page.RequestCharge, sw.Elapsed.TotalSeconds, miB pageSize, Option.toNullable newestAge)
+    let private runLoadTest log testsPerSecond duration errorCutoff reportingIntervals (clients : ClientId[]) runSingleTest =
+        let mutable idx = -1L
+        let selectClient () =
+            let clientIndex = Interlocked.Increment(&idx) |> int
+            clients[clientIndex % clients.Length]
+        let selectClient = async { return async { return selectClient() } }
+        Local.runLoadTest log reportingIntervals testsPerSecond errorCutoff duration selectClient runSingleTest
+    let private decorateWithLogger (domainLog : ILogger, verbose) (run: 't -> Async<unit>) =
+        let execute clientId =
+            if not verbose then run clientId
+            else async {
+                domainLog.Information("Executing for client {sessionId}", clientId)
+                try return! run clientId
+                with e -> domainLog.Warning(e, "Test threw an exception"); e.Reraise () }
+        execute
+    let private createResultLog fileName = LoggerConfiguration().WriteTo.File(fileName).CreateLogger()
+    let run (log : ILogger) (verbose, verboseConsole, maybeSeq) reportFilename (p : ParseResults<LoadTestParameters>) =
+        let createStoreLog storeVerbose = createStoreLog storeVerbose verboseConsole maybeSeq
+        let a = TestArguments p
+        let storeLog, storeConfig, httpClient: ILogger * Store.Config option * HttpClient option =
+            match p.GetSubCommand() with
+            | Web p ->
+                let uri = p.GetResult(WebParameters.Endpoint,"https://localhost:5001") |> Uri
+                log.Information("Running web test targeting: {url}", uri)
+                createStoreLog false, None, new HttpClient(BaseAddress = uri) |> Some
+            | _ ->
+                let storeLog, storeConfig = a.ConfigureStore(log, createStoreLog)
+                storeLog, Some storeConfig, None
+        let test, duration = a.Tests, a.Duration
+        let runSingleTest : ClientId -> Async<unit> =
+            match storeConfig, httpClient with
+            | None, Some client ->
+                let execForClient = Tests.executeRemote client test
+                decorateWithLogger (log, verbose) execForClient
+            | Some storeConfig, _ ->
+                let services = ServiceCollection()
+                Services.register(services, storeConfig, storeLog)
+                let container = services.BuildServiceProvider()
+                let execForClient = Tests.executeLocal container test
+                decorateWithLogger (log, verbose) execForClient
+            | None, None -> invalidOp "impossible None, None"
+        let clients = Array.init (a.TestsPerSecond * 2) (fun _ -> % Guid.NewGuid())
 
-                maybeFileStream |> Option.iter (fun stream ->
-                    for x in page.Resource do
-                        serdes.SerializeToStream(x, stream)
-                        stream.WriteByte(byte '\n'))
-                if a.TeeConsole then
-                    page.Resource |> Seq.iter (serdes.Serialize >> Console.WriteLine)
+        let renderedIds = clients |> Seq.map ClientId.toString |> if verboseConsole then id else Seq.truncate 5
+        log.ForContext((if verboseConsole then "clientIds" else "clientIdsExcerpt"),renderedIds)
+            .Information("Running {test} for {duration} @ {tps} hits/s across {clients} clients; Max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
+            test, a.Duration, a.TestsPerSecond, clients.Length, a.ErrorCutoff, a.ReportingIntervals, reportFilename)
 
-                accBytesRead <- accBytesRead + int64 pageSize
-                accCount <- accCount + int64 count
-                accRus <- accRus + page.RequestCharge
-                for x in items do
-                    if not (isNull x.p) then
-                        let struct (categoryName, _sid) = x.p |> FsCodec.StreamName.parse |> FsCodec.StreamName.split
-                        accCategories.Add categoryName |> ignore
-        finally
-            let fileSize = maybeFileStream |> Option.map _.Position |> Option.defaultValue 0
-            maybeFileStream |> Option.iter _.Close() // Before we log so time includes flush time and no confusion
-            Log.Information("TOTALS {cats}c, {count:N0}s, {ru:N2}RU R/W {mib:N1}/{mib:N1}MiB {s:N1}s",
-                            accCategories.Count, accCount, accRus, miB accBytesRead, miB fileSize, sw2.Elapsed.TotalSeconds) }
+        resetStats ()
+
+        let results = runLoadTest log a.TestsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) a.ErrorCutoff a.ReportingIntervals clients runSingleTest |> Async.RunSynchronously
+
+        let resultFile = createResultLog reportFilename
+        for r in results do
+            resultFile.Information("Aggregate: {aggregate}", r)
+        log.Information("Run completed; Current memory allocation: {bytes:n2} MiB", (GC.GetTotalMemory(true) |> float) / 1024./1024.)
+
+        storeConfig |> Option.iter (dumpStats log)
+
+type Arguments(p: ParseResults<Parameters>) =
+    let maybeSeq = if p.Contains LocalSeq then Some "http://localhost:5341" else None
+    let verbose = p.Contains Verbose
+    let verboseConsole = p.Contains VerboseConsole
+    let programName () = System.Reflection.Assembly.GetEntryAssembly().GetName().Name
+    member _.CreateDomainLog() = createDomainLog verbose verboseConsole maybeSeq
+    member _.ExecuteSubCommand() = async {
+        match p.GetSubCommand() with
+        | Init a ->     (CosmosInit.containerAndOrDb Log.Logger a CancellationToken.None).Wait()
+        | InitAws a ->  DynamoInit.table Log.Logger a |> Async.RunSynchronously
+        | InitSql a ->  SqlInit.databaseOrSchema Log.Logger a |> Async.RunSynchronously
+        | Dump a ->     Dump.run (Log.Logger, verboseConsole, maybeSeq) a
+        | Query a ->    CosmosQuery.run (QueryArguments a) |> Async.RunSynchronously
+        | Stats a ->    CosmosStats.run (Log.Logger, verboseConsole, maybeSeq) a |> Async.RunSynchronously
+        | LoadTest a -> let n = p.GetResult(LogFile, programName () + ".log")
+                        let reportFilename = System.IO.FileInfo(n).FullName
+                        LoadTest.run Log.Logger (verbose, verboseConsole, maybeSeq) reportFilename a
+        | x ->          p.Raise $"unexpected subcommand %A{x}"
+    }
+    static member Parse argv = ArgumentParser.Create().ParseCommandLine(argv) |> Arguments
 
 [<EntryPoint>]
 let main argv =
-    try let p = Arguments.parse argv
-        let verboseConsole = p.Contains VerboseConsole
-        let maybeSeq = if p.Contains LocalSeq then Some "http://localhost:5341" else None
-        let verbose = p.Contains Verbose
-        Log.Logger <- createDomainLog verbose verboseConsole maybeSeq
-        try let log = Log.Logger
-            try match p.GetSubCommand() with
-                | Init a ->     (CosmosInit.containerAndOrDb log a CancellationToken.None).Wait()
-                | InitAws a ->  DynamoInit.table log a |> Async.RunSynchronously
-                | Config a ->   SqlInit.databaseOrSchema log a |> Async.RunSynchronously
-                | Query a ->    Query.run (QueryArguments a) |> Async.RunSynchronously
-                | Dump a ->     Dump.run (log, verboseConsole, maybeSeq) a
-                | Stats a ->    CosmosStats.run (log, verboseConsole, maybeSeq) a |> Async.RunSynchronously
-                | Run a ->      let n = p.GetResult(LogFile, Arguments.programName () + ".log")
-                                let reportFilename = System.IO.FileInfo(n).FullName
-                                LoadTest.run log (verbose, verboseConsole, maybeSeq) reportFilename a
-                | x ->          p.Raise $"unexpected subcommand %A{x}"
+    try let a = Arguments.Parse argv
+        try Log.Logger <- a.CreateDomainLog()
+            try a.ExecuteSubCommand() |> Async.RunSynchronously
                 0
             with e when not (e :? ArguParseException) -> Log.Fatal(e, "Exiting"); 2
         finally Log.CloseAndFlush()

@@ -206,7 +206,7 @@ Equinox does not focus on projection logic - each store brings its own strengths
     - can configure indices in Azure CosmosDB for an `Equinox.CosmosStore` Container via `eqx init`. See [here](#store-data-in-azure-cosmosdb).
     - can search for streams based on name (`p`) or Uncompressed `u`nfold values for an `Equinox.CosmosStore` Container in Azure CosmosDB`. See [here](#eqx-query).
     - can create tables in Amazon DynamoDB for `Equinox.DynamoStore` via `eqx initaws`.
-    - can initialize databases for `SqlStreamStore` via `eqx config`
+    - can initialize databases for `SqlStreamStore` via `eqx initsql`
 
 ## Starter Project Templates and Sample Applications 
 
@@ -544,10 +544,10 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
 SqlStreamStore is provided in the samples and the `eqx` tool:
 
-- being able to supply `ms`, `my`, `pg` flag to `eqx run`, e.g. `eqx run -t cart -f 50 -d 5 -C -U ms -c "sqlserverconnectionstring" -s schema`
+- being able to supply `ms`, `my`, `pg` flag to `eqx loadTest`, e.g. `eqx loadTest -t cart -f 50 -d 5 -C -U ms -c "sqlserverconnectionstring" -s schema`
 - being able to supply `ms`, `my`, `pg` flag to `eqx dump`, e.g. `eqx dump -CU "Favorites-ab25cc9f24464d39939000aeb37ea11a" ms -c "sqlserverconnectionstring" -s schema`
 - being able to supply `ms`, `my`, `pg` flag to Web sample, e.g. `dotnet run --project samples/Web/ -- my -c "mysqlconnectionstring"`
-- being able to supply `ms`, `my`, `pg` flag to new `eqx config` command e.g. `eqx config pg -c "postgresconnectionstring" -u p "usercredentialsNotToBeLogged" -s schema`
+- being able to supply `ms`, `my`, `pg` flag to new `eqx initsql` command e.g. `eqx initsql pg -c "postgresconnectionstring" -u p "usercredentialsNotToBeLogged" -s schema`
 
 ```powershell
 cd ~/code/equinox
@@ -562,11 +562,11 @@ dotnet run -c Release --project tools/Equinox.Tool -- run -t saveforlater -f 50 
 dotnet run --project samples/Web/ -- my -c "mysqlconnectionstring" -A
 
 # set up the DB/schema
-eqx config pg -c "connectionstring" -p "u=un;p=password" -s "schema"
+eqx initsql pg -c "connectionstring" -p "u=un;p=password" -s "schema"
 
 # run a benchmark
-eqx run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema" 
-eqx dump "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" pg -c "connectionstring" -p "u=un;p=password" -s "schema" # show stored JSON (Guid shown in eqx run output) 
+eqx loadtest -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema" 
+eqx dump "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" pg -c "connectionstring" -p "u=un;p=password" -s "schema" # show stored JSON (Guid shown in eqx loadtest output) 
 ```
 
 <a name="message-db"></a>
@@ -574,7 +574,7 @@ eqx dump "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" pg -c "connectionstrin
 
 MessageDb support is provided in the samples and the `eqx` tool:
 
-- being able to supply `mdb` flag to `eqx run`, e.g. `eqx run -f 50 -d 5 -C -U mdb -c "pgconnectionstring"`
+- being able to supply `mdb` flag to `eqx loadtest`, e.g. `eqx loadtest -f 50 -d 5 -C -U mdb -c "pgconnectionstring"`
 - being able to supply `mdb` flag to `eqx dump`, e.g. `eqx dump -CU "Favorites-ab25cc9f24464d39939000aeb37ea11a" mdb -c "pgconnectionstring"`
 - being able to supply `mdb` flag to Web sample, e.g. `dotnet run --project samples/Web/ -- mdb -c "pgconnectionstring"`
 
@@ -597,7 +597,7 @@ In addition to the default access strategy of reading the whole stream forwards 
 ### Use [Amazon DynamoDB](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Introduction.html)
 
 DynamoDB is supported in the samples and the `eqx` tool equivalent to the CosmosDB support as described:
-- being able to supply `dynamo` source to `eqx run` wherever `cosmos` works, e.g. `eqx run -t cart -f 50 -d 5 -CU dynamo -s http://localhost:8000 -t TableName`
+- being able to supply `dynamo` source to `eqx loadtest` wherever `cosmos` works, e.g. `eqx loadtest -t cart -f 50 -d 5 -CU dynamo -s http://localhost:8000 -t TableName`
 - being able to supply `dynamo` flag to `eqx dump`, e.g. `eqx dump -CU "Favorites-ab25cc9f24464d39939000aeb37ea11a" dynamo`
 - being able to supply `dynamo` flag to Web sample, e.g. `dotnet run --project samples/Web/ -- dynamo -s http://localhost:8000`
 - being able to supply `dynamo` flag to `eqx initaws` command e.g. `eqx initaws -r 10 -w 10 -s new dynamo -t TableName`
@@ -634,8 +634,8 @@ DynamoDB is supported in the samples and the `eqx` tool equivalent to the Cosmos
     dotnet run --project samples/Web/ -- dynamo -t TableName
 
     # run a benchmark connecting to the webserver
-    eqx run -t saveforlater -f 50 -d 5 -CU web
-    eqx dump "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" dynamo # show stored JSON (Guid shown in eqx run output) 
+    eqx loadtest -t saveforlater -f 50 -d 5 -CU web
+    eqx dump "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" dynamo # show stored JSON (Guid shown in eqx loadTest output) 
     ```
 
 3. Useful articles
@@ -700,7 +700,7 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
 #### in Window 2
 
     dotnet tool install -g Equinox.Tool # only once
-    eqx run -t saveforlater -f 200 web
+    eqx loadtest -t saveforlater -f 200 web
 
 ### run CosmosDB benchmark (when provisioned)
 
