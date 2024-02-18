@@ -267,6 +267,11 @@ let createDomainLog verbose verboseConsole maybeSeqEndpoint =
     let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
     c.CreateLogger()
 
+module Dynamo =
+
+    open Store.Dynamo
+    let logConfig log (sa: Arguments) = sa.Connector.LogConfiguration(log)
+
 module CosmosInit =
 
     let connect log (p : ParseResults<Store.Cosmos.Parameters>) =
@@ -290,12 +295,10 @@ module CosmosInit =
 
 module CosmosStats =
 
-    open Store.Dynamo
-
     type Microsoft.Azure.Cosmos.Container with // NB DO NOT CONSIDER PROMULGATING THIS HACK
-        member container.QueryValue<'T>(sqlQuery : string) =
-            let query : Microsoft.Azure.Cosmos.FeedResponse<'T> = container.GetItemQueryIterator<'T>(sqlQuery).ReadNextAsync() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
-            query |> Seq.exactlyOne
+        member container.QueryValue<'T>(sqlQuery : string) = task {
+            let! (res: Microsoft.Azure.Cosmos.FeedResponse<'T>) = container.GetItemQueryIterator<'T>(sqlQuery).ReadNextAsync()
+            return res |> Seq.exactlyOne }
     let run (log : ILogger, _verboseConsole, _maybeSeq) (p : ParseResults<StatsParameters>) =
         match p.GetSubCommand() with
         | StatsParameters.Cosmos sp ->
@@ -312,13 +315,13 @@ module CosmosStats =
             log.Information("Computing {measures} ({mode})", Seq.map fst ops, (if inParallel then "in parallel" else "serially"))
             ops |> Seq.map (fun (name, sql) -> async {
                     log.Debug("Running query: {sql}", sql)
-                    let res = container.QueryValue<int>(sql)
+                    let res = container.QueryValue<int>(sql) |> Async.AwaitTaskCorrect |> Async.RunSynchronously
                     log.Information("{stat}: {result:N0}", name, res)})
                 |> if inParallel then Async.Parallel else Async.Sequential
                 |> Async.Ignore<unit[]>
         | StatsParameters.Dynamo sp -> async {
             let sa = Store.Dynamo.Arguments sp
-            sa.Connector.LogConfiguration(log)
+            Dynamo.logConfig log sa
             let client = sa.Connector.CreateDynamoDbClient()
             let! t = Equinox.DynamoStore.Core.Initialization.describe client sa.Table
             match t.BillingModeSummary, t.ProvisionedThroughput, Equinox.DynamoStore.Core.Initialization.tryGetActiveStreamsArn t with
@@ -417,14 +420,13 @@ module CosmosQuery =
 module DynamoInit =
 
     open Equinox.DynamoStore
-    open Store.Dynamo
 
     let table (log : ILogger) (p : ParseResults<TableParameters>) = async {
         let a = DynamoInitArguments p
         match p.GetSubCommand() with
         | TableParameters.Dynamo sp ->
             let sa = Store.Dynamo.Arguments sp
-            sa.Connector.LogConfiguration(log)
+            Dynamo.logConfig log sa
             let t = a.Throughput
             match t with
             | Throughput.Provisioned t ->
@@ -457,7 +459,7 @@ module Dump =
     let private prettifyJson (json: string) =
         use parsed = System.Text.Json.JsonDocument.Parse json
         prettySerdes.Value.Serialize parsed
-    let run (log : ILogger, verboseConsole, maybeSeq) (p : ParseResults<DumpParameters>) =
+    let run (log : ILogger, verboseConsole, maybeSeq) (p : ParseResults<DumpParameters>) = async {
         let a = DumpArguments p
         let createStoreLog storeVerbose = createStoreLog storeVerbose verboseConsole maybeSeq
         let storeLog, storeConfig = a.ConfigureStore(log, createStoreLog)
@@ -509,15 +511,14 @@ module Dump =
         resetStats ()
         let streams = p.GetResults DumpParameters.Stream
         log.ForContext("streams",streams).Information("Reading...")
-        streams
-        |> Seq.map dumpEvents
-        |> Async.Parallel
-        |> Async.Ignore<unit[]>
-        |> Async.RunSynchronously
+        do! streams
+            |> Seq.map dumpEvents
+            |> Async.Parallel
+            |> Async.Ignore<unit[]>
 
         log.Information("Total Event Bodies Payload {kib:n1}KiB", float payloadBytes / 1024.)
         if verboseConsole then
-            dumpStats log storeConfig
+            dumpStats log storeConfig }
 
 type Arguments(p: ParseResults<Parameters>) =
     let maybeSeq = if p.Contains LocalSeq then Some "http://localhost:5341" else None
@@ -528,11 +529,11 @@ type Arguments(p: ParseResults<Parameters>) =
     member _.ExecuteSubCommand() = async {
         match p.GetSubCommand() with
         | Init a ->     (CosmosInit.containerAndOrDb Log.Logger a CancellationToken.None).Wait()
-        | InitAws a ->  DynamoInit.table Log.Logger a |> Async.RunSynchronously
-        | InitSql a ->  SqlInit.databaseOrSchema Log.Logger a |> Async.RunSynchronously
-        | Dump a ->     Dump.run (Log.Logger, verboseConsole, maybeSeq) a
-        | Query a ->    CosmosQuery.run (QueryArguments a) |> Async.RunSynchronously
-        | Stats a ->    CosmosStats.run (Log.Logger, verboseConsole, maybeSeq) a |> Async.RunSynchronously
+        | InitAws a ->  do! DynamoInit.table Log.Logger a
+        | InitSql a ->  do! SqlInit.databaseOrSchema Log.Logger a
+        | Dump a ->     do! Dump.run (Log.Logger, verboseConsole, maybeSeq) a
+        | Query a ->    do! CosmosQuery.run (QueryArguments a)
+        | Stats a ->    do! CosmosStats.run (Log.Logger, verboseConsole, maybeSeq) a
         | LoadTest a -> let n = p.GetResult(LogFile, programName () + ".log")
                         let reportFilename = System.IO.FileInfo(n).FullName
                         let createStoreLog storeVerbose = createStoreLog storeVerbose verboseConsole maybeSeq
@@ -544,8 +545,7 @@ type Arguments(p: ParseResults<Parameters>) =
 let main argv =
     try let a = Arguments.Parse argv
         try Log.Logger <- a.CreateDomainLog()
-            try a.ExecuteSubCommand() |> Async.RunSynchronously
-                0
+            try a.ExecuteSubCommand() |> Async.RunSynchronously; 0
             with e when not (e :? ArguParseException) -> Log.Fatal(e, "Exiting"); 2
         finally Log.CloseAndFlush()
     with :? ArguParseException as e -> eprintfn $"%s{e.Message}"; 1
