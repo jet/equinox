@@ -524,7 +524,6 @@ type Arguments(p: ParseResults<Parameters>) =
     let maybeSeq = if p.Contains LocalSeq then Some "http://localhost:5341" else None
     let verbose = p.Contains Verbose
     let verboseConsole = p.Contains VerboseConsole
-    let programName () = System.Reflection.Assembly.GetEntryAssembly().GetName().Name
     member _.CreateDomainLog() = createDomainLog verbose verboseConsole maybeSeq
     member _.ExecuteSubCommand() = async {
         match p.GetSubCommand() with
@@ -534,7 +533,7 @@ type Arguments(p: ParseResults<Parameters>) =
         | Dump a ->     do! Dump.run (Log.Logger, verboseConsole, maybeSeq) a
         | Query a ->    do! CosmosQuery.run (QueryArguments a)
         | Stats a ->    do! CosmosStats.run (Log.Logger, verboseConsole, maybeSeq) a
-        | LoadTest a -> let n = p.GetResult(LogFile, programName () + ".log")
+        | LoadTest a -> let n = p.GetResult(LogFile, fun () -> p.ProgramName + ".log")
                         let reportFilename = System.IO.FileInfo(n).FullName
                         let createStoreLog storeVerbose = createStoreLog storeVerbose verboseConsole maybeSeq
                         Tests.LoadTest.run Log.Logger (createStoreLog, verbose, verboseConsole) (resetStats, dumpStats) reportFilename a
@@ -549,4 +548,4 @@ let main argv =
             with e when not (e :? ArguParseException) -> Log.Fatal(e, "Exiting"); 2
         finally Log.CloseAndFlush()
     with :? ArguParseException as e -> eprintfn $"%s{e.Message}"; 1
-        | e -> eprintfn $"EXCEPTION: {e}"; 1
+        | e -> eprintfn $"EXCEPTION: %O{e}"; 1

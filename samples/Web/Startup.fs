@@ -36,10 +36,7 @@ type Arguments =
             | MySql _ ->                    "specify storage in MySql (--help for options)."
             | Postgres _ ->                 "specify storage in Postgres (--help for options)."
             | Memory _ ->                   "specify In-Memory Volatile Store (Default store)."
-module Arguments =
-    let parse argv =
-        let programName = System.Reflection.Assembly.GetEntryAssembly().GetName().Name
-        ArgumentParser.Create<Arguments>(programName = programName).ParseCommandLine(argv)
+    static member Parse argv = ArgumentParser.Create<Arguments>().ParseCommandLine(argv)
 
 type App = class end
 
