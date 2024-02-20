@@ -186,13 +186,13 @@ The components within this repository are delivered as multi-targeted Nuget pack
 
 Equinox does not focus on projection logic - each store brings its own strengths, needs, opportunities and idiosyncrasies. Here's a list of some relevant libraries from sibling projects that get used with regard to this:
 
-- `FsKafka` [![FsKafka NuGet](https://img.shields.io/nuget/v/FsKafka.svg)](https://www.nuget.org/packages/FsKafka/): Wraps `Confluent.Kafka` to provide efficient batched Kafka Producer and Consumer configurations, with basic logging instrumentation. Used in the [`propulsion project kafka`](https://github.com/jet/propulsion#dotnet-tool-provisioning--projections-test-tool) tool command; see [`dotnet new proProjector -k; dotnet new proConsumer` to generate a sample app](https://github.com/jet/dotnet-templates#propulsion-related) using it (see the `BatchedAsync` and `BatchedSync` modules in `Examples.fs`).
+- `FsKafka` [![FsKafka NuGet](https://img.shields.io/nuget/v/FsKafka.svg)](https://www.nuget.org/packages/FsKafka/): Wraps `Confluent.Kafka` to provide efficient batched Kafka Producer and Consumer configurations, with basic logging instrumentation. Used in the [`propulsion sync kafka`](https://github.com/jet/propulsion#dotnet-tool-provisioning--projections-test-tool) tool command; see [`dotnet new proProjector -k; dotnet new proConsumer` to generate a sample app](https://github.com/jet/dotnet-templates#propulsion-related) using it (see the `BatchedAsync` and `BatchedSync` modules in `Examples.fs`).
 - `Propulsion` [![Propulsion NuGet](https://img.shields.io/nuget/v/Propulsion.svg)](https://www.nuget.org/packages/Propulsion/): A library that provides an easy way to implement projection logic. It defines `Propulsion.Streams.StreamEvent` used to interop with `Propulsion.*` in processing pipelines for the `proProjector` and `proSync` templates in the [templates repo](https://github.com/jet/dotnet-templates), together with the `Ingestion`, `Streams`, `Progress` and `Parallel` modules that get composed into those processing pipelines. ([depends](https://www.fuget.org/packages/Propulsion) on `Serilog`)
 - `Propulsion.Cosmos` [![Propulsion.Cosmos NuGet](https://img.shields.io/nuget/v/Propulsion.Cosmos.svg)](https://www.nuget.org/packages/Propulsion.Cosmos/): Wraps the [Microsoft .NET `ChangeFeedProcessor` library](https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet) providing a [processor loop](DOCUMENTATION.md#change-feed-processors) that maintains a continuous query loop per CosmosDB Physical Partition (Range) yielding new or updated documents (optionally unrolling events written by `Equinox.CosmosStore` for processing or forwarding). ([depends](https://www.fuget.org/packages/Propulsion.Cosmos) on `Equinox.Cosmos`, `Microsoft.Azure.DocumentDb.ChangeFeedProcessor >= 2.2.5`)
-- `Propulsion.CosmosStore` [![Propulsion.CosmosStore NuGet](https://img.shields.io/nuget/v/Propulsion.CosmosStore.svg)](https://www.nuget.org/packages/Propulsion.CosmosStore/): Wraps the CosmosDB V3 SDK's Change Feed API, providing a [processor loop](DOCUMENTATION.md#change-feed-processors) that maintains a continuous query loop per CosmosDB Physical Partition (Range) yielding new or updated documents (optionally unrolling events written by `Equinox.CosmosStore` for processing or forwarding). Used in the [`propulsion project stats cosmos`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proProjector` to generate a sample app](#quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.CosmosStore) on `Equinox.CosmosStore`)
+- `Propulsion.CosmosStore` [![Propulsion.CosmosStore NuGet](https://img.shields.io/nuget/v/Propulsion.CosmosStore.svg)](https://www.nuget.org/packages/Propulsion.CosmosStore/): Wraps the CosmosDB V3 SDK's Change Feed API, providing a [processor loop](DOCUMENTATION.md#change-feed-processors) that maintains a continuous query loop per CosmosDB Physical Partition (Range) yielding new or updated documents (optionally unrolling events written by `Equinox.CosmosStore` for processing or forwarding). Used in the [`propulsion sync stats from cosmos`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proProjector` to generate a sample app](#quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.CosmosStore) on `Equinox.CosmosStore`)
 - `Propulsion.DynamoStore` [![Propulsion.DynamoStore NuGet](https://img.shields.io/nuget/v/Propulsion.DynamoStore.svg)](https://www.nuget.org/packages/Propulsion.DynamoStore/): Provides a `DynamoStoreSource` that provides equivalent functionality to `Propulsion.CosmosStore` in concert with `Propulsion.DynamoStore.Lambda`; ([depends](https://www.fuget.org/packages/Propulsion.DynamoStore) on `Equinox.DynamoStore`)
 - `Propulsion.DynamoStore.Lambda` [![Propulsion.DynamoStore.Lambda NuGet](https://img.shields.io/nuget/v/Propulsion.DynamoStore.Lambda.svg)](https://www.nuget.org/packages/Propulsion.DynamoStore.Lambda/): Indexes events written by `Equinox.DynamoStore` via a DynamoDB Streams-triggered Lambda. (Depends on `Propulsion.DynamoStore`)
-- `Propulsion.EventStore` [![Propulsion.EventStore NuGet](https://img.shields.io/nuget/v/Propulsion.EventStore.svg)](https://www.nuget.org/packages/Propulsion.EventStore/) Used in the [`propulsion project es`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proSync` to generate a sample app](#quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.EventStore) on `Equinox.EventStore`)
+- `Propulsion.EventStore` [![Propulsion.EventStore NuGet](https://img.shields.io/nuget/v/Propulsion.EventStore.svg)](https://www.nuget.org/packages/Propulsion.EventStore/) Used in the [`propulsion sync stats from es`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proSync` to generate a sample app](#quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.EventStore) on `Equinox.EventStore`)
 - `Propulsion.EventStoreDb` [![Propulsion.EventStoreDb NuGet](https://img.shields.io/nuget/v/Propulsion.EventStoreDb.svg)](https://www.nuget.org/packages/Propulsion.EventStoreDb/) Consumes from `EventStoreDB` v `21.10` or later using the gRPC interface. ([depends](https://www.fuget.org/packages/Propulsion.EventStoreDb) on `Equinox.EventStoreDb`)
 - `Propulsion.MessageDb` [![Propulsion.MessageDb NuGet](https://img.shields.io/nuget/v/Propulsion.MessageDb.svg)](https://www.nuget.org/packages/Propulsion.MessageDb) Consumes from a `MessageDB` store (in Postgres) using `Npgsql`. ([depends](https://www.fuget.org/packages/Propulsion.MessageDb) on `Npgsql`, `Propulsion.Feed`)
 - `Propulsion.Kafka` [![Propulsion.Kafka NuGet](https://img.shields.io/nuget/v/Propulsion.Kafka.svg)](https://www.nuget.org/packages/Propulsion.Kafka/): Provides a canonical `RenderedSpan` that can be used as a default format when projecting events via e.g. the Producer/Consumer pair in `dotnet new proProjector -k; dotnet new proConsumer`. ([depends](https://www.fuget.org/packages/Propulsion.Kafka) on `Newtonsoft.Json >= 11.0.2`, `Propulsion`, `FsKafka`)
@@ -204,7 +204,7 @@ Equinox does not focus on projection logic - each store brings its own strengths
     - can render events from any of the stores via `eqx dump`.
     - incorporates a benchmark scenario runner, running load tests composed of transactions in `samples/Store` and `samples/TodoBackend` against any supported store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects. (Install via: `dotnet tool install Equinox.Tool -g`)
     - can configure indices in Azure CosmosDB for an `Equinox.CosmosStore` Container via `eqx init`. See [here](#store-data-in-azure-cosmosdb).
-    - can search for streams based on name (`p`) or Uncompressed `u`nfold values for an `Equinox.CosmosStore` Container in Azure CosmosDB`. See [here](#eqx-query).
+    - can search for streams and/or perform a JSON export based on name (`p`) or Uncompressed `u`nfold values for an `Equinox.CosmosStore` Container in Azure CosmosDB`. See [here](#eqx-query).
     - can create tables in Amazon DynamoDB for `Equinox.DynamoStore` via `eqx initaws`.
     - can initialize databases for `SqlStreamStore` via `eqx initsql`
 
@@ -360,7 +360,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
     ```powershell
     dotnet tool uninstall Equinox.Tool -g
-    dotnet tool install Equinox.Tool -g
+    dotnet tool install Equinox.Tool -g --prerelease
     eqx init -ru 400 cosmos # generates a database+container, adds optimized indexes
     ```
 
@@ -408,7 +408,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     # > TOTALS 0c, 0s, 2.80RU 0.7s {} # 👈 only 2.8RU if nothing is returned
    
     # DUMP ONE STREAM TO A FILE (equivalent to queries performed by CosmosStore.AccessStrategy.Unoptimized)
-    # Can be imported into another store via https://github.com/jet/dotnet-templates/blob/master/propulsion-indexer
+    # Can be imported into another store via `propulsion sync cosmos from json`
     eqx query -m readOnly -sn 'user-f28fb6feea00550e93ca77b6f29899cd' -o dump-user.json cosmos -d db -c $EQUINOX_COSMOS_CONTAINER -b 9999
     # > Dumping Raw content to ./dump-user.json {}
     # > Querying Raw: SELECT * FROM c WHERE c.p = "user-f28fb6feea00550e93ca77b6f29899cd" AND 1=1 {}
@@ -416,7 +416,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     # > TOTALS 1c, 9s, 3.23RU R/W 0.0/0.0MiB 3.9s {}
  
     # DUMP FULL CONTENT OF THE CONTAINER TO A FILE
-    # Can be imported into another store via https://github.com/jet/dotnet-templates/blob/master/propulsion-indexer
+    # Can be imported into another store via `propulsion sync cosmos from json`
     eqx query -m raw -o ../dump-240216.json -m raw cosmos -d db -c $EQUINOX_COSMOS_CONTAINER -b 9999                             
     # > Dumping Raw content to ~/dumps/dump-240216.json {}
     # > No StreamName or CategoryName/CategoryLike specified - Unfold Criteria better be unambiguous {}
@@ -432,18 +432,18 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     # > TOTALS 11c, 206,356s, 7,886.75RU R/W 290.4/290.4MiB 225.3s {}
     ```
 
-6. Use `propulsion` tool to run a CosmosDB ChangeFeedProcessor
+6. Use `propulsion sync` tool to run a CosmosDB ChangeFeedProcessor
 
     ```powershell
     dotnet tool uninstall Propulsion.Tool -g
-    dotnet tool install Propulsion.Tool -g
+    dotnet tool install Propulsion.Tool -g --prerelease
 
     propulsion init -ru 400 cosmos # generates a -aux container for the ChangeFeedProcessor to maintain consumer group progress within
     # -V for verbose ChangeFeedProcessor logging
     # `-g projector1` represents the consumer group - >=1 are allowed, allowing multiple independent projections to run concurrently
     # stats specifies one only wants stats regarding items (other options include `kafka` to project to Kafka)
     # cosmos specifies source overrides (using defaults in step 1 in this instance)
-    propulsion -V project -g projector1 stats cosmos
+    propulsion -V sync -g projector1 stats from cosmos
     ```
 
 7. Generate a CosmosDB ChangeFeedProcessor sample `.fsproj` (without Kafka producer/consumer), using `Propulsion.CosmosStore`
@@ -469,7 +469,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     # `kafka` specifies one wants to emit to Kafka	
     # `temp-topic` is the topic to emit to	
     # `cosmos` specifies source overrides (using defaults in step 1 in this instance)	
-    propulsion -V project -g projector3 -l 5 kafka temp-topic cosmos	
+    propulsion -V sync -g projector3 -l 5 kafka temp-topic from cosmos	
     ```	
 
 9. Generate CosmosDB [Kafka Projector and Consumer](https://github.com/jet/propulsion#feeding-to-kafka) `.fsproj`ects (using `Propulsion.Kafka`)
@@ -544,7 +544,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
 SqlStreamStore is provided in the samples and the `eqx` tool:
 
-- being able to supply `ms`, `my`, `pg` flag to `eqx loadTest`, e.g. `eqx loadTest -t cart -f 50 -d 5 -C -U ms -c "sqlserverconnectionstring" -s schema`
+- being able to supply `ms`, `my`, `pg` flag to `eqx loadtest`, e.g. `eqx loadtest -t cart -f 50 -d 5 -C -U ms -c "sqlserverconnectionstring" -s schema`
 - being able to supply `ms`, `my`, `pg` flag to `eqx dump`, e.g. `eqx dump -CU "Favorites-ab25cc9f24464d39939000aeb37ea11a" ms -c "sqlserverconnectionstring" -s schema`
 - being able to supply `ms`, `my`, `pg` flag to Web sample, e.g. `dotnet run --project samples/Web/ -- my -c "mysqlconnectionstring"`
 - being able to supply `ms`, `my`, `pg` flag to new `eqx initsql` command e.g. `eqx initsql pg -c "postgresconnectionstring" -u p "usercredentialsNotToBeLogged" -s schema`
@@ -553,10 +553,10 @@ SqlStreamStore is provided in the samples and the `eqx` tool:
 cd ~/code/equinox
 
 # set up the DB/schema
-dotnet run --project tools/Equinox.Tool -- config pg -c "connectionstring" -p "u=un;p=password" -s "schema"
+dotnet run --project tools/Equinox.Tool -- initsql pg -c "connectionstring" -p "u=un;p=password" -s "schema"
 
 # run a benchmark
-dotnet run -c Release --project tools/Equinox.Tool -- run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema"
+dotnet run -c Release --project tools/Equinox.Tool -- loadtest -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema"
 
 # run the webserver, -A to autocreate schema on connection
 dotnet run --project samples/Web/ -- my -c "mysqlconnectionstring" -A
@@ -628,14 +628,14 @@ DynamoDB is supported in the samples and the `eqx` tool equivalent to the Cosmos
     dotnet run --project tools/Equinox.Tool -- stats dynamo -t TableName -sr us-east-1
    
     # run a benchmark
-    dotnet run -c Release --project tools/Equinox.Tool -- run -t saveforlater -f 50 -d 5 -CU dynamo
+    dotnet run -c Release --project tools/Equinox.Tool -- loadtest -t saveforlater -f 50 -d 5 -CU dynamo
 
     # run the webserver
     dotnet run --project samples/Web/ -- dynamo -t TableName
 
     # run a benchmark connecting to the webserver
     eqx loadtest -t saveforlater -f 50 -d 5 -CU web
-    eqx dump "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" dynamo # show stored JSON (Guid shown in eqx loadTest output) 
+    eqx dump "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" dynamo # show stored JSON (Guid shown in eqx loadtest output) 
     ```
 
 3. Useful articles
@@ -687,7 +687,7 @@ Run, including running the tests that assume you've got a local EventStore and p
 
 At present, .NET Core seems to show comparable perf under normal load, but becomes very unpredictable under load. The following benchmark should produce pretty consistent levels of reads and writes, and can be used as a baseline for investigation:
 
-    & dotnet run -c Release --project tools/Equinox.Tool -- run -t saveforlater -f 1000 -d 5 -C -U es
+    & dotnet run -c Release --project tools/Equinox.Tool -- loadtest -t saveforlater -f 1000 -d 5 -C -U es
 
 ### run Web benchmark
 
@@ -699,12 +699,12 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
 
 #### in Window 2
 
-    dotnet tool install -g Equinox.Tool # only once
+    dotnet tool install -g Equinox.Tool --prerelease # only once
     eqx loadtest -t saveforlater -f 200 web
 
 ### run CosmosDB benchmark (when provisioned)
 
-    dotnet run --project tools/Equinox.Tool -- run `
+    dotnet run --project tools/Equinox.Tool -- loadtest `
       cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
 
 ## PROVISIONING
