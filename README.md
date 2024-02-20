@@ -409,15 +409,15 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
    
     # DUMP ONE STREAM TO A FILE (equivalent to queries performed by CosmosStore.AccessStrategy.Unoptimized)
     # Can be imported into another store via `propulsion sync cosmos from json`
-    eqx query -m readOnly -sn 'user-f28fb6feea00550e93ca77b6f29899cd' -o dump-user.json cosmos -d db -c $EQUINOX_COSMOS_CONTAINER -b 9999
+    eqx query -sn 'user-f28fb6feea00550e93ca77b6f29899cd' -o dump-user.json cosmos -d db -c $EQUINOX_COSMOS_CONTAINER -b 9999
     # > Dumping Raw content to ./dump-user.json {}
     # > Querying Raw: SELECT * FROM c WHERE c.p = "user-f28fb6feea00550e93ca77b6f29899cd" AND 1=1 {}
-    # > Page 9s, 1u, 10e 3.23RU 0.5s 0.0MiB age 0002.10:04:13 {}
+    # > Page 9s, 1u, 10e 3.23RU 0.5s 0.0MiB age 0002.10:04:13 {} # 👈 2.80 if no results, adds per KiB charge if there are results 
     # > TOTALS 1c, 9s, 3.23RU R/W 0.0/0.0MiB 3.9s {}
  
     # DUMP FULL CONTENT OF THE CONTAINER TO A FILE
     # Can be imported into another store via `propulsion sync cosmos from json`
-    eqx query -m raw -o ../dump-240216.json -m raw cosmos -d db -c $EQUINOX_COSMOS_CONTAINER -b 9999                             
+    eqx query -o ../dump-240216.json cosmos -d db -c $EQUINOX_COSMOS_CONTAINER -b 9999                             
     # > Dumping Raw content to ~/dumps/dump-240216.json {}
     # > No StreamName or CategoryName/CategoryLike specified - Unfold Criteria better be unambiguous {}
     # > Querying Raw: SELECT * FROM c WHERE 1=1 AND 1=1 {}

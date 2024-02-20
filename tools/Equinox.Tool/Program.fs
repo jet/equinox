@@ -130,16 +130,16 @@ and [<NoComparison; NoEquality; RequireSubcommand>] QueryParameters =
             | UnfoldCriteria _ ->           "Specify constraints on Unfold (reference unfold fields via `u.d.`, top level fields via `c.`), e.g. `u.d.name = \"TenantName1\"`."
             | Mode _ ->                     "readOnly: Only read `u`nfolds, not `_etag`.\n" +
                                             "readWithStream: Read `u`nfolds and `p` (stream name), but not `_etag`.\n" +
-                                            "default: Retrieve full data (p, u, _etag).\n" +
-                                            "raw: Read all Items(documents) in full.\n"
-            | File _ ->                     "Export retrieved JSON to file"
+                                            "default: Retrieve full data (p, u, _etag). <- Default for normal queries\n" +
+                                            "raw: Read all Items(documents) in full. <- Default when Output File specified\n"
+            | File _ ->                     "Export full retrieved JSON to file. NOTE this switches the default mode to `Raw`"
             | Pretty ->                     "Render the JSON indented over multiple lines"
-            | Console ->                    "Also emit the JSON to the console. Default: Gather statistics (and, optionally, write to specified file)"
+            | Console ->                    "Also emit the JSON to the console. Default: Gather statistics (but only write to a File if specified)"
             | Cosmos _ ->                   "Parameters for CosmosDB."
 and [<RequireQualifiedAccess>] Mode = ReadOnly | ReadWithStream | Default | Raw
 and [<RequireQualifiedAccess>] Criteria = SingleStream of string | CatName of string | CatLike of string | Unfiltered
 and QueryArguments(p: ParseResults<QueryParameters>) =
-    member val Mode = p.GetResult(Mode, Mode.Default)
+    member val Mode = p.GetResult(Mode, if p.Contains File then Mode.Raw else Mode.Default)
     member val Pretty = p.Contains QueryParameters.Pretty
     member val TeeConsole = p.Contains Console
     member val Criteria =
