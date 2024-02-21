@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module internal Equinox.Tool.Infrastructure.Prelude
+module Equinox.Tool.Infrastructure
 
 open Equinox.Tools.TestHarness.HttpHelpers
 open System

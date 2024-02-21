@@ -86,7 +86,9 @@ module CartId = let toString (value: CartId): string = Guid.toStringN %value
 /// ClientId strongly typed id; represented internally as a Guid; not used for storage so rendering is not significant
 type ClientId = Guid<clientId>
 and [<Measure>] clientId
-module ClientId = let toString (value: ClientId): string = Guid.toStringN %value
+module ClientId =
+    let gen (): ClientId = Guid.gen () |> UMX.tag
+    let toString (value: ClientId): string = Guid.toStringN %value
 
 /// InventoryItemId strongly typed id
 type InventoryItemId = Guid<inventoryItemId>

@@ -23,7 +23,7 @@ let createWebHostBuilder (args, parsed) : IWebHostBuilder =
 [<EntryPoint>]
 let main argv =
     try printfn "Running at pid %d" (System.Diagnostics.Process.GetCurrentProcess().Id)
-        let p = Arguments.parse argv
+        let p = Arguments.Parse argv
         // Replace logger chain with https://github.com/serilog/serilog-aspnetcore
         let c =
             LoggerConfiguration()
@@ -39,5 +39,5 @@ let main argv =
             createWebHostBuilder(argv, p).Build().Run()
             0
         finally Log.CloseAndFlush()
-    with :? ArguParseException as e -> eprintfn "%s" e.Message; 1
-        | e -> eprintfn "EXCEPTION: %O" e; 1
+    with :? ArguParseException as e -> eprintfn $"%s{e.Message}"; 1
+        | e -> eprintfn $"EXCEPTION: %O{e}"; 1
