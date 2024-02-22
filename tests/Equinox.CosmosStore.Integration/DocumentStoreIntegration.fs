@@ -521,10 +521,10 @@ type Tests(testOutputHelper) =
         let! snapshotState = snapshot.Read(cartId)
         let! rollingStateState = rollingState.Read(cartId)
 
-        let qty1 = unoptimizedState.items |> Seq.map (fun x -> x.skuId, x.quantity) |> Map.ofSeq
+        let qty1 = Map [ for x in unoptimizedState.items -> x.skuId, x.quantity ]
         let qty2 = snapshotState.items |> Seq.map (fun x -> x.skuId, x.quantity) |> Map.ofSeq
 
-        test <@ qty1 = Map.ofList [ sku1, 9; sku2, 11 ] @>
+        test <@ qty1 = Map [ sku1, 9; sku2, 11 ] @>
         test <@ qty2 = Map.ofList [ sku1, 9; sku2, 11; sku3, 12 ] @>
         test <@ snapshotState = rollingStateState @> }
 
