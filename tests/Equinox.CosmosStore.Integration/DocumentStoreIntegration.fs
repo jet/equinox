@@ -495,4 +495,37 @@ type Tests(testOutputHelper) =
         verifyRequestChargesMax 1
     }
 
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ```Can safely evolve AccessStrategy over time`` cartContext = Async.RunSynchronously <| async {
+        let context = createPrimaryContext log 10
+        let unoptimized = Cart.createServiceWithoutOptimization log context
+        let snapshot = Cart.createServiceWithSnapshotStrategy log context
+        let rollingState = Cart.createServiceWithRollingState log context
+        let sku1 = SkuId(Guid.NewGuid())
+        let sku2 = SkuId(Guid.NewGuid())
+        let sku3 = SkuId(Guid.NewGuid())
+        let cartId = % Guid.NewGuid()
+
+        let run service sku count = addAndThenRemoveItemsManyTimesExceptTheLastOne cartContext cartId sku service count
+
+        // Starting from Unoptimized
+        do! run unoptimized sku1 10
+        // It's safe to move to Snapshotted
+        do! run snapshot sku2 11
+        // It's safe to move to RollingState
+        do! run rollingState sku3 12
+        // It's not safe to move back to Unoptimized after RollingState
+        do! run snapshot sku1 9
+
+        let! unoptimizedState = unoptimized.Read(cartId)
+        let! snapshotState = snapshot.Read(cartId)
+        let! rollingStateState = rollingState.Read(cartId)
+
+        let qty1 = unoptimizedState.items |> Seq.map (fun x -> x.skuId, x.quantity) |> Map.ofSeq
+        let qty2 = snapshotState.items |> Seq.map (fun x -> x.skuId, x.quantity) |> Map.ofSeq
+
+        test <@ qty1 = Map.ofList [ sku1, 9; sku2, 11 ] @>
+        test <@ qty2 = Map.ofList [ sku1, 9; sku2, 11; sku3, 12 ] @>
+        test <@ snapshotState = rollingStateState @> }
+
     interface IDisposable with member _.Dispose() = log.Dispose()
