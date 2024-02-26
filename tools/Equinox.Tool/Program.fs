@@ -370,7 +370,7 @@ module CosmosQuery =
             | [||] -> "1=1"
             | [| x |] -> x |> exists
             | xs -> String.Join(" AND ", xs) |> exists
-        $"SELECT {selectedFields} FROM c WHERE {partitionKeyCriteria} AND {unfoldFilter}"
+        $"SELECT {selectedFields} FROM c WHERE {partitionKeyCriteria} AND {unfoldFilter} ORDER BY c.i"
     let private makeQuery (a: QueryArguments) =
         let sql = composeSql a
         Log.Information("Querying {mode}: {q}", a.Mode, sql)
