@@ -3,7 +3,7 @@
 open System
 
 type AutoDataAttribute() =
-    inherit FsCheck.Xunit.PropertyAttribute(Arbitrary = [|typeof<FsCheckGenerators>|], MaxTest = 1, QuietOnSuccess = true)
+    inherit FsCheck.Xunit.PropertyAttribute(Arbitrary = [| typeof<FsCheckGenerators> |], MaxTest = 1, QuietOnSuccess = true)
 
     member val SkipIfRequestedViaEnvironmentVariable: string = null with get, set
 

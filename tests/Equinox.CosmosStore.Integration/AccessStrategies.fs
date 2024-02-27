@@ -111,7 +111,7 @@ type UnoptimizedTipReadingCorrectness(testOutputHelper) =
     /// This is in order to shake out bugs and/or variation induced by the presence of stale state in the cache entry
     [<Props.FsCheck(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can sync with competing writer with and without cache`` (contextArgs, firstIsCached, Props.EventCount count1, Props.EventCount count2) = async {
-        let instanceId = Guid.NewGuid()
+        let instanceId = Guid.gen ()
         let context = createContext contextArgs
         let service1, service2 =
             let uncached = SequenceCheck.Config.createUncached log context

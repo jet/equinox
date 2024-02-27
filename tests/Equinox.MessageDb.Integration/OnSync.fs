@@ -63,7 +63,7 @@ module Tests =
         Projection.createTable conn
         let connection = connectToLocalStore()
         let service = ContactPreferences.create Serilog.Log.Logger connection
-        let id = System.Guid.NewGuid() |> Guid.toStringN
+        let id = Guid.gen () |> Guid.toStringN
         let clientId = ContactPreferences.ClientId id
         do! service.Update(clientId, { littlePromotions = true; manyPromotions = false; productReview = true; quickSurveys = false })
         let! result = conn |> Projection.tryRead id |> Async.AwaitTask
@@ -76,7 +76,7 @@ module Tests =
         Projection.createTable conn
         let connection = connectToLocalStore()
         let service = ContactPreferences.create Serilog.Log.Logger connection
-        let id = System.Guid.NewGuid() |> Guid.toStringN
+        let id = Guid.gen () |> Guid.toStringN
         let clientId = ContactPreferences.ClientId id
         // this is the initial state
         do! service.Update(clientId, ContactPreferences.Fold.initial)
@@ -92,7 +92,7 @@ module Tests =
         let service = ContactPreferences.createWithOnSync Serilog.Log.Logger connection (fun _ _ _ -> task {
             failwith "Test error"
         })
-        let id = System.Guid.NewGuid() |> Guid.toStringN
+        let id = Guid.gen () |> Guid.toStringN
         let clientId = ContactPreferences.ClientId id
         try
             do! service.Update(clientId, { littlePromotions = true; manyPromotions = false; productReview = true; quickSurveys = false })
@@ -112,7 +112,7 @@ module Tests =
         Projection.createTable conn
         let connection = connectToLocalStore()
         let service = ContactPreferences.create Serilog.Log.Logger connection
-        let id = System.Guid.NewGuid() |> Guid.toStringN
+        let id = Guid.gen () |> Guid.toStringN
         let clientId = ContactPreferences.ClientId id
         do! service.Update(clientId, { littlePromotions = true; manyPromotions = false; productReview = true; quickSurveys = false })
         do! service.Update(clientId, { littlePromotions = true; manyPromotions = true; productReview = true; quickSurveys = false })

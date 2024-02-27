@@ -3,9 +3,7 @@
 open Domain
 open Equinox.Core
 open Equinox.CosmosStore.Integration.CosmosFixtures
-open FSharp.UMX
 open Swensen.Unquote
-open System
 open System.Collections.Concurrent
 
 module EquinoxEsInterop =
@@ -111,7 +109,7 @@ type Tests(testOutputHelper) =
         let context = createContext client batchSize
         let service = Cart.create (CartIntegration.categoryGesStreamWithRollingSnapshots context |> Equinox.Decider.forStream log)
         let itemCount = batchSize / 2 + 1
-        let cartId = % Guid.NewGuid()
+        let cartId = CartId.gen ()
         do! act buffer service itemCount ctx cartId skuId "ReadStreamAsyncB-Duration" }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -122,5 +120,5 @@ type Tests(testOutputHelper) =
         let context = createPrimaryContext log queryMaxItems
         let service = Cart.create (CartIntegration.categoryCosmosStreamWithSnapshotStrategy context |> Equinox.Decider.forStream log)
         let itemCount = queryMaxItems / 2 + 1
-        let cartId = % Guid.NewGuid()
+        let cartId = CartId.gen ()
         do! act buffer service itemCount ctx cartId skuId "EqxCosmos Tip " } // one is a 404, one is a 200

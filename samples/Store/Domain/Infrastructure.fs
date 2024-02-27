@@ -81,7 +81,9 @@ module RequestId =
 /// CartId strongly typed id; represented internally as a Guid; not used for storage so rendering is not significant
 type CartId = Guid<cartId>
 and [<Measure>] cartId
-module CartId = let toString (value: CartId): string = Guid.toStringN %value
+module CartId =
+    let toString (value: CartId): string = Guid.toStringN %value
+    let gen (): CartId = % Guid.gen ()
 
 /// ClientId strongly typed id; represented internally as a Guid; not used for storage so rendering is not significant
 type ClientId = Guid<clientId>

@@ -1,7 +1,6 @@
 ﻿module Equinox.Store.Integration.StoreIntegration
 
 open Domain
-open FSharp.UMX
 open Swensen.Unquote
 open System.Diagnostics
 open System.Threading
@@ -209,7 +208,7 @@ type GeneralTests(testOutputHelper) =
 
         // The command processing should trigger only a single read and a single write call
         let addRemoveCount = 6
-        let cartId = % Guid.NewGuid()
+        let cartId = CartId.gen ()
 
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne ctx cartId skuId service addRemoveCount
         test <@ batchForwardAndAppend = capture.ExternalCalls @>
@@ -238,7 +237,7 @@ type GeneralTests(testOutputHelper) =
         let batchSize = 3
 
         let ctx, (sku11, sku12, sku21, sku22) = ctx
-        let cartId = % Guid.NewGuid()
+        let cartId = CartId.gen ()
 
         // establish base stream state
         let context = createContext connection batchSize
@@ -358,7 +357,7 @@ type GeneralTests(testOutputHelper) =
         let context = createContext client batchSize
         let createServiceCached () = Cart.createServiceWithCaching log context cache
         let service1, service2, service3 = createServiceCached (), createServiceCached (), Cart.createServiceWithoutOptimization log context
-        let cartId = % Guid.NewGuid()
+        let cartId = CartId.gen ()
 
         // Trigger 10 events, then reload
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne ctx cartId skuId service1 5
@@ -373,7 +372,7 @@ type GeneralTests(testOutputHelper) =
 
         // Add two more - the roundtrip should only incur a single read
         capture.Clear()
-        let skuId2 = SkuId <| Guid.NewGuid()
+        let skuId2 = SkuId.gen ()
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne ctx cartId skuId2 service1 1
         test <@ batchForwardAndAppend = capture.ExternalCalls @>
 
@@ -394,14 +393,14 @@ type GeneralTests(testOutputHelper) =
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne ctx cartId skuId2 service1 1
         test <@ [] = capture.ExternalCalls @>
         // As the cache is up to date, we can do an optimistic append, saving a Read roundtrip
-        let skuId3 = SkuId <| Guid.NewGuid()
+        let skuId3 = SkuId.gen ()
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne ctx cartId skuId3 service1 1
         // this time, we did something, so we see the append call
         test <@ [EsAct.Append] = capture.ExternalCalls @>
 
         // If we don't have a cache attached, we don't benefit from / pay the price for any optimism
         capture.Clear()
-        let skuId4 = SkuId <| Guid.NewGuid()
+        let skuId4 = SkuId.gen ()
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne ctx cartId skuId4 service3 1
         // Need 2 batches to do the reading
         test <@ sliceForward @ singleBatchForward @ [EsAct.Append] = capture.ExternalCalls @>
@@ -421,7 +420,7 @@ type GeneralTests(testOutputHelper) =
 
         let batchSize = 3
         let context = createContext connection batchSize
-        let id = Guid.NewGuid()
+        let id = Guid.gen ()
         let decider = SimplestThing.decider log context id
 
         let! before, after =
@@ -465,7 +464,7 @@ type RollingSnapshotTests(testOutputHelper) =
         let service = Cart.createServiceWithCompaction log context
 
         // Trigger 10 events, then reload
-        let cartId = % Guid.NewGuid()
+        let cartId = CartId.gen ()
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 5
         let! _ = service.Read cartId
 
@@ -508,7 +507,7 @@ type RollingSnapshotTests(testOutputHelper) =
         let service2 = Cart.createServiceWithCompactionAndCaching log context cache
 
         // Trigger 10 events, then reload
-        let cartId = % Guid.NewGuid()
+        let cartId = CartId.gen ()
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 5
         let! _ = service2.Read cartId
 
@@ -572,7 +571,7 @@ type AdjacentSnapshotTests(testOutputHelper) =
         let service = Cart.createServiceWithAdjacentSnapshotting  log context
 
         // Trigger 8 events, then reload
-        let cartId = % Guid.NewGuid()
+        let cartId = CartId.gen ()
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 4
         let! _ = service.Read cartId
 
@@ -618,7 +617,7 @@ type AdjacentSnapshotTests(testOutputHelper) =
         let service2 = Cart.createServiceWithSnapshottingAndCaching log context cache
 
         // Trigger 8 events, then reload
-        let cartId = % Guid.NewGuid()
+        let cartId = CartId.gen ()
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 4
         let! _ = service2.Read cartId
 

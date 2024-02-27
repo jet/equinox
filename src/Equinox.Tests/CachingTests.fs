@@ -64,7 +64,7 @@ type Tests() =
     let strategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 10)
     let cat = SpyCategory()
     let sut = Equinox.Core.Caching.apply isStale strategy cat
-    let sn = Guid.NewGuid |> string
+    let sn = Guid.NewGuid() |> string
 
     let write () = write sn sut
 

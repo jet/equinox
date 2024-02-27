@@ -1,7 +1,6 @@
 ﻿module Equinox.Store.Integration.DocumentStoreIntegration
 
 open Domain
-open FSharp.UMX
 open Swensen.Unquote
 open System
 open System.Threading
@@ -47,6 +46,7 @@ module Cart =
 
 module ContactPreferences =
     let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
+    module ClientId = let gen (): ContactPreferences.ClientId = Guid.gen () |> Guid.toStringN |> ContactPreferences.ClientId
 #if STORE_DYNAMO
     let codec = ContactPreferences.Events.codec |> FsCodec.Compression.EncodeTryCompress
 #else
@@ -125,7 +125,7 @@ type Tests(testOutputHelper) =
 #endif
             max 1 (int (ceil (float expectedItems / float queryMaxItems)))
 
-        let cartId = % Guid.NewGuid()
+        let cartId: CartId = CartId.gen ()
         // The command processing will trigger QueryB operations as no snapshots etc are being used
         let transactions = 6
         for i in [1..transactions] do
@@ -165,7 +165,7 @@ type Tests(testOutputHelper) =
         let context = createPrimaryContextEx log queryMaxBatches eventsInTip
         let service = Cart.createServiceWithSnapshotStrategy log context
 
-        let cartId: CartId = % Guid.NewGuid()
+        let cartId = CartId.gen ()
 
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne cartContext cartId skuId service addRemoveCount
 
@@ -187,7 +187,7 @@ type Tests(testOutputHelper) =
         // Ensure batching is included at some point in the proceedings
 
         let cartContext, (sku11, sku12, sku21, sku22) = ctx
-        let cartId = % Guid.NewGuid()
+        let cartId = CartId.gen ()
 
         // establish base stream state
         let service1 = Cart.createServiceWithEmptyUnfolds log1 context
@@ -271,7 +271,7 @@ type Tests(testOutputHelper) =
         // We need to be sure every Update changes something as we rely on an expected number of events in the end
         let value = if value <> ContactPreferences.Fold.initial then value else { value with manyPromotions = true }
 
-        let id = ContactPreferences.ClientId (let g = Guid.NewGuid() in g.ToString "N")
+        let id = ContactPreferences.ClientId.gen ()
         // Ensure there will be something to be changed by the Update below
         for i in 0..13 do
             do! service.Update(id, if i % 2 = 0 then value else { value with quickSurveys = not value.quickSurveys })
@@ -326,7 +326,7 @@ type Tests(testOutputHelper) =
         let cache = Equinox.Cache("contacts", sizeMb = 50)
         let service = ContactPreferences.createServiceWithCaching log context cache
 
-        let id = ContactPreferences.ClientId (let g = Guid.NewGuid() in g.ToString "N")
+        let id = ContactPreferences.ClientId.gen ()
         // Ensure there will be something to be changed by the Update below
         for i in 1..13 do
             do! service.Update(id, if i % 2 = 0 then value else { value with quickSurveys = not value.quickSurveys })
@@ -349,7 +349,7 @@ type Tests(testOutputHelper) =
         let context = createPrimaryContextEx log1 1 10
 
         let cartContext, (sku11, sku12, sku21, sku22) = ctx
-        let cartId = % Guid.NewGuid()
+        let cartId = CartId.gen ()
 
         // establish base stream state
         let service1 = Cart.createServiceWithRollingState log1 context
@@ -432,7 +432,7 @@ type Tests(testOutputHelper) =
         capture.Clear()
 
         // Trigger 10 events, then reload
-        let cartId = % Guid.NewGuid()
+        let cartId = CartId.gen ()
         do! addAndThenRemoveItemsManyTimes cartContext cartId skuId service1 5
         let! _ = service2.Read cartId
 
@@ -486,7 +486,7 @@ type Tests(testOutputHelper) =
         capture.Clear()
 
         // Trigger 10 events, then reload
-        let cartId = % Guid.NewGuid()
+        let cartId = CartId.gen ()
         do! addAndThenRemoveItemsManyTimes cartContext cartId skuId service1 5
         let! _ = service2.Read cartId
 
@@ -545,10 +545,8 @@ type Tests(testOutputHelper) =
         let unoptimized = Cart.createServiceWithoutOptimization log context
         let snapshot = Cart.createServiceWithSnapshotStrategy log context
         let rollingState = Cart.createServiceWithRollingState log context
-        let sku1 = SkuId(Guid.NewGuid())
-        let sku2 = SkuId(Guid.NewGuid())
-        let sku3 = SkuId(Guid.NewGuid())
-        let cartId = % Guid.NewGuid()
+        let sku1, sku2, sku3 = SkuId.gen (), SkuId.gen (), SkuId.gen ()
+        let cartId = CartId.gen ()
 
         let run service sku count = addAndThenRemoveItemsManyTimesExceptTheLastOne cartContext cartId sku service count
 

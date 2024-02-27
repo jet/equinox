@@ -31,7 +31,8 @@ module IdTypes =
 
     [<Fact>]
     let ``CartId has structural equality and Guid rendering semantics`` () =
-        let x = Guid.NewGuid() in let xs, xn = x.ToString(), x.ToString "N"
+        let x = Guid.gen ()
+        let xs, xn = x.ToString(), x.ToString "N"
         let (x1: CartId, x2: CartId) = %x, %x
         test <@ x1 = x2
                 && xn = CartId.toString x2
@@ -39,7 +40,8 @@ module IdTypes =
 
     [<Fact>]
     let ``ClientId has structural equality and Guid rendering semantics`` () =
-        let x = Guid.NewGuid() in let xs, xn = x.ToString(), x.ToString "N"
+        let x = Guid.gen ()
+        let xs, xn = x.ToString(), x.ToString "N"
         let (x1: ClientId, x2: ClientId) = %x, %x
         test <@ x1 = x2
                 && xn = ClientId.toString x2
@@ -47,14 +49,15 @@ module IdTypes =
 
     [<Fact>]
     let ``RequestId has structural equality and canonical rendering semantics`` () =
-        let x = Guid.NewGuid() in let xn = Guid.toStringN x
+        let x = Guid.gen ()
+        let xn = Guid.toStringN x
         let (x1: RequestId, x2: RequestId) = RequestId.parse %x, RequestId.parse %x
         test <@ x1 = x2
                 && string x1 = xn @>
 
     [<Fact>]
     let ``SkuId has structural equality and canonical rendering semantics`` () =
-        let x = Guid.NewGuid()
+        let x = Guid.gen ()
         let xn = Guid.toStringN x
         let (x1: SkuId, x2: SkuId) = SkuId x, SkuId x
         test <@ x1 = x2
