@@ -21,11 +21,7 @@
 
   <ItemGroup>
     <PackageReference Include="Dapper" Version="2.1.28" />
-    <PackageReference Include="FsCheck.xUnit" Version="3.0.0-rc1" />
-    <!-- HACK re https://github.com/fscheck/FsCheck/issues/647 required for FsCheck rc1 -->
-    <PackageReference Include="xunit.extensibility.execution" Version="2.7.0">
-      <NoWarn>NU1608</NoWarn>
-    </PackageReference>
+    <PackageReference Include="FsCheck.xUnit" Version="3.0.0-rc2" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="OpenTelemetry" Version="1.4.0-beta.3" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.4.0-beta.3" />
