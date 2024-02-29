@@ -397,7 +397,7 @@ module CosmosQuery =
                 let inline arrayLen x = if isNull x then 0 else Array.length x
                 pageStreams.Clear(); for x in items do if x.p <> null && pageStreams.Add x.p then accStreams.Add x.p |> ignore
                 let pageI, pageE, pageU = items.Length, items |> Seq.sumBy (_.e >> arrayLen), items |> Seq.sumBy (_.u >> arrayLen)
-                Log.Information("Page {count}i {streams}s {us}e {es}u {ru}RU {s:N1}s {mib:N1}MiB age {age:dddd\.hh\:mm\:ss}",
+                Log.Information("Page {count}i {streams}s {es}e {us}u {ru}RU {s:N1}s {mib:N1}MiB age {age:dddd\.hh\:mm\:ss}",
                                 pageI, pageStreams.Count, pageE, pageU, page.RequestCharge, sw.Elapsed.TotalSeconds, miB pageSize, Option.toNullable newestAge)
 
                 maybeFileStream |> Option.iter (fun stream ->
@@ -414,7 +414,7 @@ module CosmosQuery =
             maybeFileStream |> Option.iter _.Close() // Before we log so time includes flush time and no confusion
             let categoryName = FsCodec.StreamName.parse >> FsCodec.StreamName.split >> fun struct (cn, _sid) -> cn
             let accCategories = accStreams |> Seq.map categoryName |> Seq.distinct |> Seq.length
-            Log.Information("TOTALS {cats}c {streams:N0}s {count:N0}i {count:N0}e {count:N0}u {ru:N2}RU R/W {mib:N1}/{mib:N1}MiB {s:N1}s",
+            Log.Information("TOTALS {cats}c {streams:N0}s {count:N0}i {es:N0}e {us:N0}u {ru:N2}RU R/W {rmib:N1}/{wmib:N1}MiB {s:N1}s",
                             accCategories, accStreams.Count, accI, accE, accU, accRus, miB accBytesRead, miB fileSize, sw2.Elapsed.TotalSeconds) }
 
 module DynamoInit =
