@@ -485,6 +485,11 @@ module Dump =
                                  with e -> log.ForContext("str", s).Warning(e, "JSON Parse failure - use --JsonSkip option to inhibit"); reraise()
                      else $"(%d{s.Length} chars)"
                  with e -> log.Warning(e, "UTF-8 Parse failure - use --Blobs option to inhibit"); reraise()
+        let humanize: TimeSpan -> string = function
+            | x when x.TotalDays >= 1. -> x.ToString "d\dhh\hmm\m"
+            | x when x.TotalHours >= 1. -> x.ToString "h\hmm\mss\s"
+            | x when x.TotalMinutes >= 1. -> x.ToString "m\mss\.ff\s"
+            | x -> x.ToString("s\.fff\s")
         let dumpEvents (streamName: FsCodec.StreamName) = async {
             let struct (categoryName, sid) = FsCodec.StreamName.split streamName
             let cat = store.Category(categoryName, idCodec, fold, initial, isOriginAndSnapshot)
@@ -494,14 +499,9 @@ module Dump =
             for x in events |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do
                 let ty, render = if x.IsUnfold then "U", render formatUnfolds else "E", render formatEvents
                 let interval =
-                    match prevTs with Some p when not x.IsUnfold -> Some (x.Timestamp - p) | _ -> None
-                    |> function
-                    | None -> if doT then "n/a" else "0"
-                    | Some (i : TimeSpan) when not doT -> i.ToString()
-                    | Some (i : TimeSpan) when i.TotalDays >= 1. -> i.ToString "d\dhh\hmm\m"
-                    | Some i when i.TotalHours >= 1. -> i.ToString "h\hmm\mss\s"
-                    | Some i when i.TotalMinutes >= 1. -> i.ToString "m\mss\.ff\s"
-                    | Some i -> i.ToString("s\.fff\s")
+                    match prevTs with
+                    | Some p when not x.IsUnfold -> let ts = x.Timestamp - p in if doT then humanize ts else ts.ToString()
+                    | _ -> if doT then "n/a" else "0"
                 prevTs <- Some x.Timestamp
                 if not doC then log.Information("{i,4}@{t:u}+{d,9} {u:l} {e:l} {data:l} {meta:l}",
                                     x.Index, x.Timestamp, interval, ty, x.EventType, render x.Data, render x.Meta)
