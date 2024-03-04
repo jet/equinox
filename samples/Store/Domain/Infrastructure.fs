@@ -3,25 +3,6 @@
 open FSharp.UMX
 open System
 
-/// Endows any type that inherits this class with standard .NET comparison semantics using a supplied token identifier
-[<AbstractClass>]
-type Comparable<'TComp, 'Token when 'TComp :> Comparable<'TComp, 'Token> and 'Token : comparison>(token: 'Token) =
-    member val private Token = token
-    override x.Equals y = match y with :? Comparable<'TComp, 'Token> as y -> x.Token = y.Token | _ -> false
-    override _.GetHashCode() = hash token
-    interface IComparable with
-        member x.CompareTo y =
-            match y with
-            | :? Comparable<'TComp, 'Token> as y -> compare x.Token y.Token
-            | _ -> invalidArg "y" "invalid comparand"
-
-/// Endows any type that inherits this class with standard .NET comparison semantics using a supplied token identifier
-/// + treats the token as the canonical rendition for `ToString()` purposes
-[<AbstractClass>]
-type StringId<'TComp when 'TComp :> Comparable<'TComp, string>>(token: string) =
-    inherit Comparable<'TComp,string>(token)
-    override _.ToString() = token
-
 // If using >1 serializer, it can be useful to set up a type alias
 // even if you're not, putting a type Alias in `namespace global` can make type definitions cleaner to read/remove opens
 type NsjConverterAttribute = Newtonsoft.Json.JsonConverterAttribute
@@ -34,17 +15,6 @@ type StjIgnoreAttribute = System.Text.Json.Serialization.JsonIgnoreAttribute
 
 (* Benefit of using JsonIsomorphism rather than binding direct to the API is that the code should be identical across serializers *)
 
-[<AbstractClass>]
-type StringIdConverter<'T when 'T :> StringId<'T> >(parse: string -> 'T) =
-    inherit FsCodec.NewtonsoftJson.JsonIsomorphism<'T, string>()
-    override _.Pickle value = value.ToString()
-    override _.UnPickle input = parse input
-[<AbstractClass>]
-type StjStringIdConverter<'T when 'T :> StringId<'T> >(parse: string -> 'T) =
-    inherit FsCodec.SystemTextJson.JsonIsomorphism<'T, string>()
-    override _.Pickle value = value.ToString()
-    override _.UnPickle input = parse input
-
 module Guid =
     let inline gen () = Guid.NewGuid()
     let inline toStringN (x: Guid) = x.ToString "N"
@@ -55,13 +25,13 @@ module Guid =
 /// - Implements comparison/equality solely to enable tests to leverage structural equality
 [<Sealed; AutoSerializable false; NsjConverter(typeof<SkuIdJsonConverter>); StjConverter(typeof<SkuIdStjConverter>)>]
 type SkuId =
-    inherit StringId<SkuId>
-    new (value: Guid) = { inherit StringId<SkuId>(Guid.toStringN value) }
+    inherit FsCodec.StringId<SkuId>
+    new (value: Guid) = { inherit FsCodec.StringId<SkuId>(Guid.toStringN value) }
     /// Required to support TypeShape.Empty
     /// See FsCheckGenerators.SkuId for how to define it otherwise
     [<Obsolete>] new () = SkuId(Guid.gen ())
-and private SkuIdJsonConverter() = inherit StringIdConverter<SkuId>(Guid.Parse >> SkuId)
-and private SkuIdStjConverter() = inherit StjStringIdConverter<SkuId>(Guid.Parse >> SkuId)
+and private SkuIdJsonConverter() = inherit FsCodec.NewtonsoftJson.StringIdConverter<SkuId>(Guid.Parse >> SkuId)
+and private SkuIdStjConverter() = inherit FsCodec.SystemTextJson.StringIdConverter<SkuId>(Guid.Parse >> SkuId)
 
 (* Per type, an associated module for parsing, generating or converting etc works well *)
 module SkuId =

@@ -55,6 +55,7 @@ module IdTypes =
         test <@ x1 = x2
                 && string x1 = xn @>
 
+    // See also FsCodec's StringIdTests.fs
     [<Fact>]
     let ``SkuId has structural equality and canonical rendering semantics`` () =
         let x = Guid.gen ()
