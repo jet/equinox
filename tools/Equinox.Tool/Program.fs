@@ -383,7 +383,7 @@ module CosmosQuery =
         let serdes = if a.Pretty then prettySerdes.Value else FsCodec.SystemTextJson.Serdes.Default
         let maybeFileStream = a.Filepath |> Option.map (fun p ->
             Log.Information("Dumping {mode} content to {path}", a.Mode, System.IO.FileInfo(p).FullName)
-            System.IO.File.Open(p, System.IO.FileMode.Create))
+            System.IO.File.Create p) // Silently truncate if it exists, makes sense for typical usage
         use query = makeQuery a
 
         let pageStreams, accStreams = System.Collections.Generic.HashSet(), System.Collections.Generic.HashSet()
