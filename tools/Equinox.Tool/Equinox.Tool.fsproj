@@ -30,7 +30,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="MinVer" Version="4.2.0" PrivateAssets="All" />
+    <PackageReference Include="MinVer" Version="5.0.0" PrivateAssets="All" />
 
     <!-- Required or there'll be an exception at runtime re missing support DLLs when using RBAC -->
     <PackageReference Include="AWSSDK.SecurityToken" Version="3.7.1.177" />
