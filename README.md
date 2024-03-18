@@ -768,7 +768,7 @@ The [provisioning](#provisioning) step spins up RUs in CosmosDB for the Containe
 
 This repo uses [MinVer](https://github.com/adamralph/minver); [see here](https://github.com/adamralph/minver#how-it-works) for more information on how it works.
 
-All non-alpha releases derive from tagged commits on `master`. The tag defines the nuget package id etc. that the release will bear (`dotnet pack` uses the `MinVer` package to grab the value from the commit)
+All non-alpha releases derive from tagged commits on `master` or `vX` branch. The tag defines the nuget package id etc. that the release will bear (`dotnet pack` uses the `MinVer` package to grab the value from the commit)
 
 ## Checklist
 
