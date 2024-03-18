@@ -63,7 +63,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `CosmosStore.CosmosStoreCategory.TryLoad`: Renders a `'state` based on an Unfold [#434](https://github.com/jet/equinox/pull/434)
 - `CosmosStore.Core.Initialization.initAux`: Replace hard-coded manual 400 RU with `mode` parameter [#328](https://github.com/jet/equinox/pull/328) :pray: [@brihadish](https://github.com/brihadish)
 - `CosmosStore.CosmosClientFactory`: Moved to Core [#430](https://github.com/jet/equinox/pull/430)
-- `EventStore`: Target `EventStore.Client` v `22.0.0-preview`; rename `Connector` -> `EventStoreConnector` [#317](https://github.com/jet/equinox/pull/317)
+- `EventStore`: Target `EventStore.Client` v `22.0.0`; rename `Connector` -> `EventStoreConnector` [#317](https://github.com/jet/equinox/pull/317)
 - `Tool`/`samples/`: switched to use `Equinox.EventStoreDb` [#196](https://github.com/jet/equinox/pull/196)
 
 ### Removed
