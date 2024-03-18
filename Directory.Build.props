@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <Authors>@jet @moneylion @bartelink @eiriktsarpalis and contributors</Authors>
+    <Authors>@jet @moneylion @bartelink @eiriktsarpalis @nordfjord and contributors</Authors>
     <Company>Jet.com</Company>
     <Description>Efficient event sourced decisions and data</Description>
     <PackageProjectUrl>https://github.com/jet/equinox</PackageProjectUrl>
