@@ -20,7 +20,7 @@
     <PackageReference Include="FSharp.Core" Version="6.0.7" ExcludeAssets="contentfiles" />
 
     <PackageReference Include="EventStore.Client" Version="22.0.0-preview" />
-    <PackageReference Include="FSharp.Control.TaskSeq" Version="0.4.0-alpha.1" />
+    <PackageReference Include="FSharp.Control.TaskSeq" Version="0.4.0" />
   </ItemGroup>
 
 </Project>

@@ -446,7 +446,7 @@ type StoreTable(name, createContext: (RequestMetrics -> unit) -> TableContext<Ba
         let pk = Batch.tableKeyForStreamTip stream
         let! item = context.UpdateItemAsync(pk, updateExpr, ?precondition = precondition) |> Async.executeAsTask ct
         return item |> Batch.ofSchema, rm.Consumed }
-    member _.QueryBatches(stream, consistentRead, minN, maxI, backwards, batchSize, ct): taskSeq<int * StopwatchInterval * Batch[] * RequestConsumption> =
+    member _.QueryBatches(stream, consistentRead, minN, maxI, backwards, batchSize, ct): TaskSeq<int * StopwatchInterval * Batch[] * RequestConsumption> =
         let compile = (createContext ignore).Template.PrecomputeConditionalExpr
         let kc = match maxI with
                  | Some maxI -> compile <@ fun (b: Batch.Schema) -> b.p = stream && b.i < maxI @>
@@ -466,7 +466,7 @@ type StoreTable(name, createContext: (RequestMetrics -> unit) -> TableContext<Ba
             | None -> ()
             | le -> yield! aux (i + 1, le) }
         aux (0, None)
-    member internal _.QueryIAndNOrderByNAscending(stream, maxItems, ct): taskSeq<int * StopwatchInterval * BatchIndices[] * RequestConsumption> =
+    member internal _.QueryIAndNOrderByNAscending(stream, maxItems, ct): TaskSeq<int * StopwatchInterval * BatchIndices[] * RequestConsumption> =
         let rec aux (index, lastEvaluated) = taskSeq {
             let rm = Metrics()
             let context = createContext rm.Add
@@ -742,7 +742,7 @@ module internal Query =
         : Task<ScanResult<'event> option> = task {
         let mutable found = false
         let mutable responseCount = 0
-        let mergeBatches (log: ILogger) (batchesBackward: taskSeq<Event[] * Position option * RequestConsumption>) = task {
+        let mergeBatches (log: ILogger) (batchesBackward: TaskSeq<Event[] * Position option * RequestConsumption>) = task {
             let mutable lastResponse, maybeTipPos, ru = None, None, 0.
             let! events =
                 batchesBackward
@@ -767,7 +767,7 @@ module internal Query =
             return events, maybeTipPos, { total = ru } }
         let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream
         let readLog = log |> Log.prop "direction" direction
-        let batches ct: taskSeq<Event[] * Position option * RequestConsumption> =
+        let batches ct: TaskSeq<Event[] * Position option * RequestConsumption> =
             mkQuery readLog (table, stream) consistentRead maxItems (direction, minIndex, maxIndex) ct
             |> TaskSeq.map (mapPage direction (table, stream) (minIndex, maxIndex, maxItems) maxRequests readLog)
         let! t, (events, maybeTipPos, ru) = batches >> mergeBatches log |> Stopwatch.time ct
@@ -788,7 +788,7 @@ module internal Query =
     let walkLazy<'event> (log: ILogger) (table, stream) maxItems maxRequests
         (tryDecode: ITimelineEvent<EncodedBody> -> 'event option, isOrigin: 'event -> bool)
         (direction, minIndex, maxIndex) ct
-        : taskSeq<'event[]> = taskSeq {
+        : TaskSeq<'event[]> = taskSeq {
         let query = mkQuery log (table, stream) (*consistentRead*)false maxItems (direction, minIndex, maxIndex)
 
         let readPage = mapPage direction (table, stream) (minIndex, maxIndex, maxItems) maxRequests
@@ -1076,7 +1076,7 @@ type internal StoreClient(table: StoreTable, fallback: StoreTable option, query:
         let log = log |> Log.prop "stream" stream
         let! pos, events = Query.load log (minIndex, maxIndex) tip (walk log table) walkFallback ct
         return Token.create_ pos, events }
-    member _.ReadLazy(log, batching: QueryOptions, stream, direction, (tryDecode, isOrigin), ct, ?minIndex, ?maxIndex): taskSeq<'event[]> =
+    member _.ReadLazy(log, batching: QueryOptions, stream, direction, (tryDecode, isOrigin), ct, ?minIndex, ?maxIndex): TaskSeq<'event[]> =
         Query.walkLazy log (table, stream) batching.MaxItems batching.MaxRequests (tryDecode, isOrigin) (direction, minIndex, maxIndex) ct
 
     member store.Load(log, (stream, maybePos), consistentRead, (tryDecode, isOrigin), checkUnfolds: bool, ct): Task<StreamToken * 'event[]> =
@@ -1338,7 +1338,7 @@ type EventsContext
             acc.Value <- acc.Value - 1
             false
 
-    member internal _.GetLazy(streamName, ct, ?queryMaxItems, ?direction, ?minIndex, ?maxIndex): taskSeq<ITimelineEvent<EncodedBody>[]> =
+    member internal _.GetLazy(streamName, ct, ?queryMaxItems, ?direction, ?minIndex, ?maxIndex): TaskSeq<ITimelineEvent<EncodedBody>[]> =
         let direction = defaultArg direction Direction.Forward
         let batching = match queryMaxItems with Some qmi -> QueryOptions(qmi) | _ -> context.QueryOptions
         let store, stream = resolve streamName
@@ -1370,7 +1370,7 @@ type EventsContext
     /// Query (with MaxItems set to `queryMaxItems`) from the specified `Position`, allowing the reader to efficiently walk away from a running query
     /// ... NB as long as they Dispose!
     member x.Walk(streamName, queryMaxItems, ct, [<O; D null>] ?minIndex, [<O; D null>] ?maxIndex, [<O; D null>] ?direction)
-        : taskSeq<ITimelineEvent<EncodedBody>[]> =
+        : TaskSeq<ITimelineEvent<EncodedBody>[]> =
         x.GetLazy(streamName, queryMaxItems, ct, ?direction = direction, ?minIndex = minIndex, ?maxIndex = maxIndex)
 
     /// Reads all Events from a `Position` in a given `direction`
@@ -1410,7 +1410,7 @@ module Events =
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let getAll (ctx: EventsContext) (streamName: StreamName) (index: int64) (batchSize: int) ct: taskSeq<ITimelineEvent<EncodedBody>[]> =
+    let getAll (ctx: EventsContext) (streamName: StreamName) (index: int64) (batchSize: int) ct: TaskSeq<ITimelineEvent<EncodedBody>[]> =
         ctx.Walk(streamName, ct, batchSize, minIndex = index)
 
     /// Returns an async array of events in the stream starting at the specified sequence number,
@@ -1439,7 +1439,7 @@ module Events =
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getAllBackwards (ctx: EventsContext) (streamName: StreamName) (index: int64) (batchSize: int) ct: taskSeq<ITimelineEvent<EncodedBody>[]> =
+    let getAllBackwards (ctx: EventsContext) (streamName: StreamName) (index: int64) (batchSize: int) ct: TaskSeq<ITimelineEvent<EncodedBody>[]> =
         ctx.Walk(streamName, ct, batchSize, maxIndex = index, direction = Direction.Backward)
 
     /// Returns an async array of events in the stream backwards starting from the specified sequence number,

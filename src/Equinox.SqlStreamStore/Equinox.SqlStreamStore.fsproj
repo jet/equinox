@@ -19,7 +19,7 @@
 
     <PackageReference Include="FSharp.Core" Version="6.0.7" ExcludeAssets="contentfiles" />
 
-    <PackageReference Include="FSharp.Control.TaskSeq" Version="0.4.0-alpha.1" />
+    <PackageReference Include="FSharp.Control.TaskSeq" Version="0.4.0" />
     <PackageReference Include="SqlStreamStore" Version="1.2.0-beta.8" />
   </ItemGroup>
 
