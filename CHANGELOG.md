@@ -9,6 +9,14 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="4.0.0"></a>
+## [4.0.0] - 2024-03-20
+
+### Added
 
 - `Equinox`: `Decider.Transact`, `TransactEx` overloads [#325](https://github.com/jet/equinox/pull/325)
 - `Equinox.LoadOption.RequireLeader`: support for requesting a consistent read of a stream [#341](https://github.com/jet/equinox/pull/341)
@@ -740,7 +748,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/3.0.7...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/4.0.0...HEAD
+[4.0.0]: https://github.com/jet/equinox/compare/3.0.7...4.0.0
 [3.0.7]: https://github.com/jet/equinox/compare/3.0.6...3.0.7
 [3.0.6]: https://github.com/jet/equinox/compare/3.0.5...3.0.6
 [3.0.5]: https://github.com/jet/equinox/compare/3.0.4...3.0.5
