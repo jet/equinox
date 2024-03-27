@@ -14,7 +14,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Equinox\Equinox.fsproj" />
+    <ProjectReference Condition=" '$(Configuration)' == 'Debug' " Include="..\Equinox\Equinox.fsproj" />
+    <PackageReference Condition=" '$(Configuration)' == 'Release' " Include="Equinox" Version="[4.0.0, 5.0.0)" />
   </ItemGroup>
 
   <ItemGroup>

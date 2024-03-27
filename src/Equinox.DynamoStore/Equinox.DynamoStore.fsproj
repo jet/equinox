@@ -11,16 +11,17 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Condition=" '$(Configuration)' == 'Debug' " Include="..\Equinox\Equinox.fsproj" />
+    <PackageReference Condition=" '$(Configuration)' == 'Release' " Include="Equinox" Version="[4.0.0, 5.0.0)" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="MinVer" Version="5.0.0" PrivateAssets="All" />
 
     <PackageReference Include="FSharp.Core" Version="6.0.7" ExcludeAssets="contentfiles" />
 
     <PackageReference Include="FSharp.AWS.DynamoDB" Version="0.12.0-beta" />
     <PackageReference Include="FSharp.Control.TaskSeq" Version="0.4.0" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\Equinox\Equinox.fsproj" />
   </ItemGroup>
 
 </Project>
