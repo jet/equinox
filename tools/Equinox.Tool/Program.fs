@@ -366,18 +366,18 @@ module CosmosQuery =
             Log.Write(lel, "No StreamName or CategoryName/CategoryLike specified - Unfold Criteria better be unambiguous")
         let partitionKeyCriteria =
             match a.Criteria with
-            | Criteria.SingleStream sn -> $"c.p = \"{sn}\""
-            | Criteria.CatName n -> $"c.p LIKE \"{n}-%%\""
-            | Criteria.CatLike pat -> $"c.p LIKE \"{pat}\""
-            | Criteria.Unfiltered -> warnOnUnfiltered (); "1=1"
+            | Criteria.SingleStream sn ->   $"c.p = \"{sn}\""
+            | Criteria.CatName n ->         $"c.p LIKE \"{n}-%%\""
+            | Criteria.CatLike pat ->       $"c.p LIKE \"{pat}\""
+            | Criteria.Unfiltered ->        warnOnUnfiltered (); "1=1"
         let selectedFields =
             match a.Mode with
-            | Mode.Default -> "c._etag, c.p, c.u[0].d"
-            | Mode.SnapOnly -> "c.u[0].d"
-            | Mode.SnapWithStream -> "c.p, c.u[0].d"
-            | Mode.ReadOnly -> "c.p, c.u"
-            | Mode.ReadWithStream -> "c.p, c.u"
-            | Mode.Raw -> "*"
+            | Mode.Default ->               "c._etag, c.p, c.u[0].d"
+            | Mode.SnapOnly ->              "c.u[0].d"
+            | Mode.SnapWithStream ->        "c.p, c.u[0].d"
+            | Mode.ReadOnly ->              "c.u" // TOCONSIDER remove; adjust TryLoad/TryHydrateTip
+            | Mode.ReadWithStream ->        "c.p, c.u" // TOCONSIDER remove; adjust TryLoad/TryHydrateTip
+            | Mode.Raw ->                   "*"
         let unfoldFilter =
             let exists cond = $"EXISTS (SELECT VALUE u FROM u IN c.u WHERE {cond})"
             match [| match a.UnfoldName with None -> () | Some un -> $"u.c = \"{un}\""
