@@ -218,6 +218,8 @@ module Log =
         | Delete of Measurement
         /// Trimmed the Tip
         | Trim of Measurement
+        /// Queried via the Index
+        | Index of Measurement
     let [<return: Struct>] (|MetricEvent|_|) (logEvent: Serilog.Events.LogEvent): Metric voption =
         let mutable p = Unchecked.defaultof<_>
         logEvent.Properties.TryGetValue(PropertyTag, &p) |> ignore
@@ -246,7 +248,7 @@ module Log =
     let internal eventLen (x: #IEventData<_>) = EncodedBody.jsonUtf8Bytes x.Data + EncodedBody.jsonUtf8Bytes x.Meta + 80
     let internal batchLen = Seq.sumBy eventLen
     [<RequireQualifiedAccess>]
-    type Operation = Tip | Tip404 | Tip304 | Query | Write | Resync | Conflict | Prune | Delete | Trim
+    type Operation = Tip | Tip404 | Tip304 | Query | Index | Write | Resync | Conflict | Prune | Delete | Trim
     let (|Op|QueryRes|PruneRes|) = function
         | Metric.Tip s                        -> Op (Operation.Tip, s)
         | Metric.TipNotFound s                -> Op (Operation.Tip404, s)
@@ -254,6 +256,8 @@ module Log =
 
         | Metric.Query (_, _, s)              -> Op (Operation.Query, s)
         | Metric.QueryResponse (direction, s) -> QueryRes (direction, s)
+
+        | Metric.Index s                      -> Op (Operation.Index, s)
 
         | Metric.SyncSuccess s                -> Op (Operation.Write, s)
         | Metric.SyncResync s                 -> Op (Operation.Resync, s)
@@ -289,6 +293,7 @@ module Log =
                 let epoch = System.Diagnostics.Stopwatch.StartNew()
                 member val internal Tip = Counters() with get, set
                 member val internal Read = Counters() with get, set
+                member val internal Index = Counters() with get, set
                 member val internal Write = Counters() with get, set
                 member val internal Resync = Counters() with get, set
                 member val internal Conflict = Counters() with get, set
@@ -316,6 +321,7 @@ module Log =
                                                                                 epoch.Tip.Ingest m
                             | Op (Operation.Query,            BucketMsRu m)  -> epoch.Read.Ingest m
                             | QueryRes (_direction,          _)              -> ()
+                            | Op (Operation.Index,            BucketMsRu m)  -> epoch.Index.Ingest m
                             | Op (Operation.Write,            BucketMsRu m)  -> epoch.Write.Ingest m
                             | Op (Operation.Conflict,         BucketMsRu m)  -> epoch.Conflict.Ingest m
                             | Op (Operation.Resync,           BucketMsRu m)  -> epoch.Resync.Ingest m
@@ -332,13 +338,14 @@ module Log =
             let stats =
               [|nameof res.Tip,         res.Tip
                 nameof res.Read,        res.Read
+                nameof res.Index,       res.Index
                 nameof res.Write,       res.Write
                 nameof res.Resync,      res.Resync
                 nameof res.Conflict,    res.Conflict
                 nameof res.Prune,       res.Prune
                 nameof res.Delete,      res.Delete
                 nameof res.Trim,        res.Trim |]
-            let isRead = function nameof res.Tip | nameof res.Read | nameof res.Prune -> true | _ -> false
+            let isRead = function nameof res.Tip | nameof res.Read | nameof res.Index | nameof res.Prune -> true | _ -> false
             let buckets = stats |> Seq.collect (fun (_n, stat) -> stat.Buckets) |> Seq.distinct |> Seq.sort |> Seq.toArray
             if Array.isEmpty buckets then () else
 
