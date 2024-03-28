@@ -8,6 +8,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ## [Unreleased]
 
+<a name="4.1.0"></a>
+## 4.1.0-alpha.1 - 2024-03-28
+
 ### Added
 
 - `Equinox.CosmosStore`: Group metrics by Container Name [#449](https://github.com/jet/equinox/pull/449)
