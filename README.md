@@ -390,20 +390,20 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     
     # use a wild card (LIKE) for the stream name 
     eqx query -cl '$Us%' -un Snapshotted cosmos -d db -c $EQUINOX_COSMOS_VIEWS -b 100000
-    # > Querying Default: SELECT c.u, c.p, c._etag FROM c WHERE c.p LIKE "$Us%" AND EXISTS (SELECT VALUE u FROM u IN c.u WHERE u.c = "Snapshotted") {}
+    # > Querying Default: SELECT c._etag, c.u[0].d, c.p FROM c WHERE c.p LIKE "$Us%" AND EXISTS (SELECT VALUE u FROM u IN c.u WHERE u.c = "Snapshotted") {}
     # > Page 7166s, 7166u, 0e 320.58RU 3.9s {}
     # > Page 1608s, 1608u, 0e 68.59RU 0.9s {}
     # > TOTALS 1c, 8774s, 389.17RU 4.7s {}   
    
     # Skip loading the _etag to simulate a query where you will only render the result (not `Transact` against it)
-    eqx query -cn '$User' -m readOnly -un Snapshotted cosmos -d db -c $EQUINOX_COSMOS_VIEWS -b 100000
+    eqx query -cn '$User' -m readonly -un Snapshotted cosmos -d db -c $EQUINOX_COSMOS_VIEWS -b 100000
     # > Querying ReadOnly: SELECT c.u FROM c WHERE c.p LIKE "$User-%" AND EXISTS (SELECT VALUE u FROM u IN c.u WHERE u.c = "Snapshotted") {}
     # > Page 8774s, 8774u, 0e 342.33RU 3.8s {}
     # > TOTALS 0c, 8774s, 342.33RU 3.8s {} # 👈 cheaper and only one batch as no .p or ._etag 
    
     # add criteria filtering based on an Uncompressed Unfold
     eqx query -cn '$User' -un EmailIndex -uc 'u.d.email = "a@b.com"' cosmos -d db -c $EQUINOX_COSMOS_VIEWS -b 100000
-    # > Querying Default: SELECT c.u, c.p, c._etag FROM c WHERE c.p LIKE "$User-%" AND EXISTS (SELECT VALUE u FROM u IN c.u WHERE u.c = "EmailIndex" AND u.d.email = "a@b.com") {}
+    # > Querying Default: SELECT c._etag, c.u[0].d, c.p FROM c WHERE c.p LIKE "$User-%" AND EXISTS (SELECT VALUE u FROM u IN c.u WHERE u.c = "EmailIndex" AND u.d.email = "a@b.com") {}
     # > Page 0s, 0u, 0e 2.8RU 0.7s {}
     # > TOTALS 0c, 0s, 2.80RU 0.7s {} # 👈 only 2.8RU if nothing is returned
    

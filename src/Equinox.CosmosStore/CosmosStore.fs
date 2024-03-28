@@ -210,6 +210,8 @@ module Log =
         | Delete of Measurement
         /// Trimmed the Tip
         | Trim of Measurement
+        /// Queried via the Index
+        | Index of Measurement
     let [<return: Struct>] (|MetricEvent|_|) (logEvent: Serilog.Events.LogEvent): Metric voption =
         let mutable p = Unchecked.defaultof<_>
         logEvent.Properties.TryGetValue(PropertyTag, &p) |> ignore
@@ -240,7 +242,7 @@ module Log =
     let internal eventLen (x: #IEventData<_>) = let BlobLen bytes, BlobLen metaBytes = x.Data, x.Meta in bytes + metaBytes + 80
     let internal batchLen = Seq.sumBy eventLen
     [<RequireQualifiedAccess>]
-    type Operation = Tip | Tip404 | Tip304 | Query | Write | Resync | Conflict | Prune | Delete | Trim
+    type Operation = Tip | Tip404 | Tip304 | Query | Index | Write | Resync | Conflict | Prune | Delete | Trim
     let (|Op|QueryRes|PruneRes|) = function
         | Metric.Tip s                        -> Op (Operation.Tip, s)
         | Metric.TipNotFound s                -> Op (Operation.Tip404, s)
@@ -248,6 +250,8 @@ module Log =
 
         | Metric.Query (_, _, s)              -> Op (Operation.Query, s)
         | Metric.QueryResponse (direction, s) -> QueryRes (direction, s)
+
+        | Metric.Index s                      -> Op (Operation.Index, s)
 
         | Metric.SyncSuccess s                -> Op (Operation.Write, s)
         | Metric.SyncResync s                 -> Op (Operation.Resync, s)
@@ -283,6 +287,7 @@ module Log =
                 let epoch = System.Diagnostics.Stopwatch.StartNew()
                 member val internal Tip = Counters() with get, set
                 member val internal Read = Counters() with get, set
+                member val internal Index = Counters() with get, set
                 member val internal Write = Counters() with get, set
                 member val internal Resync = Counters() with get, set
                 member val internal Conflict = Counters() with get, set
@@ -310,6 +315,7 @@ module Log =
                                                                                 epoch.Tip.Ingest m
                             | Op (Operation.Query,            BucketMsRu m)  -> epoch.Read.Ingest m
                             | QueryRes (_direction,          _)              -> ()
+                            | Op (Operation.Index,            BucketMsRu m)  -> epoch.Index.Ingest m
                             | Op (Operation.Write,            BucketMsRu m)  -> epoch.Write.Ingest m
                             | Op (Operation.Conflict,         BucketMsRu m)  -> epoch.Conflict.Ingest m
                             | Op (Operation.Resync,           BucketMsRu m)  -> epoch.Resync.Ingest m
@@ -326,6 +332,7 @@ module Log =
             let stats =
               [|nameof res.Tip,         res.Tip
                 nameof res.Read,        res.Read
+                nameof res.Index,       res.Index
                 nameof res.Write,       res.Write
                 nameof res.Resync,      res.Resync
                 nameof res.Conflict,    res.Conflict
@@ -341,7 +348,7 @@ module Log =
                 let logActivity act count maxRu minRu ru lat =
                     let aru, ams = (if count = 0L then Double.NaN else ru/float count), (if count = 0L then Double.NaN else float lat/float count)
                     let rut = act |> function
-                        | "TOTAL" -> "" | nameof res.Tip | nameof res.Read | nameof res.Prune -> totalRRu <- totalRRu + ru; "R"
+                        | "TOTAL" -> "" | nameof res.Tip | nameof res.Read | nameof res.Index | nameof res.Prune -> totalRRu <- totalRRu + ru; "R"
                         | _ ->                                                  totalWRu <- totalWRu + ru; "W"
                     log.Information("{bucket} {act,-8}: {count,5}r {ru,7:g0} {max,4:f1}-{min,4:f0} {rut:l}RU avg={avgRu,4:f1} RU {lat,4:g0} ms",
                                     bucket.PadRight maxBucketLen, act, count, ru, minRu, maxRu, rut, aru, ams)
