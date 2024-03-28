@@ -33,6 +33,7 @@ module SerilogHelpers =
     type EqxAct =
         | Tip | TipNotFound | TipNotModified
         | ResponseForward | ResponseBackward
+        | Index
         | QueryForward | QueryBackward
         | Append | Resync | Conflict
         | PruneResponse | Delete | Trim | Prune
@@ -50,6 +51,7 @@ module SerilogHelpers =
         | Metric.SyncAppend _ | Metric.SyncCalve _ -> EqxAct.Append
         | Metric.SyncAppendConflict _ | Metric.SyncCalveConflict _ -> EqxAct.Conflict
 #else
+        | Metric.Index _ -> EqxAct.Index
         | Metric.SyncSuccess _ -> EqxAct.Append
         | Metric.SyncResync _ -> EqxAct.Resync
         | Metric.SyncConflict _ -> EqxAct.Conflict
@@ -75,6 +77,7 @@ module SerilogHelpers =
         | Metric.SyncAppend s | Metric.SyncCalve s
         | Metric.SyncCalveConflict s | Metric.SyncAppendConflict s -> Write s
 #else
+        | Metric.Index s -> Response s // Stubbed out for now
         | Metric.SyncSuccess s
         | Metric.SyncConflict s -> Write s
         | Metric.SyncResync s -> Resync s

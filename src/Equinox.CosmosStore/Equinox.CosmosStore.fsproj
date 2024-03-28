@@ -13,6 +13,7 @@
     <Compile Include="..\Equinox.Core\TaskCell.fs" />
     <Compile Include="..\Equinox.Core\Internal.fs" />
     <Compile Include="CosmosStore.fs" />
+    <Compile Include="CosmosStoreLinq.fs" />
   </ItemGroup>
 
   <ItemGroup>
