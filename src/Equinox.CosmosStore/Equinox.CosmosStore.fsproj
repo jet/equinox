@@ -14,6 +14,7 @@
     <Compile Include="..\Equinox.Core\Internal.fs" />
     <Compile Include="CosmosStoreSerialization.fs" />
     <Compile Include="CosmosStore.fs" />
+    <Compile Include="CosmosStoreLinq.fs" />
   </ItemGroup>
 
   <ItemGroup>
