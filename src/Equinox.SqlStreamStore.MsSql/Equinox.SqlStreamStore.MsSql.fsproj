@@ -10,15 +10,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Condition=" '$(Configuration)' == 'Debug' " Include="..\Equinox.SqlStreamStore\Equinox.SqlStreamStore.fsproj" />
+    <PackageReference Condition=" '$(Configuration)' == 'Release' " Include="Equinox.SqlStreamStore" Version="[4.0.0, 5.0.0)" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="MinVer" Version="5.0.0" PrivateAssets="All" />
 
     <PackageReference Include="FSharp.Core" Version="6.0.7" ExcludeAssets="contentfiles" />
 
     <PackageReference Include="SqlStreamStore.MsSql" Version="1.2.0-beta.8" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\Equinox.SqlStreamStore\Equinox.SqlStreamStore.fsproj" />
   </ItemGroup>
 
 </Project>

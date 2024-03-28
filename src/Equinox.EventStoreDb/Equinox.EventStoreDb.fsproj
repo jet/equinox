@@ -11,13 +11,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Equinox\Equinox.fsproj" />
+    <ProjectReference Condition=" '$(Configuration)' == 'Debug' " Include="..\Equinox\Equinox.fsproj" />
+    <PackageReference Condition=" '$(Configuration)' == 'Release' " Include="Equinox" Version="[4.0.0, 5.0.0)" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="MinVer" Version="5.0.0" PrivateAssets="All" />
 
     <PackageReference Include="FSharp.Core" Version="6.0.7" ExcludeAssets="contentfiles" />
+    
     <PackageReference Include="EventStore.Client.Grpc.Streams" Version="22.0.0" />
     <PackageReference Include="FSharp.Control.TaskSeq" Version="0.4.0" />
   </ItemGroup>

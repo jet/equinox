@@ -9,7 +9,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Equinox.DynamoStore\Equinox.DynamoStore.fsproj" />
+    <ProjectReference Condition=" '$(Configuration)' == 'Debug' " Include="..\Equinox.DynamoStore\Equinox.DynamoStore.fsproj" />
+    <PackageReference Condition=" '$(Configuration)' == 'Release' " Include="Equinox.DynamoStore" Version="[4.0.0, 5.0.0)" />
   </ItemGroup>
 
   <ItemGroup>
