@@ -339,7 +339,7 @@ module Log =
         let dump (log: ILogger) =
             let res = Stats.LogSink.Restart()
             let stats =
-              [ nameof res.Tip,       res.Tip
+             [| nameof res.Tip,       res.Tip
                 nameof res.Query,     res.Query
                 nameof res.Append,    res.Append
                 nameof res.Append409, res.Append409
@@ -347,7 +347,7 @@ module Log =
                 nameof res.Calve409,  res.Calve409
                 nameof res.Prune,     res.Prune
                 nameof res.Delete,    res.Delete
-                nameof res.Trim,      res.Trim ]
+                nameof res.Trim,      res.Trim |]
             for table in stats |> Seq.collect (fun (_n, stat) -> stat.Tables) |> Seq.distinct |> Seq.sort do
                 let mutable rows, totalCount, totalRRu, totalWRu, totalMs = 0, 0L, 0., 0., 0L
                 let logActivity name count ru lat =
