@@ -8,6 +8,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ## [Unreleased]
 
+<a name="4.1.0"></a>
+## 4.1.0-alpha.1 - 2024-03-28
+
 ### Added
 
 - `Equinox.CosmosStore`: Use `Microsoft.Azure.Cosmos` integrated `System.Text.Json` support; added ability to specify `serializerOptions` [#467](https://github.com/jet/equinox/pull/467)
