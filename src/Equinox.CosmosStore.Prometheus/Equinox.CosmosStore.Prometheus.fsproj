@@ -9,8 +9,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Condition=" '$(Configuration)' == 'Debug' " Include="..\Equinox.CosmosStore\Equinox.CosmosStore.fsproj" />
-    <PackageReference Condition=" '$(Configuration)' == 'Release' " Include="Equinox.CosmosStore" Version="[4.0.0, 5.0.0)" />
+    <!--    <ProjectReference Condition=" '$(Configuration)' == 'Debug' " Include="..\Equinox.CosmosStore\Equinox.CosmosStore.fsproj" />-->
+    <!--    <PackageReference Condition=" '$(Configuration)' == 'Release' " Include="Equinox.CosmosStore" Version="[4.1.0, 5.0.0)" />-->
+    <!-- For now, use a `>=` as a hack. The minute we publish CosmosStore 4.1.0, change back to the normal scheme as above -->
+    <ProjectReference Include="..\Equinox.CosmosStore\Equinox.CosmosStore.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

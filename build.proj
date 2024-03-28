@@ -5,8 +5,7 @@
   <PropertyGroup>
     <Cfg>--configuration Release</Cfg>
 
-    <PrOption Condition =" '$(BUILD_PR)' != '%24(SYSTEM.PULLREQUEST.PULLREQUESTNUMBER)' ">/p:BUILD_PR=$(BUILD_PR) </PrOption>
-    <PackOptions>/p:BUILD_ID=$(BUILD_ID) $(PrOption) -o $(MSBuildThisFileDirectory)bin</PackOptions>
+    <PackOptions>/p:BUILD_ID=$(BUILD_ID) -o $(MSBuildThisFileDirectory)bin</PackOptions>
 
     <TestOptions>--logger:trx</TestOptions>
   </PropertyGroup>

@@ -8,13 +8,18 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ## [Unreleased]
 
+<a name="4.1.0"></a>
+## 4.1.0-alpha.1 - 2024-03-28
+
 ### Added
 
 - `Equinox.CosmosStore`: Group metrics by Container Name [#449](https://github.com/jet/equinox/pull/449)
+- `Equinox.CosmosStore.Linq`: Add LINQ querying support for Indexed `u`nfolds (`AccessStrategy.Custom`+`CosmosStoreCategory.shouldCompress`) [#450](https://github.com/jet/equinox/pull/450)
 
 ### Changed
 
 - `Equinox.*Store`,`Equinox.*Store.Prometheus`: Pin `Equinox` dependencies to `[4.0.0, 5.0.0)`] [#448](https://github.com/jet/equinox/pull/448)
+- `CosmosStore`: Require `Microsoft.Azure.Cosmos` v `3.38.1` [#450](https://github.com/jet/equinox/pull/450)
 
 ### Removed
 ### Fixed

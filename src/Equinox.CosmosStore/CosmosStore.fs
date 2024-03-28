@@ -210,6 +210,8 @@ module Log =
         | Delete of Measurement
         /// Trimmed the Tip
         | Trim of Measurement
+        /// Queried via the Index
+        | Index of Measurement
     let [<return: Struct>] (|MetricEvent|_|) (logEvent: Serilog.Events.LogEvent): Metric voption =
         let mutable p = Unchecked.defaultof<_>
         logEvent.Properties.TryGetValue(PropertyTag, &p) |> ignore
@@ -240,7 +242,7 @@ module Log =
     let internal eventLen (x: #IEventData<_>) = let BlobLen bytes, BlobLen metaBytes = x.Data, x.Meta in bytes + metaBytes + 80
     let internal batchLen = Seq.sumBy eventLen
     [<RequireQualifiedAccess>]
-    type Operation = Tip | Tip404 | Tip304 | Query | Write | Resync | Conflict | Prune | Delete | Trim
+    type Operation = Tip | Tip404 | Tip304 | Query | Index | Write | Resync | Conflict | Prune | Delete | Trim
     let (|Op|QueryRes|PruneRes|) = function
         | Metric.Tip s                        -> Op (Operation.Tip, s)
         | Metric.TipNotFound s                -> Op (Operation.Tip404, s)
@@ -248,6 +250,8 @@ module Log =
 
         | Metric.Query (_, _, s)              -> Op (Operation.Query, s)
         | Metric.QueryResponse (direction, s) -> QueryRes (direction, s)
+
+        | Metric.Index s                      -> Op (Operation.Index, s)
 
         | Metric.SyncSuccess s                -> Op (Operation.Write, s)
         | Metric.SyncResync s                 -> Op (Operation.Resync, s)
@@ -279,7 +283,9 @@ module Log =
                  member _.TryContainer container = match containers.TryGetValue container with true, t -> Some t | false, _ -> None
             type Epoch() =
                 let epoch = System.Diagnostics.Stopwatch.StartNew()
+                member val internal Tip = Counters() with get, set
                 member val internal Read = Counters() with get, set
+                member val internal Index = Counters() with get, set
                 member val internal Write = Counters() with get, set
                 member val internal Resync = Counters() with get, set
                 member val internal Conflict = Counters() with get, set
@@ -302,16 +308,18 @@ module Log =
                         match logEvent with
                         | MetricEvent cm ->
                             match cm with
-                            | Op ((Operation.Tip | Operation.Tip404 | Operation.Tip304 | Operation.Query), BucketMsRu m)  ->
-                                                                                epoch.Read.Ingest m
-                            | QueryRes (_direction,          _)        -> ()
+                            | Op ((Operation.Tip | Operation.Tip404 | Operation.Tip304), BucketMsRu m)  ->
+                                                                                epoch.Tip.Ingest m
+                            | Op (Operation.Query,            BucketMsRu m)  -> epoch.Read.Ingest m
+                            | QueryRes (_direction,          _)              -> ()
                             | Op (Operation.Write,            BucketMsRu m)  -> epoch.Write.Ingest m
                             | Op (Operation.Conflict,         BucketMsRu m)  -> epoch.Conflict.Ingest m
                             | Op (Operation.Resync,           BucketMsRu m)  -> epoch.Resync.Ingest m
                             | Op (Operation.Prune,            BucketMsRu m)  -> epoch.Prune.Ingest m
-                            | PruneRes                        _        -> ()
+                            | PruneRes                        _              -> ()
                             | Op (Operation.Delete,           BucketMsRu m)  -> epoch.Delete.Ingest m
                             | Op (Operation.Trim,             BucketMsRu m)  -> epoch.Trim.Ingest m
+                            | Op (Operation.Index,            BucketMsRu m)  -> epoch.Index.Ingest m
                         | _ -> ()
 
         /// Relies on feeding of metrics from Log through to Stats.LogSink
@@ -319,7 +327,9 @@ module Log =
         let dump (log: ILogger) =
             let res = Stats.LogSink.Restart()
             let stats =
-              [|nameof res.Read,        res.Read
+              [|nameof res.Tip,         res.Tip
+                nameof res.Read,        res.Read
+                nameof res.Index,       res.Index
                 nameof res.Write,       res.Write
                 nameof res.Resync,      res.Resync
                 nameof res.Conflict,    res.Conflict
@@ -331,8 +341,8 @@ module Log =
                 let logActivity name count ru lat =
                     let aru, ams = (if count = 0L then Double.NaN else ru/float count), (if count = 0L then Double.NaN else float lat/float count)
                     let rut = name |> function
-                        | "TOTAL" -> "" | nameof res.Read | nameof res.Prune -> totalRRu <- totalRRu + ru; "R"
-                        | _ ->                                                  totalWRu <- totalWRu + ru; "W"
+                        | "TOTAL" -> "" | nameof res.Tip | nameof res.Read | nameof res.Index | nameof res.Prune ->   totalRRu <- totalRRu + ru; "R"
+                        | _ ->                                                                                        totalWRu <- totalWRu + ru; "W"
                     log.Information("{container} {name}: {count:n0}r {ru:n0}{rut:l}RU Average {avgRu:n1}RU {lat:n0}ms", container, name, count, ru, rut, aru, ams)
                 for name, stat in stats do
                     match stat.TryContainer container with
