@@ -128,15 +128,17 @@ and [<NoComparison; NoEquality; RequireSubcommand>] QueryParameters =
             | CategoryLike _ ->             "Specify category name to match against `p` as a Cosmos LIKE expression (with `%` as wildcard, e.g. `$UserServices-%`."
             | UnfoldName _ ->               "Specify unfold Name to match against `u.c`, e.g. `Snapshotted`"
             | UnfoldCriteria _ ->           "Specify constraints on Unfold (reference unfold fields via `u.d.`, top level fields via `c.`), e.g. `u.d.name = \"TenantName1\"`."
-            | Mode _ ->                     "readOnly: Only read `u`nfolds, not `_etag`.\n" +
-                                            "readWithStream: Read `u`nfolds and `p` (stream name), but not `_etag`.\n" +
-                                            "default: Retrieve full data (p, u, _etag). <- Default for normal queries\n" +
+            | Mode _ ->                     "default: `_etag` plus snapwithStream (_etag, p, u[0].d). <- Default for normal queries\n" +
+                                            "snaponly: Only read `u[0].d`\n" +
+                                            "snapwithstream: Read `u[0].d` and `p` (stream name), but not `_etag`.\n" +
+                                            "readonly: Only read `u`nfolds, not `_etag`.\n" +
+                                            "readwithstream: Read `u`nfolds and `p` (stream name), but not `_etag`.\n" +
                                             "raw: Read all Items(documents) in full. <- Default when Output File specified\n"
             | File _ ->                     "Export full retrieved JSON to file. NOTE this switches the default mode to `Raw`"
             | Pretty ->                     "Render the JSON indented over multiple lines"
             | Console ->                    "Also emit the JSON to the console. Default: Gather statistics (but only write to a File if specified)"
             | Cosmos _ ->                   "Parameters for CosmosDB."
-and [<RequireQualifiedAccess>] Mode = ReadOnly | ReadWithStream | Default | Raw
+and [<RequireQualifiedAccess>] Mode = Default | SnapOnly | SnapWithStream | ReadOnly | ReadWithStream | Raw
 and [<RequireQualifiedAccess>] Criteria = SingleStream of string | CatName of string | CatLike of string | Unfiltered
 and QueryArguments(p: ParseResults<QueryParameters>) =
     member val Mode = p.GetResult(Mode, if p.Contains File then Mode.Raw else Mode.Default)
@@ -338,7 +340,7 @@ let prettySerdes = lazy FsCodec.SystemTextJson.Serdes(FsCodec.SystemTextJson.Opt
 
 module CosmosQuery =
 
-    let inline miB x = float x / 1024. / 1024.
+    let inline miB x = Equinox.CosmosStore.Linq.Internal.miB x
     let private unixEpoch = DateTime.UnixEpoch
     type System.Text.Json.JsonElement with
         member x.Size = if x.ValueKind = System.Text.Json.JsonValueKind.Null then 0 else x.GetRawText().Length
@@ -359,9 +361,11 @@ module CosmosQuery =
             | Criteria.Unfiltered -> warnOnUnfiltered (); "1=1"
         let selectedFields =
             match a.Mode with
-            | Mode.ReadOnly -> "c.u"
+            | Mode.Default -> "c._etag, c.p, c.u[0].d"
+            | Mode.SnapOnly -> "c.u[0].d"
+            | Mode.SnapWithStream -> "c.p, c.u[0].d"
+            | Mode.ReadOnly -> "c.p, c.u"
             | Mode.ReadWithStream -> "c.p, c.u"
-            | Mode.Default -> "c.p, c.u, c._etag"
             | Mode.Raw -> "*"
         let unfoldFilter =
             let exists cond = $"EXISTS (SELECT VALUE u FROM u IN c.u WHERE {cond})"
