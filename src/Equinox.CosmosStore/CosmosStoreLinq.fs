@@ -19,7 +19,7 @@ module Internal =
     let enum<'T, 'R> (desc: string) (container: Container) (parse: 'T -> 'R) (queryDefinition: QueryDefinition) = taskSeq {
         if Log.IsEnabled Serilog.Events.LogEventLevel.Debug then Log.Debug("CosmosStoreQuery.enum {desc} {query}", desc, queryDefinition.QueryText)
         let sw = System.Diagnostics.Stopwatch.StartNew()
-        let iterator = container.GetItemQueryIterator<'T>(queryDefinition)
+        use iterator = container.GetItemQueryIterator<'T>(queryDefinition)
         let mutable responses, items, totalRtt, totalRu, totalRdc, totalRds, totalOds = 0, 0, TimeSpan.Zero, 0., 0, 0, 0
         try for rtt, rc, response, rdc, rds, ods in taskEnum iterator do
                 responses <- responses + 1
