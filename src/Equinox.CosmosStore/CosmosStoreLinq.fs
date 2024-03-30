@@ -147,13 +147,19 @@ module Index =
             d: 'I }
 
     let inline prefix categoryName = $"%s{categoryName}-"
+    /// The cheapest search basis; the categoryName is a prefix of the `p` partition field
+    /// Depending on how much more selective the caseName is, `byCaseName` may be a better choice
+    /// (but e.g. if the ration is 1:1 then no point having additional criteria)
     let byCategoryNameOnly<'I> (container: Microsoft.Azure.Cosmos.Container) categoryName: IQueryable<Item<'I>> =
         let prefix = prefix categoryName
         container.GetItemLinqQueryable<Item<'I>>().Where(fun d -> d.p.StartsWith(prefix))
+    // Searches based on the prefix of the `p` field, but also checking the `c` of the relevant unfold is correct
+    // A good idea if that'll be significantly cheaper due to better selectivity
     let byCaseName<'I> (container: Microsoft.Azure.Cosmos.Container) categoryName caseName: IQueryable<Item<'I>> =
         let prefix = prefix categoryName
         container.GetItemLinqQueryable<Item<'I>>().Where(fun d -> d.p.StartsWith(prefix) && d.u[0].c = caseName)
 
+    /// Returns the StreamName (from the `p` field) for a 0/1 item query; only the TOP 1 item is returned
     let tryGetStreamNameAsync description container (query: IQueryable<Item<'I>>) =
         Internal.tryHeadAsync<string, FsCodec.StreamName> description container (query.Select(fun x -> x.p))
 
@@ -163,6 +169,7 @@ module Index =
         let pExpression item = Expression.PropertyOrField(item, nameof Unchecked.defaultof<Item<'I>>.p)
         Internal.Expression.createSnAndSnapFromItemQuery<Item<'I>, 'I>(pExpression, snapExpression)
 
+/// Represents a query projecting information values from an Index and/or Snapshots with a view to rendering the items and/or a count
 type Query<'T, 'M>(inner: Internal.Projection<'T, 'M>) =
     member _.Enum: IAsyncEnumerable<'M> = inner.Enum
     member _.EnumPage(skip, take): IAsyncEnumerable<'M> = inner.EnumPage(skip, take)
@@ -170,7 +177,7 @@ type Query<'T, 'M>(inner: Internal.Projection<'T, 'M>) =
     member _.Count(): Async<int> = inner.CountAsync |> Async.call
     [<EditorBrowsable(EditorBrowsableState.Never)>] member val Inner = inner
 
-/// Enables querying based on an Index stored
+/// Enables querying based on uncompressed Indexed values stored as secondary unfolds alongside the snapshot
 [<NoComparison; NoEquality>]
 type IndexContext<'I>(container, categoryName, caseName) =
 
@@ -188,7 +195,7 @@ type IndexContext<'I>(container, categoryName, caseName) =
 
     /// Runs the query; yields the StreamName from the TOP 1 Item matching the criteria
     member x.TryGetStreamNameWhereAsync(criteria: Expressions.Expression<Func<Index.Item<'I>, bool>>, ct) =
-        Index.tryGetStreamNameAsync x.Description container (x.ByCategory().Where(criteria)) ct
+        Index.tryGetStreamNameAsync x.Description container (x.ByCategory().Where criteria) ct
 
     /// Runs the query; yields the StreamName from the TOP 1 Item matching the criteria
     member x.TryGetStreamNameWhere(criteria: Expressions.Expression<Func<Index.Item<'I>, bool>>): Async<FsCodec.StreamName option> =
