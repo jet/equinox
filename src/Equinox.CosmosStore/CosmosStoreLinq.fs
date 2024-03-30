@@ -1,16 +1,62 @@
 namespace Equinox.CosmosStore.Linq
 
 open Equinox.Core.Infrastructure
-open FSharp.Control
 open Serilog
 open System
+open System.Collections.Generic
 open System.ComponentModel
 open System.Linq
 open System.Linq.Expressions
 
+// We want to generate a projection statement of the shape: VALUE {"sn": root["p"], "snap": root["u"][0].["d"]}
+// However the Cosmos SDK does not support F# (or C#) records yet https://github.com/Azure/azure-cosmos-dotnet-v3/issues/3728
+// F#'s LINQ support cannot translate parameterless constructor invocations in a Lambda well;
+//  the best native workaround without Expression Manipulation is/was https://stackoverflow.com/a/78206722/11635
+// In C#, you can generate an Expression that works with the Cosmos SDK via `.Select(x => new { sn = x.p, snap = x.u[0].d })`
+// This hack is based on https://stackoverflow.com/a/73506241/11635
+type SnAndSnap<'I>() =
+    member val sn: FsCodec.StreamName = Unchecked.defaultof<_> with get, set
+    [<System.Text.Json.Serialization.JsonConverter(typeof<Equinox.CosmosStore.Core.JsonCompressedBase64Converter>)>]
+    member val snap: 'I = Unchecked.defaultof<_> with get, set
+
 module Internal =
 
+    module Expression =
+        let replace find replace =
+            { new ExpressionVisitor() with
+                override _.Visit node =
+                    if node = find then replace
+                    else base.Visit node }
+        // https://stackoverflow.com/a/8829845/11635
+        let compose (selector: Expression<Func<'T, 'I>>) (predicate: Expression<Func<'I, bool>>) =
+            let param = Expression.Parameter(typeof<'T>, "x")
+            let prop = (replace selector.Parameters[0] param).Visit(selector.Body)
+            let body = (replace predicate.Parameters[0] prop).Visit(predicate.Body)
+            Expression.Lambda<Func<'T, bool>>(body, param)
+        let orderBy (source: IQueryable<'T>) (indexSelector: Expression<System.Func<'T, 'I>>) (propertyName: string) descending =
+            let indexSortProperty = Expression.PropertyOrField(indexSelector.Body, propertyName)
+            let keySelector = Expression.Lambda(indexSortProperty, indexSelector.Parameters[0])
+            let call = Expression.Call(
+                typeof<Queryable>,
+                (if descending then "OrderByDescending" else "OrderBy"),
+                [| typeof<'T>; indexSortProperty.Type |],
+                source.Expression,
+                keySelector)
+            source.Provider.CreateQuery<'T>(call)
+        let createSnAndSnapFromItemQuery<'T, 'I>(snExpression: Expression -> MemberExpression, snapExpression: Expression<System.Func<'T, 'I>>) =
+            let param = Expression.Parameter(typeof<'T>, "x")
+            let targetType = typeof<SnAndSnap<'I>>
+            let snMember = targetType.GetMember(nameof Unchecked.defaultof<SnAndSnap<'I>>.sn)[0]
+            let snapMember = targetType.GetMember(nameof Unchecked.defaultof<SnAndSnap<'I>>.snap)[0]
+            Expression.Lambda<System.Func<'T, SnAndSnap<'I>>>(
+                Expression.MemberInit(
+                    Expression.New(targetType.GetConstructor [||]),
+                    [|  Expression.Bind(snMember, snExpression param) :> MemberBinding
+                        Expression.Bind(snapMember, (replace snapExpression.Parameters[0] param).Visit(snapExpression.Body)) |]),
+                [| param |])
+
     open Microsoft.Azure.Cosmos
+    open FSharp.Control // taskSeq
     [<EditorBrowsable(EditorBrowsableState.Never)>] // In case of emergency, use this, but log an issue so we can understand why
     let enum_ (iterator: FeedIterator<'T>) = taskSeq {
         while iterator.HasMoreResults do
@@ -50,11 +96,11 @@ module Internal =
     (* IAsyncEnumerable aka TaskSeq wrapping *)
 
     open Microsoft.Azure.Cosmos.Linq
-    /// Runs a query that renders 'T, Hydrating the results as 'R (can be the same types but e.g. you might want to map an object to a JsonElement etc)
-    let enum<'T, 'R> desc (container: Container) (query: IQueryable<'T>): TaskSeq<'R> =
+    /// Runs a query that renders 'T, Hydrating the results as 'P (can be the same types but e.g. you might want to map an object to a JsonElement etc)
+    let enum<'T, 'P> desc (container: Container) (query: IQueryable<'T>): IAsyncEnumerable<'P> =
         let queryDefinition = query.ToQueryDefinition()
         if Log.IsEnabled Serilog.Events.LogEventLevel.Debug then Log.Debug("CosmosStoreQuery.query {desc} {query}", desc, queryDefinition.QueryText)
-        container.GetItemQueryIterator<'R>(queryDefinition) |> taskEnum desc
+        container.GetItemQueryIterator<'P>(queryDefinition) |> taskEnum<'P> desc
 
     (* Scalar call dispatch *)
 
@@ -76,62 +122,17 @@ module Internal =
     let tryHeadAsync<'T, 'R> desc (container: Container) (query: IQueryable<'T>) (_ct: CancellationToken) =
         let queryDefinition = (top1 query).ToQueryDefinition()
         if Log.IsEnabled Serilog.Events.LogEventLevel.Debug then Log.Debug("CosmosStoreQuery.tryScalar {desc} {query}", desc, queryDefinition.QueryText)
-        container.GetItemQueryIterator<'R>(queryDefinition) |> taskEnum desc |> TaskSeq.tryHead
+        container.GetItemQueryIterator<'R>(queryDefinition) |> taskEnum desc |> FSharp.Control.TaskSeq.tryHead
 
-    /// Encapsulates an Indexed query expression
-    type Queryable<'T, 'P, 'R>(container, description, query: IQueryable<'T>, render: Expressions.Expression<Func<'T, 'P>>) =
-        member _.Enum<'M>(query, hydrate: 'R -> 'M): TaskSeq<'M> = enum<'P, 'R> description container query |> TaskSeq.map hydrate
-        member _.CountAsync ct: System.Threading.Tasks.Task<int> =
-            countAsync description query ct
-        member _.Count(): Async<int> =
-            countAsync description query System.Threading.CancellationToken.None |> Async.AwaitTask
-        member x.Fetch<'M>(hydrate): TaskSeq<'M> =
-            x.Enum<'M>(query.Select render, hydrate)
-        member x.FetchPage<'M>(skip, take, hydrate): TaskSeq<'M> =
-            x.Enum<'M>(query.Select render |> offsetLimit (skip, take), hydrate)
-        (* In case of emergency, use these. but log an issue so we can understand why *)
-        [<EditorBrowsable(EditorBrowsableState.Never)>] member val Container = container
-        [<EditorBrowsable(EditorBrowsableState.Never)>] member val Description = description
-        [<EditorBrowsable(EditorBrowsableState.Never)>] member val Query = query
-        [<EditorBrowsable(EditorBrowsableState.Never)>] member val Render = render
-
-module Expressions =
-
-    module Expression =
-        let replace find replace =
-            { new ExpressionVisitor() with
-                override _.Visit node =
-                    if node = find then replace
-                    else base.Visit node }
-        // https://stackoverflow.com/a/8829845/11635
-        let compose (selector: Expression<Func<'T, 'I>>) (predicate: Expression<Func<'I, bool>>) =
-            let param = Expression.Parameter(typeof<'T>, "x")
-            let prop = (replace selector.Parameters[0] param).Visit(selector.Body)
-            let body = (replace predicate.Parameters[0] prop).Visit(predicate.Body)
-            Expression.Lambda<Func<'T, bool>>(body, param)
-
-    type IQueryable<'T> with
-        member source.OrderBy(indexSelector: Expression<System.Func<'T, 'I>>, propertyName: string, descending) =
-            let indexSortProperty = Expression.PropertyOrField(indexSelector.Body, propertyName)
-            let keySelector = Expression.Lambda(indexSortProperty, indexSelector.Parameters[0])
-            let call = Expression.Call(
-                typeof<Queryable>,
-                (if descending then "OrderByDescending" else "OrderBy"),
-                [| typeof<'T>; indexSortProperty.Type |],
-                source.Expression,
-                keySelector)
-            source.Provider.CreateQuery<'T>(call)
-
-type Queryable<'T, 'P, 'R, 'M>(inner: Internal.Queryable<'T, 'P, 'R>, hydrate: 'R -> 'M) =
-    member val Inner = inner
-    member _.CountAsync = inner.CountAsync
-    member _.Count(): Async<int> = inner.Count()
-    member _.Fetch(): TaskSeq<'M> = inner.Fetch hydrate
-    member _.FetchPage(skip, take): TaskSeq<'M> = inner.FetchPage(skip, take, hydrate)
-
-module Queryable =
-
-   let map<'T, 'P, 'R, 'M> (hydrate: 'R -> 'M) (inner: Internal.Queryable<'T, 'P, 'R>) = Queryable<'T, 'P, 'R, 'M>(inner, hydrate)
+    type Projection<'T, 'M>(query, description, container, enum: IQueryable<'T> -> IAsyncEnumerable<'M>) =
+        static member Create<'P>(query, description, container, hydrate: 'P -> 'M) =
+            Projection<'T, 'M>(query, description, container, enum<'T, 'P> description container >> TaskSeq.map hydrate)
+        member _.Enum: IAsyncEnumerable<'M> = query |> enum
+        member x.EnumPage(skip, take): IAsyncEnumerable<'M> = query |> offsetLimit (skip, take) |> enum
+        member _.CountAsync: CancellationToken -> Task<int> = query |> countAsync description
+        [<EditorBrowsable(EditorBrowsableState.Never)>] member val Query: IQueryable<'T> = query
+        [<EditorBrowsable(EditorBrowsableState.Never)>] member val Description: string = description
+        [<EditorBrowsable(EditorBrowsableState.Never)>] member val Container: Container = container
 
 /// Helpers for Querying and Projecting results based on relevant aspects of Equinox.CosmosStore's storage schema
 module Index =
@@ -141,8 +142,7 @@ module Index =
         {   p: string
             _etag: string
             u: Unfold<'I> ResizeArray }
-    and [<NoComparison; NoEquality>]
-        Unfold<'I> =
+    and [<NoComparison; NoEquality>] Unfold<'I> =
         {   c: string
             d: 'I }
 
@@ -157,42 +157,25 @@ module Index =
     let tryGetStreamNameAsync description container (query: IQueryable<Item<'I>>) =
         Internal.tryHeadAsync<string, FsCodec.StreamName> description container (query.Select(fun x -> x.p))
 
-    // We want to generate a projection statement of the shape: VALUE {"sn": root["p"], "snap": root["u"][0].["d"]}
-    // However the Cosmos SDK does not support F# (or C#) records yet https://github.com/Azure/azure-cosmos-dotnet-v3/issues/3728
-    // F#'s LINQ support cannot translate parameterless constructor invocations in a Lambda well;
-    //  the best native workaround without Expression Manipulation is/was https://stackoverflow.com/a/78206722/11635
-    // In C#, you can generate an Expression that works with the Cosmos SDK via `.Select(x => new { sn = x.p, snap = x.u[0].d })`
-    // This hack is based on https://stackoverflow.com/a/73506241/11635
-    type SnAndSnap<'I>() =
-        member val sn: FsCodec.StreamName = Unchecked.defaultof<_> with get, set
-        [<System.Text.Json.Serialization.JsonConverter(typeof<Equinox.CosmosStore.Core.JsonCompressedBase64Converter>)>]
-        member val snap: 'I = Unchecked.defaultof<_> with get, set
-        static member FromIndexQuery(snapExpression: Expression<System.Func<Item<'I>, 'I>>) =
-            let param = Expression.Parameter(typeof<Item<'I>>, "x")
-            let targetType = typeof<SnAndSnap<'I>>
-            let snMember = targetType.GetMember(nameof Unchecked.defaultof<SnAndSnap<'I>>.sn)[0]
-            let snapMember = targetType.GetMember(nameof Unchecked.defaultof<SnAndSnap<'I>>.snap)[0]
-            Expression.Lambda<System.Func<Item<'I>, SnAndSnap<'I>>>(
-                Expression.MemberInit(
-                    Expression.New(targetType.GetConstructor [||]),
-                    [|  Expression.Bind(snMember, Expression.PropertyOrField(param, nameof Unchecked.defaultof<Item<'I>>.p)) :> MemberBinding
-                        Expression.Bind(snapMember, (Expressions.Expression.replace snapExpression.Parameters[0] param).Visit(snapExpression.Body)) |]),
-                [| param |])
-
-    (* In case of emergency a) use this b) log an issue as to why you had to; can't think of a good reason *)
-    [<EditorBrowsable(EditorBrowsableState.Never)>]
-    let streamNameAndSnapshot_<'I, 'R> description container renderSnapshot (query: IQueryable<Item<'I>>) =
-        Internal.Queryable<Item<'I>, SnAndSnap<'I>, SnAndSnap<'R>>(container, description, query, SnAndSnap<'I>.FromIndexQuery renderSnapshot)
-
     /// Query the items, returning the Stream name and the Snapshot as a JsonElement (Decompressed if applicable)
-    let streamNameAndSnapshot<'I> description container renderSnapshot (query: IQueryable<Item<'I>>) =
-        streamNameAndSnapshot_<'I, System.Text.Json.JsonElement> description container renderSnapshot query
+    let projectStreamNameAndSnapshot<'I> snapExpression: Expression<Func<Item<'I>, SnAndSnap<'I>>> =
+        // a very ugly workaround for not being able to write query.Select<Item<'I>,Internal.SnAndSnap<'I>>(fun x -> { p = x.p; snap = x.u[0].d })
+        let pExpression item = Expression.PropertyOrField(item, nameof Unchecked.defaultof<Item<'I>>.p)
+        Internal.Expression.createSnAndSnapFromItemQuery<Item<'I>, 'I>(pExpression, snapExpression)
+
+type Query<'T, 'M>(inner: Internal.Projection<'T, 'M>) =
+    member _.Enum: IAsyncEnumerable<'M> = inner.Enum
+    member _.EnumPage(skip, take): IAsyncEnumerable<'M> = inner.EnumPage(skip, take)
+    member _.CountAsync ct: Task<int> = inner.CountAsync ct
+    member _.Count(): Async<int> = inner.CountAsync |> Async.call
+    [<EditorBrowsable(EditorBrowsableState.Never)>] member val Inner = inner
 
 /// Enables querying based on an Index stored
 [<NoComparison; NoEquality>]
 type IndexContext<'I>(container, categoryName, caseName) =
 
     member val Description = $"{categoryName}/{caseName}" with get, set
+    member val Container = container
 
     /// Fetches a base Queryable that's filtered based on the `categoryName` and `caseName`
     /// NOTE this is relatively expensive to compute a Count on, compared to `CategoryQueryable`
@@ -204,14 +187,14 @@ type IndexContext<'I>(container, categoryName, caseName) =
         Index.byCategoryNameOnly<'I> container categoryName
 
     /// Runs the query; yields the StreamName from the TOP 1 Item matching the criteria
-    member x.TryGetStreamNameWhereAsync(criteria: Expression<Func<Index.Item<'I>, bool>>, ct) =
+    member x.TryGetStreamNameWhereAsync(criteria: Expressions.Expression<Func<Index.Item<'I>, bool>>, ct) =
         Index.tryGetStreamNameAsync x.Description container (x.ByCategory().Where(criteria)) ct
 
     /// Runs the query; yields the StreamName from the TOP 1 Item matching the criteria
-    member x.TryGetStreamNameWhere(criteria: Expression<Func<Index.Item<'I>, bool>>): Async<FsCodec.StreamName option> =
+    member x.TryGetStreamNameWhere(criteria: Expressions.Expression<Func<Index.Item<'I>, bool>>): Async<FsCodec.StreamName option> =
         (fun ct -> x.TryGetStreamNameWhereAsync(criteria, ct)) |> Async.call
 
     /// Query the items, grabbing the Stream name and the Snapshot; The StreamName and the (Decompressed if applicable) Snapshot are passed to `hydrate`
-    member x.QueryStreamNameAndSnapshot(query, renderSnapshot, hydrate) =
-        Index.streamNameAndSnapshot<'I> x.Description container renderSnapshot query
-        |> Queryable.map hydrate
+    member x.QueryStreamNameAndSnapshot(query: IQueryable<Index.Item<'I>>, selectBody: Expression<Func<Index.Item<'I>, 'I>>,
+                                        hydrate: SnAndSnap<System.Text.Json.JsonElement> -> 'M) =
+        Internal.Projection.Create(query.Select(Index.projectStreamNameAndSnapshot<'I> selectBody), x.Description, container, hydrate)
