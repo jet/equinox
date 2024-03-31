@@ -125,8 +125,7 @@ module Internal =
         container.GetItemQueryIterator<'R>(queryDefinition) |> taskEnum desc |> FSharp.Control.TaskSeq.tryHead
 
     type Projection<'T, 'M>(query, description, container, enum: IQueryable<'T> -> IAsyncEnumerable<'M>) =
-        static member Create<'P>(query, description, container, hydrate: 'P -> 'M) =
-            Projection<'T, 'M>(query, description, container, enum<'T, 'P> description container >> TaskSeq.map hydrate)
+        static member Create<'P>(q, d, c, hydrate: 'P -> 'M) = Projection<'T, 'M>(q, d, c, enum<'T, 'P> d c >> TaskSeq.map hydrate)
         member _.Enum: IAsyncEnumerable<'M> = query |> enum
         member x.EnumPage(skip, take): IAsyncEnumerable<'M> = query |> offsetLimit (skip, take) |> enum
         member _.CountAsync: CancellationToken -> Task<int> = query |> countAsync description
@@ -173,7 +172,7 @@ module Index =
 type Query<'T, 'M>(inner: Internal.Projection<'T, 'M>) =
     member _.Enum: IAsyncEnumerable<'M> = inner.Enum
     member _.EnumPage(skip, take): IAsyncEnumerable<'M> = inner.EnumPage(skip, take)
-    member _.CountAsync ct: Task<int> = inner.CountAsync ct
+    member _.CountAsync(ct: CancellationToken): Task<int> = inner.CountAsync ct
     member _.Count(): Async<int> = inner.CountAsync |> Async.call
     [<EditorBrowsable(EditorBrowsableState.Never)>] member val Inner = inner
 
@@ -204,4 +203,4 @@ type IndexContext<'I>(container, categoryName, caseName) =
     /// Query the items, grabbing the Stream name and the Snapshot; The StreamName and the (Decompressed if applicable) Snapshot are passed to `hydrate`
     member x.QueryStreamNameAndSnapshot(query: IQueryable<Index.Item<'I>>, selectBody: Expression<Func<Index.Item<'I>, 'I>>,
                                         hydrate: SnAndSnap<System.Text.Json.JsonElement> -> 'M) =
-        Internal.Projection.Create(query.Select(Index.projectStreamNameAndSnapshot<'I> selectBody), x.Description, container, hydrate)
+        Internal.Projection.Create(query.Select(Index.projectStreamNameAndSnapshot<'I> selectBody), x.Description, container, hydrate) |> Query
