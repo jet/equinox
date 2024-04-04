@@ -10,19 +10,13 @@ open System.Linq.Expressions
 
 /// Generic Expression Tree manipulation helpers / Cosmos SDK LINQ support incompleteness workarounds
 type [<AbstractClass; Sealed>] QueryExtensions =
-    static member Replace(find, replace) = // https://stackoverflow.com/a/8829845/11635
+    static member Replace(find, replace) =
         { new ExpressionVisitor() with
             override _.Visit node =
                 if node = find then replace
                 else base.Visit node }
-    static member Compose(selector: Expression<Func<'T, 'I>>, predicate: Expression<Func<'I, bool>>) =
-        let param = Expression.Parameter(typeof<'T>, "x")
-        let prop = QueryExtensions.Replace(selector.Parameters[0], param).Visit(selector.Body)
-        let body = QueryExtensions.Replace(predicate.Parameters[0], prop).Visit(predicate.Body)
-        Expression.Lambda<Func<'T, bool>>(body, param)
     [<System.Runtime.CompilerServices.Extension>]
-    static member Where(source: IQueryable<'T>, indexSelector: Expression<Func<'T, 'I>>, indexPredicate: Expression<Func<'I, bool>>): IQueryable<'T> =
-        source.Where(QueryExtensions.Compose(indexSelector, indexPredicate))
+    static member Replace(x: Expression, find, replace) = QueryExtensions.Replace(find, replace).Visit(x)
     [<System.Runtime.CompilerServices.Extension>]
     static member OrderBy(source: IQueryable<'T>, indexSelector: Expression<Func<'T, 'I>>, propertyName: string, descending) =
         let indexSortProperty = Expression.PropertyOrField(indexSelector.Body, propertyName)
@@ -34,6 +28,29 @@ type [<AbstractClass; Sealed>] QueryExtensions =
             source.Expression,
             keySelector)
         source.Provider.CreateQuery<'T>(call)
+
+/// Predicate manipulation helpers
+type [<AbstractClass; Sealed>] Predicate =
+    /// F# maps `fun` expressions to Expression trees, only when the target is a `member` arg
+    /// See https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/query/linq-to-sql for the list of supported constructs
+    static member Create<'T> expr: Expression<Func<'T, bool>> = expr
+    [<System.Runtime.CompilerServices.Extension>] // https://stackoverflow.com/a/8829845/11635
+    static member Compose(selector: Expression<Func<'T, 'I>>, projector: Expression<Func<'I, 'R>>): Expression<Func<'T, 'R>> =
+        let param = Expression.Parameter(typeof<'T>, "x")
+        let prop = selector.Body.Replace(selector.Parameters[0], param)
+        let body = projector.Body.Replace(projector.Parameters[0], prop)
+        Expression.Lambda<Func<'T, 'R>>(body, param)
+    [<System.Runtime.CompilerServices.Extension>] // https://stackoverflow.com/a/22569086/11635
+    static member And<'T>(l: Expression<Func<'T, bool>>, r: Expression<Func<'T, bool>>) =
+        let rBody = r.Body.Replace(r.Parameters[0], l.Parameters[0])
+        Expression.Lambda<Func<'T, bool>>(Expression.AndAlso(l.Body, rBody), l.Parameters)
+    [<System.Runtime.CompilerServices.Extension>] // https://stackoverflow.com/a/22569086/11635
+    static member Or<'T>(l: Expression<Func<'T, bool>>, r: Expression<Func<'T, bool>>) =
+        let rBody = r.Body.Replace(r.Parameters[0], l.Parameters[0])
+        Expression.Lambda<Func<'T, bool>>(Expression.OrElse(l.Body, rBody), l.Parameters)
+    [<System.Runtime.CompilerServices.Extension>]
+    static member Where(source: IQueryable<'T>, indexSelector: Expression<Func<'T, 'I>>, indexPredicate: Expression<Func<'I, bool>>): IQueryable<'T> =
+        source.Where(indexSelector.Compose indexPredicate)
 
 module Internal =
     open Microsoft.Azure.Cosmos
@@ -66,7 +83,7 @@ module Internal =
                         items <- items + 1
                         yield item
             finally Log.Information("CosmosStoreQuery.enum {desc} {count} ({trips}r {totalRtt:f0}ms; {rdc}i {rds:f2}>{ods:f2} MiB) {rc} RU {latency} ms",
-                                    desc, items,  responses, totalRtt.TotalMilliseconds, totalRdc, miB totalRds, miB totalOds, totalRu, sw.ElapsedMilliseconds) }
+                                    desc, items, responses, totalRtt.TotalMilliseconds, totalRdc, miB totalRds, miB totalOds, totalRu, sw.ElapsedMilliseconds) }
         /// Runs a query that renders 'T, Hydrating the results as 'P (can be the same types but e.g. you might want to map an object to a JsonElement etc)
         let enum<'T, 'P> desc (container: Container) (query: IQueryable<'T>): TaskSeq<'P> =
             let queryDefinition = query.ToQueryDefinition()
@@ -75,13 +92,13 @@ module Internal =
     module AggregateOp =
         /// Runs one of the typical Cosmos SDK extensions, e.g. CountAsync, logging the costs
         let exec (desc: string) (query: IQueryable<'T>) run render: System.Threading.Tasks.Task<'R> = task {
-            if Log.IsEnabled Serilog.Events.LogEventLevel.Debug then Log.Debug("CosmosStoreQuery.exec {desc} {query}", desc, query.ToQueryDefinition().QueryText)
+            if Log.IsEnabled Serilog.Events.LogEventLevel.Debug then Log.Debug("CosmosStoreQuery.count {desc} {query}", desc, query.ToQueryDefinition().QueryText)
             let sw = System.Diagnostics.Stopwatch.StartNew()
             let! (rsp: Response<'R>) = run query
             let res = rsp.Resource
             let summary = render res
             let m = rsp.Diagnostics.GetQueryMetrics().CumulativeMetrics
-            Log.Information("CosmosStoreQuery.count {res} {desc} {count} ({rdc}i {rds:f2}>{ods:f2} MiB) {rc} RU {latency} ms",
+            Log.Information("CosmosStoreQuery.count {desc} {count} ({rdc}i {rds:f2}>{ods:f2} MiB) {rc} RU {latency} ms",
                             desc, summary, m.RetrievedDocumentCount, miB m.RetrievedDocumentSize, miB m.OutputDocumentSize, rsp.RequestCharge, sw.ElapsedMilliseconds)
             return res }
         /// Runs query.CountAsync, with instrumentation equivalent to what query provides
@@ -124,7 +141,7 @@ type SnAndSnap<'I>() =
             Expression.MemberInit(
                 Expression.New(targetType.GetConstructor [||]),
                 [|  Expression.Bind(snMember, snExpression param) :> MemberBinding
-                    Expression.Bind(snapMember, QueryExtensions.Replace(snapExpression.Parameters[0], param).Visit(snapExpression.Body)) |]),
+                    Expression.Bind(snapMember, snapExpression.Body.Replace(snapExpression.Parameters[0], param)) |]),
             [| param |])
 
 /// Helpers for Querying and Projecting results based on relevant aspects of Equinox.CosmosStore's storage schema
@@ -176,6 +193,11 @@ type IndexContext<'I>(container, categoryName, caseName) =
 
     member val Description = $"{categoryName}/{caseName}" with get, set
     member val Container = container
+
+    /// Helper to make F# consumption code more terse (the F# compiler generates Expression trees only when a function is passed to a `member`)
+    /// Example: `i.Predicate(fun e -> e.name = name)`
+    /// See https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/query/linq-to-sql for the list of supported constructs
+    member _.Predicate expr: Expression<Func<'I, bool>> = expr
 
     /// Fetches a base Queryable that's filtered based on the `categoryName` and `caseName`
     /// NOTE this is relatively expensive to compute a Count on, compared to `CategoryQueryable`
