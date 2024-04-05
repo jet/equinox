@@ -7,6 +7,7 @@ open System
 open System.ComponentModel
 open System.Linq
 open System.Linq.Expressions
+open System.Runtime.CompilerServices
 
 /// Generic Expression Tree manipulation helpers / Cosmos SDK LINQ support incompleteness workarounds
 type [<AbstractClass; Sealed>] QueryExtensions =
@@ -15,40 +16,47 @@ type [<AbstractClass; Sealed>] QueryExtensions =
             override _.Visit node =
                 if node = find then replace
                 else base.Visit node }
-    [<System.Runtime.CompilerServices.Extension>]
+    [<Extension>]
     static member Replace(x: Expression, find, replace) = QueryExtensions.Replace(find, replace).Visit(x)
-    [<System.Runtime.CompilerServices.Extension>]
-    static member OrderBy(source: IQueryable<'T>, indexSelector: Expression<Func<'T, 'I>>, propertyName: string, descending) =
-        let indexSortProperty = Expression.PropertyOrField(indexSelector.Body, propertyName)
-        let keySelector = Expression.Lambda(indexSortProperty, indexSelector.Parameters[0])
+    [<Extension>] // https://stackoverflow.com/a/8829845/11635
+    static member Compose(selector: Expression<Func<'T, 'I>>, projector: Expression<Func<'I, 'R>>): Expression<Func<'T, 'R>> =
+        let param = Expression.Parameter(typeof<'T>, "x")
+        let prop = selector.Body.Replace(selector.Parameters[0], param)
+        let body = projector.Body.Replace(projector.Parameters[0], prop)
+        Expression.Lambda<Func<'T, 'R>>(body, param)
+    [<Extension>]
+    static member OrderBy(source: IQueryable<'T>, indexSelector: Expression<Func<'T, 'I>>, keySelector: Expression<Func<'I, 'U>>, descending) =
+        QueryExtensions.OrderByLambda<'T>(source, indexSelector.Compose keySelector, descending)
+    [<Extension>] // https://stackoverflow.com/a/233505/11635
+    static member OrderByPropertyName(source: IQueryable<'T>, indexSelector: Expression<Func<'T, 'I>>, propertyName: string, descending) =
+        let indexProperty = Expression.PropertyOrField(indexSelector.Body, propertyName)
+        let delegateType = typedefof<Func<_,_>>.MakeGenericType(typeof<'T>, indexProperty.Type)
+        let keySelector = Expression.Lambda(delegateType, indexProperty, indexSelector.Parameters[0])
+        QueryExtensions.OrderByLambda(source, keySelector, descending)
+    // NOTE not an extension method as OrderByPropertyName and OrderBy represent the as-strongly-typed-as-possible top level use cases
+    // NOTE no support for a `comparison` arg is warranted as CosmosDB only handles direct scalar prop expressions, https://stackoverflow.com/a/69268191/11635
+    static member OrderByLambda<'T>(source: IQueryable<'T>, keySelector: LambdaExpression, descending) =
         let call = Expression.Call(
             typeof<Queryable>,
             (if descending then "OrderByDescending" else "OrderBy"),
-            [| typeof<'T>; indexSortProperty.Type |],
-            source.Expression,
-            keySelector)
-        source.Provider.CreateQuery<'T>(call)
+            [| typeof<'T>; keySelector.ReturnType |],
+            [| source.Expression; keySelector |])
+        source.Provider.CreateQuery<'T>(call) :?> IOrderedQueryable<'T>
 
 /// Predicate manipulation helpers
 type [<AbstractClass; Sealed>] Predicate =
     /// F# maps `fun` expressions to Expression trees, only when the target is a `member` arg
     /// See https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/query/linq-to-sql for the list of supported constructs
     static member Create<'T> expr: Expression<Func<'T, bool>> = expr
-    [<System.Runtime.CompilerServices.Extension>] // https://stackoverflow.com/a/8829845/11635
-    static member Compose(selector: Expression<Func<'T, 'I>>, projector: Expression<Func<'I, 'R>>): Expression<Func<'T, 'R>> =
-        let param = Expression.Parameter(typeof<'T>, "x")
-        let prop = selector.Body.Replace(selector.Parameters[0], param)
-        let body = projector.Body.Replace(projector.Parameters[0], prop)
-        Expression.Lambda<Func<'T, 'R>>(body, param)
-    [<System.Runtime.CompilerServices.Extension>] // https://stackoverflow.com/a/22569086/11635
+    [<Extension>] // https://stackoverflow.com/a/22569086/11635
     static member And<'T>(l: Expression<Func<'T, bool>>, r: Expression<Func<'T, bool>>) =
         let rBody = r.Body.Replace(r.Parameters[0], l.Parameters[0])
         Expression.Lambda<Func<'T, bool>>(Expression.AndAlso(l.Body, rBody), l.Parameters)
-    [<System.Runtime.CompilerServices.Extension>] // https://stackoverflow.com/a/22569086/11635
+    [<Extension>] // https://stackoverflow.com/a/22569086/11635
     static member Or<'T>(l: Expression<Func<'T, bool>>, r: Expression<Func<'T, bool>>) =
         let rBody = r.Body.Replace(r.Parameters[0], l.Parameters[0])
         Expression.Lambda<Func<'T, bool>>(Expression.OrElse(l.Body, rBody), l.Parameters)
-    [<System.Runtime.CompilerServices.Extension>]
+    [<Extension>]
     static member Where(source: IQueryable<'T>, indexSelector: Expression<Func<'T, 'I>>, indexPredicate: Expression<Func<'I, bool>>): IQueryable<'T> =
         source.Where(indexSelector.Compose indexPredicate)
 
