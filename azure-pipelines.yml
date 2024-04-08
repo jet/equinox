@@ -17,7 +17,6 @@ jobs:
   - script: dotnet pack build.proj
     displayName: dotnet pack build.proj
     env:
-      BUILD_PR: $(SYSTEM.PULLREQUEST.PULLREQUESTNUMBER)
       BUILD_ID: $(BUILD.BUILDNUMBER)
   - task: PublishBuildArtifacts@1
     inputs:
@@ -41,7 +40,6 @@ jobs:
   - script: dotnet pack build.proj
     displayName: dotnet pack
     env:
-      BUILD_PR: $(SYSTEM.PULLREQUEST.PULLREQUESTNUMBER)
       BUILD_ID: $(BUILD.BUILDNUMBER)
 
 - job: MacOS
@@ -61,5 +59,4 @@ jobs:
   - script: dotnet pack build.proj
     displayName: dotnet pack
     env:
-      BUILD_PR: $(SYSTEM.PULLREQUEST.PULLREQUESTNUMBER)
       BUILD_ID: $(BUILD.BUILDNUMBER)
