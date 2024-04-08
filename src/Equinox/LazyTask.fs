@@ -23,8 +23,8 @@ type
     member _.TryAwaitValid() = task {
         let t = workflow.Value
 
-        // Determines if the last attempt completed, but failed; For TMI see https://stackoverflow.com/a/33946166/11635
-        if t.IsFaulted then return ValueNone
+        // Determines if the last attempt completed, but failed, or was cancelled (e.g. due to timeout); For TMI see https://stackoverflow.com/a/33946166/11635
+        if t.IsFaulted || t.IsCanceled then return ValueNone
         else
             let! res = t
             return ValueSome res }
