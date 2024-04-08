@@ -237,7 +237,7 @@ module Log =
         | Delete of Measurement
         /// Trimmed the Tip
         | Trim of Measurement
-        /// Queried via the Index
+        /// Queried via the Index; count=-1 -> aggregate operation
         | Index of Measurement
     let [<return: Struct>] (|MetricEvent|_|) (logEvent: Serilog.Events.LogEvent): Metric voption =
         let mutable p = Unchecked.defaultof<_>
