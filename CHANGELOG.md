@@ -19,6 +19,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
+- `Caching`: Store Load `Task` Cancellation (e.g., as triggered by the Cosmos SDK under rate limiting) leads to perpetual `TaskCancellation` exceptions for cached requests (`LoadOption.AnyCachedValue`, `LoadOption.AllowStale`) [#451](https://github.com/jet/equinox/pull/451)
+
 <a name="4.0.0"></a>
 ## [4.0.0] - 2024-03-20
 
