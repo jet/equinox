@@ -19,7 +19,12 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
-- `Caching`: Store Load `Task` Cancellation (e.g., as triggered by the Cosmos SDK under rate limiting) leads to perpetual `TaskCancellation` exceptions for cached requests (`LoadOption.AnyCachedValue`, `LoadOption.AllowStale`) [#451](https://github.com/jet/equinox/pull/451)
+<a name="4.0.2"></a>
+## [4.0.2] - 2024-04-08
+
+### Fixed
+
+- `Equinox`: `LoadOption.AnyCachedValue`, `LoadOption.AllowStale` caches and continually yields `TaskCanceledException` where request cancelled [#451](https://github.com/jet/equinox/pull/451)
 
 <a name="4.0.0"></a>
 ## [4.0.0] - 2024-03-20
@@ -757,6 +762,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
 [Unreleased]: https://github.com/jet/equinox/compare/4.0.0...HEAD
+[4.0.2]: https://github.com/jet/equinox/compare/4.0.0...4.0.2
 [4.0.0]: https://github.com/jet/equinox/compare/3.0.7...4.0.0
 [3.0.7]: https://github.com/jet/equinox/compare/3.0.6...3.0.7
 [3.0.6]: https://github.com/jet/equinox/compare/3.0.5...3.0.6
