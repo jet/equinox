@@ -209,7 +209,7 @@ type Query<'T, 'M>(inner: Internal.Projection<'T, 'M>) =
 [<NoComparison; NoEquality>]
 type IndexContext<'I>(container, categoryName, caseName, log) =
 
-    member val Log = defaultArg log Log.Logger
+    member val Log = log
     member val Description = $"{categoryName}/{caseName}" with get, set
     member val Container = container
 
