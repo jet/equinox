@@ -19,6 +19,11 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
+<a name="4.0.3"></a>
+## [4.0.3] - 2024-04-11
+
+### Fixed
+
 - `Equinox`: `LoadOption.AnyCachedValue`, `LoadOption.AllowStale` prevent yielding of superseded value where overlapping call in flight [#452](https://github.com/jet/equinox/pull/452)
 - `Equinox`: `LoadOption.AnyCachedValue`, `LoadOption.AllowStale` prevent incorrect `TaskCanceledException` outcome where overlapping call cancelled [#452](https://github.com/jet/equinox/pull/452)
 - `Equinox`: `LoadOption.AnyCachedValue`, `LoadOption.AllowStale` correct to ensure optimal loading where first flight was in progress [#452](https://github.com/jet/equinox/pull/452)
@@ -766,6 +771,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
 [Unreleased]: https://github.com/jet/equinox/compare/4.0.0...HEAD
+[4.0.3]: https://github.com/jet/equinox/compare/4.0.2...4.0.3
 [4.0.2]: https://github.com/jet/equinox/compare/4.0.0...4.0.2
 [4.0.0]: https://github.com/jet/equinox/compare/3.0.7...4.0.0
 [3.0.7]: https://github.com/jet/equinox/compare/3.0.6...3.0.7
