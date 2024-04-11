@@ -124,6 +124,11 @@ type Tests() =
 
     let allowStale toleranceMs = load sn (TimeSpan.FromMilliseconds toleranceMs) sut
 
+    // TODO: the tests below that involve triggering of expiration and/or ensuring overlapping requests are in flight are very naive.
+    // 1. TimeProvider APIs can be used ot shift time deterministically
+    // 2. instead of using a delay to ensure that requests are in flight, the SpyCategory should deterministically signal a ManualResetEvent or similar
+    // see also https://github.com/jet/equinox/pull/452#issuecomment-2048647249
+
     let [<Fact>] ``allowStale unifies compatible concurrent loads`` () = task {
         cat.Delay <- TimeSpan.FromMilliseconds 70 // Ensure it's still in progress when our Delay is over
         let t1 = allowStale 1
