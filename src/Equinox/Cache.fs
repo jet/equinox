@@ -35,21 +35,24 @@ type private CacheEntry<'state>(initialToken: StreamToken, initialState: 'state,
     member x.ReadThrough(maxAge: TimeSpan, isStale, load: Func<_, _>) = task {
         let cacheEntryValidityCheckTimestamp = System.Diagnostics.Stopwatch.GetTimestamp()
         let isWithinMaxAge cachedValueTimestamp = Stopwatch.TicksToSeconds(cacheEntryValidityCheckTimestamp - cachedValueTimestamp) <= maxAge.TotalSeconds
-        let fetchStateConsistently () = struct (cell, tryGet (), isWithinMaxAge verifiedTimestamp)
+        let fetchStateConsistently () = struct (tryGet (), isWithinMaxAge verifiedTimestamp)
         match lock x fetchStateConsistently with
-        | _, ValueSome cachedValue, true ->
+        | ValueSome cachedValue, true -> // Needs to be a valid entry _and_ pass the age check (a null entry will be ValueNone)
             return cachedValue
-        | ourInitialCellState, maybeBaseState, _ -> // If it's not good enough for us, trigger a request (though someone may have beaten us to that)
+        | maybeBaseState, _ -> // If it's not good enough for us, trigger a request (though someone may have beaten us to that)
 
-        // Inspect/await any concurrent attempt to see if it is sufficient for our needs
-        match! ourInitialCellState.TryAwaitValid() with
-        | ValueSome (fetchCommencedTimestamp, res) when isWithinMaxAge fetchCommencedTimestamp -> return res
-        | _ ->
+        // Inspect/await any concurrent attempt to see if it is sufficient for our needs (and to avoid concurrent requests)
+        let potentialSibling = System.Threading.Volatile.Read &cell
+        match! potentialSibling.TryAwaitValid() with
+        | ValueSome (siblingFetchCommencedTimestamp, res) when isWithinMaxAge siblingFetchCommencedTimestamp -> return res
+        | maybeSiblingBaseState ->
 
         // .. it wasn't; join the race to dispatch a request (others following us will share our fate via the TryAwaitValid)
+        let maybeBaseState = maybeSiblingBaseState |> ValueOption.map ValueTuple.snd |> ValueOption.orElse maybeBaseState
         let newInstance = LazyTask(fun () -> load.Invoke maybeBaseState)
-        let _ = Interlocked.CompareExchange(&cell, newInstance, ourInitialCellState)
-        let! timestamp, (token, state as res) = cell.Await()
+        // If the sibling has been replaced in the interim, then we're happy for its replacement to be the winner
+        let _ = Interlocked.CompareExchange(&cell, newInstance, potentialSibling)
+        let! timestamp, (token, state as res) = cell.Await() // Now we wait for either our new instance, or the replaced `potentialSibling`
         x.MergeUpdates(isStale, timestamp, token, state) // merge observed result into the cache
         return res }
 
