@@ -95,7 +95,7 @@ module Internal =
                 let interval = StopwatchInterval(startTicks, System.Diagnostics.Stopwatch.GetTimestamp())
                 let log = let evt = Log.Metric.Index { database = container.Database.Id; container = container.Id; stream = cat + FsCodec.StreamName.Category.SeparatorStr
                                                        interval = interval; bytes = totalOds; count = items; ru = totalRu } in log |> Log.event evt
-                log.Information("EqxCosmos {action:l} {count} ({trips}r {totalRtt:f0}ms; {rdc}i {rds:f2}>{ods:f2} MiB) {rc:f2} RU {latency} ms",
+                log.Information("EqxCosmos {action:l} {count} ({trips}r {totalRtt:f0}ms; {rdc}i {rds:f2}>{ods:f2} MiB) {rc:f2} RU {lat:n0} ms",
                                 "Index", items, responses, totalRtt.TotalMilliseconds, totalRdc, miB totalRds, miB totalOds, totalRu, interval.ElapsedMilliseconds) }
         /// Runs a query that can by hydrated as 'T
         let enum<'T> (log: ILogger) (container: Container) cat (queryDefinition: QueryDefinition): TaskSeq<'T> =
@@ -117,7 +117,7 @@ module Internal =
             let totalOds, totalRu = m.OutputDocumentSize, rsp.RequestCharge
             let log = let evt = Log.Metric.Index { database = container.Database.Id; container = container.Id; stream = cat + FsCodec.StreamName.Category.SeparatorStr
                                                    interval = interval; bytes = int totalOds; count = -1; ru = totalRu } in log |> Log.event evt
-            log.Information("EqxCosmos {action:l} {cat} {count} ({rdc}i {rds:f2}>{ods:f2} MiB) {rc} RU {latency} ms",
+            log.Information("EqxCosmos {action:l} {cat} {count} ({rdc}i {rds:f2}>{ods:f2} MiB) {rc} RU {lat:n0} ms",
                             op, cat, summary, m.RetrievedDocumentCount, miB m.RetrievedDocumentSize, miB totalOds, totalRu, interval.ElapsedMilliseconds)
             return res }
         /// Runs query.CountAsync, with instrumentation equivalent to what query provides
