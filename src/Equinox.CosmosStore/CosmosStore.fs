@@ -281,6 +281,7 @@ module Log =
                  member _.TryBucket bucket = match buckets.TryGetValue bucket with true, t -> Some t | false, _ -> None
             type Epoch() =
                 let epoch = System.Diagnostics.Stopwatch.StartNew()
+                member val internal Tip = Counters() with get, set
                 member val internal Read = Counters() with get, set
                 member val internal Write = Counters() with get, set
                 member val internal Resync = Counters() with get, set
@@ -305,14 +306,15 @@ module Log =
                         match logEvent with
                         | MetricEvent cm ->
                             match cm with
-                            | Op ((Operation.Tip | Operation.Tip404 | Operation.Tip304 | Operation.Query), BucketMsRu m)  ->
-                                                                                epoch.Read.Ingest m
-                            | QueryRes (_direction,          _)        -> ()
+                            | Op ((Operation.Tip | Operation.Tip404 | Operation.Tip304), BucketMsRu m)  ->
+                                                                                epoch.Tip.Ingest m
+                            | Op (Operation.Query,            BucketMsRu m)  -> epoch.Read.Ingest m
+                            | QueryRes (_direction,          _)              -> ()
                             | Op (Operation.Write,            BucketMsRu m)  -> epoch.Write.Ingest m
                             | Op (Operation.Conflict,         BucketMsRu m)  -> epoch.Conflict.Ingest m
                             | Op (Operation.Resync,           BucketMsRu m)  -> epoch.Resync.Ingest m
                             | Op (Operation.Prune,            BucketMsRu m)  -> epoch.Prune.Ingest m
-                            | PruneRes                        _        -> ()
+                            | PruneRes                        _              -> ()
                             | Op (Operation.Delete,           BucketMsRu m)  -> epoch.Delete.Ingest m
                             | Op (Operation.Trim,             BucketMsRu m)  -> epoch.Trim.Ingest m
                         | _ -> ()
@@ -322,7 +324,8 @@ module Log =
         let dump (log: ILogger) =
             let res = Stats.LogSink.Restart()
             let stats =
-              [|nameof res.Read,        res.Read
+              [|nameof res.Tip,         res.Tip
+                nameof res.Read,        res.Read
                 nameof res.Write,       res.Write
                 nameof res.Resync,      res.Resync
                 nameof res.Conflict,    res.Conflict
@@ -338,7 +341,7 @@ module Log =
                 let logActivity act count maxRu minRu ru lat =
                     let aru, ams = (if count = 0L then Double.NaN else ru/float count), (if count = 0L then Double.NaN else float lat/float count)
                     let rut = act |> function
-                        | "TOTAL" -> "" | nameof res.Read | nameof res.Prune -> totalRRu <- totalRRu + ru; "R"
+                        | "TOTAL" -> "" | nameof res.Tip | nameof res.Read | nameof res.Prune -> totalRRu <- totalRRu + ru; "R"
                         | _ ->                                                  totalWRu <- totalWRu + ru; "W"
                     log.Information("{bucket} {act,-8}: {count,5}r {ru,7:g0} {max,4:f1}-{min,4:f0} {rut:l}RU avg={avgRu,4:f1} RU {lat,4:g0} ms",
                                     bucket.PadRight maxBucketLen, act, count, ru, minRu, maxRu, rut, aru, ams)
