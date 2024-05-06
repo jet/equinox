@@ -265,11 +265,13 @@ module Log =
         module Stats =
 
             type internal Counter =
-                 { mutable rux100: int64; mutable count: int64; mutable ms: int64 }
-                 static member Create() = { rux100 = 0L; count = 0L; ms = 0L }
+                 { mutable minRu: float; mutable maxRu: float; mutable rux100: int64; mutable count: int64; mutable ms: int64 }
+                 static member Create() = { minRu = Double.MaxValue; maxRu = 0; rux100 = 0L; count = 0L; ms = 0L }
                  member x.Ingest(ms, ru) =
                      Interlocked.Increment(&x.count) |> ignore
                      Interlocked.Add(&x.rux100, int64 (ru * 100.)) |> ignore
+                     if ru < x.minRu then Interlocked.CompareExchange(&x.minRu, ru, x.minRu) |> ignore
+                     elif ru > x.maxRu then Interlocked.CompareExchange(&x.maxRu, ru, x.maxRu) |> ignore
                      Interlocked.Add(&x.ms, ms) |> ignore
             type internal Counters() =
                  let buckets = System.Collections.Concurrent.ConcurrentDictionary<string, Counter>()
@@ -327,26 +329,32 @@ module Log =
                 nameof res.Prune,       res.Prune
                 nameof res.Delete,      res.Delete
                 nameof res.Trim,        res.Trim |]
-            for bucket in stats |> Seq.collect (fun (_n, stat) -> stat.Buckets) |> Seq.distinct |> Seq.sort do
+            let buckets = stats |> Seq.collect (fun (_n, stat) -> stat.Buckets) |> Seq.distinct |> Seq.sort |> Seq.toArray
+            if Array.isEmpty buckets then () else
+
+            let maxBucketLen = buckets |> Seq.map _.Length |> Seq.max
+            for bucket in buckets do
                 let mutable rows, totalCount, totalRRu, totalWRu, totalMs = 0, 0L, 0., 0., 0L
-                let logActivity act count ru lat =
+                let logActivity act count maxRu minRu ru lat =
                     let aru, ams = (if count = 0L then Double.NaN else ru/float count), (if count = 0L then Double.NaN else float lat/float count)
                     let rut = act |> function
                         | "TOTAL" -> "" | nameof res.Read | nameof res.Prune -> totalRRu <- totalRRu + ru; "R"
                         | _ ->                                                  totalWRu <- totalWRu + ru; "W"
-                    log.Information("{bucket} {act}: {count:n0}r {ru:n0}{rut:l}RU Average {avgRu:n1}RU {lat:n0}ms", bucket, act, count, ru, rut, aru, ams)
+                    log.Information("{bucket} {act,-8}: {count,5}r {ru,7:g0} {max,4:f1}-{min,4:f0} {rut:l}RU avg={avgRu,4:f1} RU {lat,4:g0} ms",
+                                    bucket.PadRight maxBucketLen, act, count, ru, minRu, maxRu, rut, aru, ams)
                 for act, counts in stats do
                     match counts.TryBucket bucket with
                     | Some stat when stat.count <> 0L ->
                         let ru = float stat.rux100 / 100.
                         totalCount <- totalCount + stat.count
                         totalMs <- totalMs + stat.ms
-                        logActivity act stat.count ru stat.ms
+                        logActivity act stat.count stat.maxRu stat.minRu ru stat.ms
                         rows <- rows + 1
                     | _ -> ()
-                if rows > 1 then logActivity "TOTAL" totalCount (totalRRu + totalWRu) totalMs
+                if rows > 1 then logActivity "TOTAL" totalCount 0 0 (totalRRu + totalWRu) totalMs
                 let measures: (string * (TimeSpan -> float)) list = [ "s", _.TotalSeconds ]
-                let logPeriodicRate name count rru wru = log.Information("{bucket} {rru:n1}R/{wru:n1}W RU @ {count:n0} rp{unit}", bucket, rru, wru, count, name)
+                let logPeriodicRate name count rru wru = log.Information("{bucket} {count:n0} rp{unit} @ {rru,5:f1}/{wru,5:f1} R/W RU",
+                                                                         bucket.PadRight maxBucketLen, count, name, rru, wru)
                 for uom, f in measures do let d = f res.Elapsed in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRRu/d) (totalWRu/d)
 
 [<AutoOpen>]
