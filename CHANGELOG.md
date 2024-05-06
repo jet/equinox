@@ -11,7 +11,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 
 - `Equinox.CosmosStore`: Group metrics by Container Name [#449](https://github.com/jet/equinox/pull/449)
-- `Equinox.CosmosStore`: Group metrics by Category [#453](https://github.com/jet/equinox/pull/453)
+- `Equinox.CosmosStore`: Group metrics by Category; split out `Tip` [#453](https://github.com/jet/equinox/pull/453)
 
 ### Changed
 
