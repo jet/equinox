@@ -272,11 +272,11 @@ module Log =
                      Interlocked.Add(&x.rux100, int64 (ru * 100.)) |> ignore
                      Interlocked.Add(&x.ms, ms) |> ignore
             type internal Counters() =
-                 let containers = System.Collections.Concurrent.ConcurrentDictionary<string, Counter>()
+                 let buckets = System.Collections.Concurrent.ConcurrentDictionary<string, Counter>()
                  let create (_name: string) = Counter.Create()
-                 member _.Ingest(container, ms, ru) = containers.GetOrAdd(container, create).Ingest(ms, ru)
-                 member _.Containers = containers.Keys
-                 member _.TryContainer container = match containers.TryGetValue container with true, t -> Some t | false, _ -> None
+                 member _.Ingest(bucket, ms, ru) = buckets.GetOrAdd(bucket, create).Ingest(ms, ru)
+                 member _.Buckets = buckets.Keys
+                 member _.TryBucket bucket = match buckets.TryGetValue bucket with true, t -> Some t | false, _ -> None
             type Epoch() =
                 let epoch = System.Diagnostics.Stopwatch.StartNew()
                 member val internal Read = Counters() with get, set
@@ -288,9 +288,10 @@ module Log =
                 member val internal Trim = Counters() with get, set
                 member _.Stop() = epoch.Stop()
                 member _.Elapsed = epoch.Elapsed
-            let inline private (|BucketMsRu|) ({ container = c; interval = i; ru = ru }: Measurement) =
-                c, int64 i.ElapsedMilliseconds, ru
-            type LogSink() =
+            type LogSink(?byCategory) =
+                let byCategory = defaultArg byCategory false
+                let bucket (x: Measurement) = if byCategory then $"{x.container}/{x.Category}" else x.container
+                let (|BucketMsRu|) ({ interval = i; ru = ru } as m) = bucket m, int64 i.ElapsedMilliseconds, ru
                 static let mutable epoch = Epoch()
                 static member Restart() =
                     let fresh = Epoch()
@@ -326,26 +327,26 @@ module Log =
                 nameof res.Prune,       res.Prune
                 nameof res.Delete,      res.Delete
                 nameof res.Trim,        res.Trim |]
-            for container in stats |> Seq.collect (fun (_n, stat) -> stat.Containers) |> Seq.distinct |> Seq.sort do
+            for bucket in stats |> Seq.collect (fun (_n, stat) -> stat.Buckets) |> Seq.distinct |> Seq.sort do
                 let mutable rows, totalCount, totalRRu, totalWRu, totalMs = 0, 0L, 0., 0., 0L
-                let logActivity name count ru lat =
+                let logActivity act count ru lat =
                     let aru, ams = (if count = 0L then Double.NaN else ru/float count), (if count = 0L then Double.NaN else float lat/float count)
-                    let rut = name |> function
+                    let rut = act |> function
                         | "TOTAL" -> "" | nameof res.Read | nameof res.Prune -> totalRRu <- totalRRu + ru; "R"
                         | _ ->                                                  totalWRu <- totalWRu + ru; "W"
-                    log.Information("{container} {name}: {count:n0}r {ru:n0}{rut:l}RU Average {avgRu:n1}RU {lat:n0}ms", container, name, count, ru, rut, aru, ams)
-                for name, stat in stats do
-                    match stat.TryContainer container with
+                    log.Information("{bucket} {act}: {count:n0}r {ru:n0}{rut:l}RU Average {avgRu:n1}RU {lat:n0}ms", bucket, act, count, ru, rut, aru, ams)
+                for act, counts in stats do
+                    match counts.TryBucket bucket with
                     | Some stat when stat.count <> 0L ->
                         let ru = float stat.rux100 / 100.
                         totalCount <- totalCount + stat.count
                         totalMs <- totalMs + stat.ms
-                        logActivity name stat.count ru stat.ms
+                        logActivity act stat.count ru stat.ms
                         rows <- rows + 1
                     | _ -> ()
                 if rows > 1 then logActivity "TOTAL" totalCount (totalRRu + totalWRu) totalMs
-                let measures: (string * (TimeSpan -> float)) list = [ "s", _.TotalSeconds(*; "m", _.TotalMinutes; "h", _.TotalHours*) ]
-                let logPeriodicRate name count rru wru = log.Information("{container} {rru:n1}R/{wru:n1}W RU @ {count:n0} rp{unit}", container, rru, wru, count, name)
+                let measures: (string * (TimeSpan -> float)) list = [ "s", _.TotalSeconds ]
+                let logPeriodicRate name count rru wru = log.Information("{bucket} {rru:n1}R/{wru:n1}W RU @ {count:n0} rp{unit}", bucket, rru, wru, count, name)
                 for uom, f in measures do let d = f res.Elapsed in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRRu/d) (totalWRu/d)
 
 [<AutoOpen>]
