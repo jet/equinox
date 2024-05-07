@@ -23,16 +23,16 @@ type internal AsyncBatch<'Req, 'Res>() =
     /// Attempt to add a request to the flight
     /// Succeeds during linger interval (which commences when the first caller triggers the workflow via AwaitResult)
     /// Fails if this flight has closed (caller should initialize a fresh Batch, potentially holding off until the current attempt completes)
-    member _.TryAdd(req, dispatch: Func<'Req[], CancellationToken, Task<'Res>>, lingerMs: int, limiter: System.Threading.SemaphoreSlim voption, ct) =
+    member _.TryAdd(req, dispatch: Func<'Req[], CancellationToken, Task<'Res>>, lingerMs: int, limiter: System.Threading.SemaphoreSlim, ct) =
         if not (tryEnqueue req) then false else
 
         // Prepare a new instance, with cancellation under our control (it won't start until the .Value triggers it though)
         let newInstance: Lazy<Task<'Res>> = lazy task {
             do! Task.Delay(lingerMs, ct)
-            match limiter with ValueNone -> () | ValueSome s -> do! s.WaitAsync(ct)
+            if not (isNull limiter) then do! limiter.WaitAsync(ct)
             try queue.CompleteAdding()
                 return! dispatch.Invoke(queue.ToArray(), ct)
-            finally match limiter with ValueNone -> () | ValueSome s -> s.Release() |> ignore }
+            finally if not (isNull limiter) then limiter.Release() |> ignore }
         // If there are concurrent executions, the first through the gate wins; everybody else awaits the attempt the winner wrote
         let _ = Interlocked.CompareExchange(&attempt, newInstance, null)
         true
@@ -45,20 +45,23 @@ type internal AsyncBatch<'Req, 'Res>() =
 /// Requests are added to pending batch during the wait period, which consists of two phases:
 /// 1. a defined linger period (min 1ms)
 /// 2. (optionally) a wait to acquire capacity on a limiter semaphore (e.g. one might have a limit on concurrent dispatches across a pool)
-type Batcher<'Req, 'Res>(dispatch: Func<'Req[], CancellationToken, Task<'Res>>, limiter) =
+type Batcher<'Req, 'Res>(dispatch: Func<'Req[], CancellationToken, Task<'Res>>) =
     let mutable cell = AsyncBatch<'Req, 'Res>()
     let mutable lingerMs = 1 // concurrent waiters need to add work to the batch across their threads
-    member _.LingerMs with set value = if value >= 1 then lingerMs <- value else invalidArg (nameof value) "Minimum linger period is 1ms"
-    new(dispatch: 'Req[] -> Async<'Res>,
-        // Extends the linger phase to include a period during which we await capacity on an externally managed Semaphore
-        // The Batcher doesn't care, but a typical use is to enable limiting the number of concurrent in-flight dispatches
-        ?limiter) =
-        Batcher((fun items ct -> Async.StartImmediateAsTask(dispatch items, ct)), (match limiter with Some x -> ValueSome x | None -> ValueNone))
+    new (dispatch: 'Req[] -> Async<'Res>) = Batcher(fun items ct -> Async.StartImmediateAsTask(dispatch items, ct))
+    /// Period to wait for others to join the dispatch. NOTE at least 1ms is required so failed concurrent TryAdd calls can join the next dispatch
+    member _.Linger with set (value: TimeSpan) =
+        match int value.TotalMilliseconds with
+        | x when x < 1 -> invalidArg (nameof value) "Minimum linger period is 1ms"
+        | x -> lingerMs <- x
+    /// Optionally extends the linger phase to include a period during which we await capacity on an externally managed Semaphore
+    /// The Batcher doesn't care, but a typical use is to enable limiting the number of concurrent in-flight dispatches
+    member val Limiter = null with get, set
     /// Include an item in the batch; await the collective dispatch (subject to the configured linger time and optional limiter acquisition)
     member x.ExecuteAsync(req, ct) = task {
         let current = cell
         // If current has not yet been dispatched, hop on and join
-        if current.TryAdd(req, dispatch, lingerMs, limiter, ct) then return! current.Await()
+        if current.TryAdd(req, dispatch, lingerMs, x.Limiter, ct) then return! current.Await()
         else // Any thread that discovers a batch in flight, needs to wait for it to conclude first
             do! current.Await().ContinueWith<unit>(fun (_: Task) -> ()) // wait for, but don't observe the exception or result from the in-flight batch
             // where competing threads discover a closed flight, we only want a single one to regenerate it
