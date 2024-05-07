@@ -271,7 +271,7 @@ module Log =
                      Interlocked.Increment(&x.count) |> ignore
                      Interlocked.Add(&x.rux100, int64 (ru * 100.)) |> ignore
                      if ru < x.minRu then Interlocked.CompareExchange(&x.minRu, ru, x.minRu) |> ignore
-                     elif ru > x.maxRu then Interlocked.CompareExchange(&x.maxRu, ru, x.maxRu) |> ignore
+                     if ru > x.maxRu then Interlocked.CompareExchange(&x.maxRu, ru, x.maxRu) |> ignore
                      Interlocked.Add(&x.ms, ms) |> ignore
             type internal Counters() =
                  let buckets = System.Collections.Concurrent.ConcurrentDictionary<string, Counter>()
@@ -332,33 +332,36 @@ module Log =
                 nameof res.Prune,       res.Prune
                 nameof res.Delete,      res.Delete
                 nameof res.Trim,        res.Trim |]
+            let isRead = function nameof res.Tip | nameof res.Read | nameof res.Prune -> true | _ -> false
             let buckets = stats |> Seq.collect (fun (_n, stat) -> stat.Buckets) |> Seq.distinct |> Seq.sort |> Seq.toArray
             if Array.isEmpty buckets then () else
 
             let maxBucketLen = buckets |> Seq.map _.Length |> Seq.max
+            let duration = res.Elapsed.TotalSeconds
+            let mutable prevCat, catR, catW, catRRu, catWRu = null, 0L, 0L, 0., 0.
+            let inline rps count = if duration = 0 then 0L else float count/duration |> int64
+            let inline ups ru = if duration = 0 then 0. else ru/duration
+            let logOnCatChange (cat: string) =
+                if prevCat = null then prevCat <- cat
+                elif prevCat = cat then ()
+                else
+                    let reqs = catR + catW
+                    log.Information("{bucket}        {count,6}r                       @ {rps,5:f0} r/s {rups,5:f0} RU/s ({rrups:f0}{r:l}/{wrups:f0}{w:l})",
+                                    prevCat.PadRight maxBucketLen, reqs, rps reqs, ups (catRRu + catWRu), ups catRRu, "R", ups catWRu, "W")
+                    catR <- 0; catRRu <- 0; catW <- 0; catWRu <- 0; prevCat <- cat
             for bucket in buckets do
-                let mutable rows, totalCount, totalRRu, totalWRu, totalMs = 0, 0L, 0., 0., 0L
-                let logActivity act count maxRu minRu ru lat =
-                    let aru, ams = (if count = 0L then Double.NaN else ru/float count), (if count = 0L then Double.NaN else float lat/float count)
-                    let rut = act |> function
-                        | "TOTAL" -> "" | nameof res.Tip | nameof res.Read | nameof res.Prune -> totalRRu <- totalRRu + ru; "R"
-                        | _ ->                                                  totalWRu <- totalWRu + ru; "W"
-                    log.Information("{bucket} {act,-8}: {count,5}r {ru,7:g0} {max,4:f1}-{min,4:f0} {rut:l}RU avg={avgRu,4:f1} RU {lat,4:g0} ms",
-                                    bucket.PadRight maxBucketLen, act, count, ru, minRu, maxRu, rut, aru, ams)
+                bucket.Substring(0, bucket.IndexOf '/') |> logOnCatChange
                 for act, counts in stats do
                     match counts.TryBucket bucket with
                     | Some stat when stat.count <> 0L ->
                         let ru = float stat.rux100 / 100.
-                        totalCount <- totalCount + stat.count
-                        totalMs <- totalMs + stat.ms
-                        logActivity act stat.count stat.maxRu stat.minRu ru stat.ms
-                        rows <- rows + 1
+                        let rut = if isRead act then catR <- catR + stat.count; catRRu <- catRRu + ru; "R"
+                                                else catW <- catW + stat.count; catWRu <- catWRu + ru; "W"
+                        let inline avg x = x / float stat.count
+                        log.Information("{bucket} {act,-7}{count,6}r {minRu,5:f1}-{maxRu,3:f0} {rut:l}RU{lat,5:f0} ms @ {rps,5:f0} r/s {rups,5:f0} RU/s Σ {ru,7:f0} avg={avgRu,4:f1}",
+                                        bucket.PadRight maxBucketLen, act, stat.count, stat.minRu, stat.maxRu, rut, avg (float stat.ms), rps stat.count, ups ru, ru, avg ru)
                     | _ -> ()
-                if rows > 1 then logActivity "TOTAL" totalCount 0 0 (totalRRu + totalWRu) totalMs
-                let measures: (string * (TimeSpan -> float)) list = [ "s", _.TotalSeconds ]
-                let logPeriodicRate name count rru wru = log.Information("{bucket} {count:n0} rp{unit} @ {rru,5:f1}/{wru,5:f1} R/W RU",
-                                                                         bucket.PadRight maxBucketLen, count, name, rru, wru)
-                for uom, f in measures do let d = f res.Elapsed in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRRu/d) (totalWRu/d)
+            null |> logOnCatChange
 
 [<AutoOpen>]
 module private MicrosoftAzureCosmosWrappers =
