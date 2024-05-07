@@ -21,7 +21,7 @@ let ``Batcher correctness`` () = async {
         0 =! concurrency
         return reqs
     }
-    let cell = Batcher(dispatch, linger = TimeSpan.FromMilliseconds 40)
+    let cell = Batcher(dispatch, LingerMs = 40)
     let! results = [1 .. 100] |> Seq.map cell.Execute |> Async.Parallel
     test <@ set (Seq.concat results) = set [1 .. 100] @>
     // Linger of 40ms makes this tend strongly to only be 1 batch, but no guarantees
