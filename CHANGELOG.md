@@ -20,6 +20,13 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
+<a name="4.0.4"></a>
+## [4.0.4] - 2024-05-08
+
+### Added
+
+- `Equinox.Core.Batcher`: Add Settable `Linger` [#454](https://github.com/jet/equinox/pull/454)
+
 <a name="4.0.3"></a>
 ## [4.0.3] - 2024-04-11
 
@@ -771,7 +778,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/4.0.0...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/4.0.4...HEAD
+[4.0.4]: https://github.com/jet/equinox/compare/4.0.3...4.0.4
 [4.0.3]: https://github.com/jet/equinox/compare/4.0.2...4.0.3
 [4.0.2]: https://github.com/jet/equinox/compare/4.0.0...4.0.2
 [4.0.0]: https://github.com/jet/equinox/compare/3.0.7...4.0.0
