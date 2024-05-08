@@ -9,7 +9,7 @@ open System
 /// - requests arriving together can be coalesced into the batch during the linger period via TryAdd
 /// - callers that have had items admitted can concurrently await the shared fate of the dispatch via Await
 /// - callers whose TryAdd has been denied can await the completion of the in-flight batch via AwaitCompletion
-type internal AsyncBatch<'Req, 'Res>() =
+type internal Batch<'Req, 'Res>() =
     let queue = new System.Collections.Concurrent.BlockingCollection<'Req>()
     let tryEnqueue item =
         if queue.IsAddingCompleted then false
@@ -37,7 +37,7 @@ type internal AsyncBatch<'Req, 'Res>() =
         let _ = Interlocked.CompareExchange(&attempt, newInstance, null)
         true
 
-    /// Await the outcome of dispatching the batch (on the basis that the caller has a stake due to a successful tryEnqueue)
+    /// Await the outcome of dispatching the batch (on the basis that the caller has a stake due to a successful TryAdd/tryEnqueue)
     member _.Await() = attempt.Value
 
 /// Manages concurrent work such that concurrent requests targeting a shared resource are dispatched as a series of batched requests
@@ -46,7 +46,7 @@ type internal AsyncBatch<'Req, 'Res>() =
 /// 1. a defined linger period (min 1ms)
 /// 2. (optionally) a wait to acquire capacity on a limiter semaphore (e.g. one might have a limit on concurrent dispatches across a pool)
 type Batcher<'Req, 'Res>(dispatch: Func<'Req[], CancellationToken, Task<'Res>>) =
-    let mutable cell = AsyncBatch<'Req, 'Res>()
+    let mutable cell = Batch<'Req, 'Res>()
     let mutable lingerMs = 1 // concurrent waiters need to add work to the batch across their threads
     new (dispatch: 'Req[] -> Async<'Res>) = Batcher(fun items ct -> Async.StartImmediateAsTask(dispatch items, ct))
     /// Period to wait for others to join the dispatch. NOTE at least 1ms is required so failed concurrent TryAdd calls can join the next dispatch
@@ -56,7 +56,7 @@ type Batcher<'Req, 'Res>(dispatch: Func<'Req[], CancellationToken, Task<'Res>>) 
         | x -> lingerMs <- x
     /// Optionally extends the linger phase to include a period during which we await capacity on an externally managed Semaphore
     /// The Batcher doesn't care, but a typical use is to enable limiting the number of concurrent in-flight dispatches
-    member val Limiter = null with get, set
+    member val Limiter: System.Threading.SemaphoreSlim = null with get, set
     /// Include an item in the batch; await the collective dispatch (subject to the configured linger time and optional limiter acquisition)
     member x.ExecuteAsync(req, ct) = task {
         let current = cell
@@ -65,7 +65,7 @@ type Batcher<'Req, 'Res>(dispatch: Func<'Req[], CancellationToken, Task<'Res>>) 
         else // Any thread that discovers a batch in flight, needs to wait for it to conclude first
             do! current.Await().ContinueWith<unit>(fun (_: Task) -> ()) // wait for, but don't observe the exception or result from the in-flight batch
             // where competing threads discover a closed flight, we only want a single one to regenerate it
-            let _ = Interlocked.CompareExchange(&cell, AsyncBatch(), current)
+            let _ = Interlocked.CompareExchange(&cell, Batch(), current)
             return! x.ExecuteAsync(req, ct) } // but everyone attempts to merge their requests into the batch during the linger period
 
     /// Include an item in the batch; await the collective dispatch (subject to the configured linger time)
