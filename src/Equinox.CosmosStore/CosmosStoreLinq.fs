@@ -250,3 +250,5 @@ type IndexContext<'I>(container, categoryName, caseName, log, [<O; D null>]?quer
         let logLevel = defaultArg logLevel queryLogLevel
         query.Select(Index.projectStreamNameAndSnapshot<'I> selectBody)
         |> Index.createSnAndSnapshotQuery x.Log container categoryName logLevel hydrate
+
+// TODO remove this!
