@@ -1,8 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+  <Sdk Name="Microsoft.DotNet.PackageValidation" Version="1.0.0-preview.7.21379.12" />
+
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
     <DefineConstants>EQUINOX_CORE</DefineConstants>
+    <!-- 4.0.4 had some minor intentional breaking changes relative to 4.0.0:
+         - Batcher optional ctor args have become property setters -->
+    <PackageValidationBaselineVersion>4.0.4</PackageValidationBaselineVersion>
   </PropertyGroup>
 
   <ItemGroup>
