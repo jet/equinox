@@ -22,7 +22,7 @@
 
         <PackageReference Include="FSharp.Core" Version="6.0.7" ExcludeAssets="contentfiles" />
         
-        <PackageReference Include="Npgsql" Version="7.0.0" />
+        <PackageReference Include="Npgsql" Version="8.0.3" />
     </ItemGroup>
 
 </Project>
