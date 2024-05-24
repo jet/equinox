@@ -356,14 +356,13 @@ let prettySerdes = lazy FsCodec.SystemTextJson.Serdes(FsCodec.SystemTextJson.Opt
 module CosmosQuery =
 
     let inline miB x = Equinox.CosmosStore.Linq.Internal.miB x
-    let private unixEpoch = DateTime.UnixEpoch
     type System.Text.Json.JsonElement with
         member x.Utf8ByteCount = if x.ValueKind = System.Text.Json.JsonValueKind.Null then 0 else x.GetRawText() |> System.Text.Encoding.UTF8.GetByteCount
     type System.Text.Json.JsonDocument with
         member x.Cast<'T>() = System.Text.Json.JsonSerializer.Deserialize<'T>(x.RootElement)
         member x.Timestamp =
             let ok, p = x.RootElement.TryGetProperty("_ts")
-            if ok then p.GetDouble() |> unixEpoch.AddSeconds |> Some else None
+            if ok then p.GetDouble() |> DateTime.UnixEpoch.AddSeconds |> Some else None
     let private composeSql (a: QueryArguments) =
         let inline warnOnUnfiltered () =
             let lel = if a.Mode = Mode.Raw then LogEventLevel.Debug elif a.Filepath = None then LogEventLevel.Warning else LogEventLevel.Information
