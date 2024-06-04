@@ -355,6 +355,7 @@ let prettySerdes = lazy FsCodec.SystemTextJson.Serdes(FsCodec.SystemTextJson.Opt
 
 module CosmosQuery =
 
+    open FSharp.Control
     let inline miB x = Equinox.CosmosStore.Linq.Internal.miB x
     type System.Text.Json.JsonElement with
         member x.Utf8ByteCount = if x.ValueKind = System.Text.Json.JsonValueKind.Null then 0 else x.GetRawText() |> System.Text.Encoding.UTF8.GetByteCount
@@ -389,44 +390,41 @@ module CosmosQuery =
             | [| x |] -> x |> exists
             | xs -> String.Join(" AND ", xs) |> exists
         $"SELECT {selectedFields} FROM c WHERE {partitionKeyCriteria} AND {unfoldFilter} ORDER BY c.i"
-    let private makeQuery (a: QueryArguments) =
-        let sql = composeSql a
-        Log.Information("Querying {mode}: {q}", a.Mode, sql)
-        let storeConfig = a.ConfigureStore(Log.Logger)
-        let container = match storeConfig with Store.Config.Cosmos (cc, _, _) -> cc.Container | _ -> failwith "Query requires Cosmos"
-        let opts = Microsoft.Azure.Cosmos.QueryRequestOptions(MaxItemCount = a.CosmosArgs.QueryMaxItems)
-        container.GetItemQueryIterator<System.Text.Json.JsonDocument>(sql, requestOptions = opts)
-    let run (a: QueryArguments) = async {
+    let run (a: QueryArguments) = task {
         let sw, sw2 = System.Diagnostics.Stopwatch(), System.Diagnostics.Stopwatch.StartNew()
         let serdes = if a.Pretty then prettySerdes.Value else FsCodec.SystemTextJson.Serdes.Default
         let maybeFileStream = a.Filepath |> Option.map (fun p ->
             Log.Information("Dumping {mode} content to {path}", a.Mode, System.IO.FileInfo(p).FullName)
             System.IO.File.Create p) // Silently truncate if it exists, makes sense for typical usage
-        use query = makeQuery a
 
         let pageStreams, accStreams = System.Collections.Generic.HashSet(), System.Collections.Generic.HashSet()
         let mutable accI, accE, accU, accRus, accBytesRead = 0L, 0L, 0L, 0., 0L
-        try while query.HasMoreResults do
-                sw.Restart()
-                let! page = query.ReadNextAsync(CancellationToken.None) |> Async.AwaitTaskCorrect
-                let pageSize = page.Resource |> Seq.sumBy _.RootElement.Utf8ByteCount
-                let newestAge = page.Resource |> Seq.choose _.Timestamp |> Seq.tryLast |> Option.map (fun ts -> ts - DateTime.UtcNow)
-                let items = [| for x in page.Resource -> x.Cast<Equinox.CosmosStore.Core.Tip>() |]
+
+        let storeConfig, queryOpts = a.ConfigureStore(Log.Logger), Microsoft.Azure.Cosmos.QueryRequestOptions(MaxItemCount = a.CosmosArgs.QueryMaxItems)
+        let container = match storeConfig with Store.Config.Cosmos (cc, _, _) -> cc.Container | _ -> failwith "Query requires Cosmos"
+        let sql = composeSql a
+        Log.Information("Querying {mode}: {q}", a.Mode, sql)
+        let qd = Microsoft.Azure.Cosmos.QueryDefinition sql
+        let qi = container.GetItemQueryIterator<System.Text.Json.JsonDocument>(qd, requestOptions = queryOpts)
+        try for rtt, rc, items, rdc, rds, ods in Equinox.CosmosStore.Linq.Internal.Query.enum_ qi do
+                let newestAge = items |> Seq.choose _.Timestamp |> Seq.tryLast |> Option.map (fun ts -> ts - DateTime.UtcNow)
+                let items = [| for x in items -> x.Cast<Equinox.CosmosStore.Core.Tip>() |]
                 let inline arrayLen x = if isNull x then 0 else Array.length x
                 pageStreams.Clear(); for x in items do if x.p <> null && pageStreams.Add x.p then accStreams.Add x.p |> ignore
                 let pageI, pageE, pageU = items.Length, items |> Seq.sumBy (_.e >> arrayLen), items |> Seq.sumBy (_.u >> arrayLen)
-                Log.Information("Page {count}i {streams}s {es}e {us}u {ru}RU {s:N1}s {mib:N1}MiB age {age:dddd\.hh\:mm\:ss}",
-                                pageI, pageStreams.Count, pageE, pageU, page.RequestCharge, sw.Elapsed.TotalSeconds, miB pageSize, Option.toNullable newestAge)
+                Log.Information("Page {rdc}>{count}i {streams}s {es}e {us}u {rc:f2} RU {s:N1}s {rds:f2}>{ods:f2} MiB age {age:dddd\.hh\:mm\:ss}",
+                                rdc, pageI, pageStreams.Count, pageE, pageU, rc, rtt, miB rds, miB ods, Option.toNullable newestAge)
 
                 maybeFileStream |> Option.iter (fun stream ->
-                    for x in page.Resource do
+                    for x in items do
                         serdes.SerializeToStream(x, stream)
                         stream.WriteByte(byte '\n'))
                 if a.TeeConsole then
-                    page.Resource |> Seq.iter (serdes.Serialize >> Console.WriteLine)
+                    items |> Seq.iter (serdes.Serialize >> Console.WriteLine)
 
                 accI <- accI + int64 pageI; accE <- accE + int64 pageE; accU <- accU + int64 pageU
-                accRus <- accRus + page.RequestCharge; accBytesRead <- accBytesRead + int64 pageSize
+                accRus <- accRus + rc; accBytesRead <- accBytesRead + int64 ods
+                sw.Restart()
         finally
             let fileSize = maybeFileStream |> Option.map _.Position |> Option.defaultValue 0
             maybeFileStream |> Option.iter _.Close() // Before we log so time includes flush time and no confusion
@@ -548,7 +546,7 @@ type Arguments(p: ParseResults<Parameters>) =
         | InitAws a ->  do! DynamoInit.table Log.Logger a
         | InitSql a ->  do! SqlInit.databaseOrSchema Log.Logger a
         | Dump a ->     do! Dump.run (Log.Logger, verboseConsole, maybeSeq) a
-        | Query a ->    do! CosmosQuery.run (QueryArguments a)
+        | Query a ->    do! CosmosQuery.run (QueryArguments a) |> Async.AwaitTaskCorrect
         | Stats a ->    do! CosmosStats.run (Log.Logger, verboseConsole, maybeSeq) a
         | LoadTest a -> let n = p.GetResult(LogFile, fun () -> p.ProgramName + ".log")
                         let reportFilename = System.IO.FileInfo(n).FullName
