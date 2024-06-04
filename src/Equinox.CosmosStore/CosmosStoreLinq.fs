@@ -71,18 +71,17 @@ module Internal =
         /// NOTE: (continuation tokens are the key to more linear costs)
         let offsetLimit (skip: int, take: int) (query: IQueryable<'T>) =
             query.Skip(skip).Take(take)
-        let [<EditorBrowsable(EditorBrowsableState.Never)>] enum_ (iterator: FeedIterator<'T>) = taskSeq {
+        let [<EditorBrowsable(EditorBrowsableState.Never)>] enum__ (iterator: FeedIterator<'T>) = taskSeq {
             while iterator.HasMoreResults do
                 let! response = iterator.ReadNextAsync()
                 let m = response.Diagnostics.GetQueryMetrics().CumulativeMetrics
                 yield struct (response.Diagnostics.GetClientElapsedTime(), response.RequestCharge, response.Resource,
                               int m.RetrievedDocumentCount, int m.RetrievedDocumentSize, int m.OutputDocumentSize) }
-        /// Runs a query that can be hydrated as 'T
-        let enum<'T> (log: ILogger) (container: Container) cat (iterator: FeedIterator<'T>) = taskSeq {
+        let enum_<'T> (log: ILogger) (container: Container) (action: string) cat logLevel (iterator: FeedIterator<'T>) = taskSeq {
             let startTicks = System.Diagnostics.Stopwatch.GetTimestamp()
             use _ = iterator
             let mutable responses, items, totalRtt, totalRu, totalRdc, totalRds, totalOds = 0, 0, TimeSpan.Zero, 0., 0, 0, 0
-            try for rtt, rc, response, rdc, rds, ods in enum_ iterator do
+            try for rtt, rc, response, rdc, rds, ods in enum__ iterator do
                     responses <- responses + 1
                     totalRdc <- totalRdc + rdc
                     totalRds <- totalRds + rds
@@ -94,10 +93,13 @@ module Internal =
                         yield item
             finally
                 let interval = StopwatchInterval(startTicks, System.Diagnostics.Stopwatch.GetTimestamp())
-                let log = let evt = Log.Metric.Index { database = container.Database.Id; container = container.Id; stream = cat + FsCodec.StreamName.Category.SeparatorStr
+                let log = if cat = null then log else
+                          let evt = Log.Metric.Index { database = container.Database.Id; container = container.Id; stream = cat + FsCodec.StreamName.Category.SeparatorStr
                                                        interval = interval; bytes = totalOds; count = items; ru = totalRu } in log |> Log.event evt
-                log.Information("EqxCosmos {action:l} {count} ({trips}r {totalRtt:f0}ms; {rdc}i {rds:f2}>{ods:f2} MiB) {rc:f2} RU {lat:n0} ms",
-                                "Index", items, responses, totalRtt.TotalMilliseconds, totalRdc, miB totalRds, miB totalOds, totalRu, interval.ElapsedMilliseconds) }
+                log.Write(logLevel, "EqxCosmos {action:l} {count} ({trips}r {totalRtt:f0}ms; {rdc}i {rds:f2}>{ods:f2} MiB) {rc:f2} RU {lat:f0} ms",
+                                action, items, responses, totalRtt.TotalMilliseconds, totalRdc, miB totalRds, miB totalOds, totalRu, interval.ElapsedMilliseconds) }
+        /// Runs a query that can be hydrated as 'T
+        let enum log container cat = enum_ log container "Index" cat Events.LogEventLevel.Information
         /// Runs a query that renders 'T, Hydrating the results as 'P (can be the same types but e.g. you might want to map an object to a JsonElement etc)
         let enumAs<'T, 'P> (log: ILogger) (container: Container) cat logLevel (query: IQueryable<'T>): TaskSeq<'P> =
             let queryDefinition = query.ToQueryDefinition()
@@ -115,7 +117,7 @@ module Internal =
             let totalOds, totalRu = m.OutputDocumentSize, rsp.RequestCharge
             let log = let evt = Log.Metric.Index { database = container.Database.Id; container = container.Id; stream = cat + FsCodec.StreamName.Category.SeparatorStr
                                                    interval = interval; bytes = int totalOds; count = -1; ru = totalRu } in log |> Log.event evt
-            log.Information("EqxCosmos {action:l} {cat} {count} ({rdc}i {rds:f2}>{ods:f2} MiB) {rc} RU {lat:n0} ms",
+            log.Information("EqxCosmos {action:l} {cat} {count} ({rdc}i {rds:f2}>{ods:f2} MiB) {rc} RU {lat:f0} ms",
                             op, cat, summary, m.RetrievedDocumentCount, miB m.RetrievedDocumentSize, miB totalOds, totalRu, interval.ElapsedMilliseconds)
             return res }
         /// Runs query.CountAsync, with instrumentation equivalent to what query provides
@@ -129,8 +131,8 @@ module Internal =
         /// Handles a query that's expected to yield 0 or 1 result item
         let tryHeadAsync<'T, 'R> (log: ILogger) (container: Container) cat logLevel (query: IQueryable<'T>) (_ct: CancellationToken): Task<'R option> =
             let queryDefinition = (top1 query).ToQueryDefinition()
-            if log.IsEnabled logLevel then log.Write(logLevel, "CosmosStoreQuery.tryScalar {cat} {query}", queryDefinition.QueryText)
-            container.GetItemQueryIterator<'R> queryDefinition |> Query.enum log container cat |> TaskSeq.tryHead
+            if log.IsEnabled logLevel then log.Write(logLevel, "CosmosStoreQuery.tryScalar {cat} {query}", cat, queryDefinition.QueryText)
+            container.GetItemQueryIterator<'R> queryDefinition |> Query.enum_ log container "Scalar" cat logLevel |> TaskSeq.tryHead
     type Projection<'T, 'M>(query, category, container, enum: IQueryable<'T> -> TaskSeq<'M>, count: IQueryable<'T> -> CancellationToken -> Task<int>) =
         static member Create<'P>(q, cat, c, log, hydrate: 'P -> 'M, logLevel) =
              Projection<'T, 'M>(q, cat, c, Query.enumAs<'T, 'P> log c cat logLevel >> TaskSeq.map hydrate, AggregateOp.countAsync log c cat logLevel)
@@ -248,5 +250,3 @@ type IndexContext<'I>(container, categoryName, caseName, log, [<O; D null>]?quer
         let logLevel = defaultArg logLevel queryLogLevel
         query.Select(Index.projectStreamNameAndSnapshot<'I> selectBody)
         |> Index.createSnAndSnapshotQuery x.Log container categoryName logLevel hydrate
-
-// TODO remove this!
