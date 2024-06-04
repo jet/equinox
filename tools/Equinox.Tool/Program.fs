@@ -306,10 +306,8 @@ module CosmosInit =
 
 module CosmosStats =
 
-    type Microsoft.Azure.Cosmos.Container with // NB DO NOT CONSIDER PROMULGATING THIS HACK
-        member container.QueryValue<'T>(sqlQuery : string) = task {
-            let! (res: Microsoft.Azure.Cosmos.FeedResponse<'T>) = container.GetItemQueryIterator<'T>(sqlQuery).ReadNextAsync()
-            return res |> Seq.exactlyOne }
+    open Equinox.CosmosStore.Linq.Internal
+    open FSharp.Control
     let run (log : ILogger, _verboseConsole, _maybeSeq) (p : ParseResults<StatsParameters>) =
         match p.GetSubCommand() with
         | StatsParameters.Cosmos sp ->
@@ -329,8 +327,9 @@ module CosmosStats =
             let render = if log.IsEnabled LogEventLevel.Debug then snd else fst
             log.Information("Computing {measures} ({mode})", Seq.map render ops, (if inParallel then "in parallel" else "serially"))
             ops |> Seq.map (fun (name, sql) -> async {
-                    log.Debug("Running query: {sql}", sql)
-                    let res = container.QueryValue<int64>(sql) |> Async.AwaitTaskCorrect |> Async.RunSynchronously
+                    let! res = Microsoft.Azure.Cosmos.QueryDefinition sql
+                               |> container.GetItemQueryIterator<int>
+                               |> Query.enum_ log container "Stat" null LogEventLevel.Debug |> TaskSeq.head |> Async.AwaitTaskCorrect
                     match name with
                     | "Oldest" | "Newest" -> log.Information("{stat,-10}: {result,13} ({d:u})", name, res, DateTime.UnixEpoch.AddSeconds(float res))
                     | _ -> log.Information("{stat,-10}: {result,13:N0}", name, res) })
@@ -355,8 +354,8 @@ let prettySerdes = lazy FsCodec.SystemTextJson.Serdes(FsCodec.SystemTextJson.Opt
 
 module CosmosQuery =
 
-    open FSharp.Control
     open Equinox.CosmosStore.Linq.Internal
+    open FSharp.Control
     type System.Text.Json.JsonDocument with
         member x.Cast<'T>() = System.Text.Json.JsonSerializer.Deserialize<'T>(x.RootElement)
         member x.Timestamp =
@@ -402,14 +401,14 @@ module CosmosQuery =
         let container = match storeConfig with Store.Config.Cosmos (cc, _, _) -> cc.Container | _ -> failwith "Query requires Cosmos"
         let pageStreams, accStreams = System.Collections.Generic.HashSet(), System.Collections.Generic.HashSet()
         let mutable accI, accE, accU, accRus, accBytesRead = 0L, 0L, 0L, 0., 0L
-        try for rtt, rc, items, rdc, rds, ods in container.GetItemQueryIterator<System.Text.Json.JsonDocument>(queryDef a, requestOptions = qo) |> Query.enum_ do
+        try for rtt, rc, items, rdc, rds, ods in container.GetItemQueryIterator<System.Text.Json.JsonDocument>(queryDef a, requestOptions = qo) |> Query.enum__ do
                 let newestAge = items |> Seq.choose _.Timestamp |> Seq.tryLast |> Option.map (fun ts -> ts - DateTime.UtcNow)
                 let items = [| for x in items -> x.Cast<Equinox.CosmosStore.Core.Tip>() |]
                 let inline arrayLen x = if isNull x then 0 else Array.length x
                 pageStreams.Clear(); for x in items do if x.p <> null && pageStreams.Add x.p then accStreams.Add x.p |> ignore
                 let pageI, pageE, pageU = items.Length, items |> Seq.sumBy (_.e >> arrayLen), items |> Seq.sumBy (_.u >> arrayLen)
-                Log.Information("Page {rdc}>{count}i {streams}s {es}e {us}u {rc:f2} RU {s:N1}s {rds:f2}>{ods:f2} MiB age {age:dddd\.hh\:mm\:ss}",
-                                rdc, pageI, pageStreams.Count, pageE, pageU, rc, rtt, miB rds, miB ods, Option.toNullable newestAge)
+                Log.Information("Page{rdc,5}>{count,4}i{streams,5}s{es,5}e{us,5}u{rds,5:f2}>{ods,4:f2} MiB{rc,7:f2} RU{s,5:N1} s age {age:dddd\.hh\:mm\:ss}",
+                                rdc, pageI, pageStreams.Count, pageE, pageU, miB rds, miB ods, rc, rtt.TotalSeconds, Option.toNullable newestAge)
                 maybeFileStream |> Option.iter (fun stream ->
                     for x in items do
                         serdes.SerializeToStream(x, stream)
@@ -423,8 +422,8 @@ module CosmosQuery =
             maybeFileStream |> Option.iter _.Close() // Before we log so time includes flush time and no confusion
             let categoryName = FsCodec.StreamName.parse >> FsCodec.StreamName.split >> fun struct (cn, _sid) -> cn
             let accCategories = accStreams |> Seq.map categoryName |> Seq.distinct |> Seq.length
-            Log.Information("TOTALS {cats}c {streams:N0}s {count:N0}i {es:N0}e {us:N0}u {ru:N2}RU R/W {rmib:N1}/{wmib:N1}MiB {s:N1}s",
-                            accCategories, accStreams.Count, accI, accE, accU, accRus, miB accBytesRead, miB fileSize, sw.Elapsed.TotalSeconds) }
+            Log.Information("TOTALS {cats}c {streams:N0}s {count:N0}i {es:N0}e {us:N0}u R/W {rmib:N1}/{wmib:N1}MiB {ru:N2}RU {s:N1}s",
+                            accCategories, accStreams.Count, accI, accE, accU, miB accBytesRead, miB fileSize, accRus, sw.Elapsed.TotalSeconds) }
 
 module DynamoInit =
 
