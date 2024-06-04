@@ -77,7 +77,8 @@ module Internal =
                 let m = response.Diagnostics.GetQueryMetrics().CumulativeMetrics
                 yield struct (response.Diagnostics.GetClientElapsedTime(), response.RequestCharge, response.Resource,
                               int m.RetrievedDocumentCount, int m.RetrievedDocumentSize, int m.OutputDocumentSize) }
-        let [<EditorBrowsable(EditorBrowsableState.Never)>] toAsyncEnum<'T> log (container: Container) cat (iterator: FeedIterator<'T>) = taskSeq {
+        /// Runs a query that can be hydrated as 'T
+        let enum<'T> (log: ILogger) (container: Container) cat (iterator: FeedIterator<'T>) = taskSeq {
             let startTicks = System.Diagnostics.Stopwatch.GetTimestamp()
             use _ = iterator
             let mutable responses, items, totalRtt, totalRu, totalRdc, totalRds, totalOds = 0, 0, TimeSpan.Zero, 0., 0, 0, 0
@@ -97,14 +98,11 @@ module Internal =
                                                        interval = interval; bytes = totalOds; count = items; ru = totalRu } in log |> Log.event evt
                 log.Information("EqxCosmos {action:l} {count} ({trips}r {totalRtt:f0}ms; {rdc}i {rds:f2}>{ods:f2} MiB) {rc:f2} RU {lat:n0} ms",
                                 "Index", items, responses, totalRtt.TotalMilliseconds, totalRdc, miB totalRds, miB totalOds, totalRu, interval.ElapsedMilliseconds) }
-        /// Runs a query that can by hydrated as 'T
-        let enum<'T> (log: ILogger) (container: Container) cat (queryDefinition: QueryDefinition): TaskSeq<'T> =
-            container.GetItemQueryIterator<'T>(queryDefinition) |> toAsyncEnum<'T> log container cat
         /// Runs a query that renders 'T, Hydrating the results as 'P (can be the same types but e.g. you might want to map an object to a JsonElement etc)
         let enumAs<'T, 'P> (log: ILogger) (container: Container) cat logLevel (query: IQueryable<'T>): TaskSeq<'P> =
             let queryDefinition = query.ToQueryDefinition()
             if log.IsEnabled logLevel then log.Write(logLevel, "CosmosStoreQuery.query {cat} {query}", cat, queryDefinition.QueryText)
-            enum<'P> log container cat queryDefinition
+            container.GetItemQueryIterator<'P> queryDefinition |> enum log container cat
     module AggregateOp =
         /// Runs one of the typical Cosmos SDK extensions, e.g. CountAsync, logging the costs
         let [<EditorBrowsable(EditorBrowsableState.Never)>] exec (log: ILogger) (container: Container) (op: string) (cat: string) (query: IQueryable<'T>) run render: System.Threading.Tasks.Task<'R> = task {
@@ -132,7 +130,7 @@ module Internal =
         let tryHeadAsync<'T, 'R> (log: ILogger) (container: Container) cat logLevel (query: IQueryable<'T>) (_ct: CancellationToken): Task<'R option> =
             let queryDefinition = (top1 query).ToQueryDefinition()
             if log.IsEnabled logLevel then log.Write(logLevel, "CosmosStoreQuery.tryScalar {cat} {query}", queryDefinition.QueryText)
-            container.GetItemQueryIterator<'R>(queryDefinition) |> Query.toAsyncEnum log container cat |> TaskSeq.tryHead
+            container.GetItemQueryIterator<'R> queryDefinition |> Query.enum log container cat |> TaskSeq.tryHead
     type Projection<'T, 'M>(query, category, container, enum: IQueryable<'T> -> TaskSeq<'M>, count: IQueryable<'T> -> CancellationToken -> Task<int>) =
         static member Create<'P>(q, cat, c, log, hydrate: 'P -> 'M, logLevel) =
              Projection<'T, 'M>(q, cat, c, Query.enumAs<'T, 'P> log c cat logLevel >> TaskSeq.map hydrate, AggregateOp.countAsync log c cat logLevel)
@@ -143,26 +141,30 @@ module Internal =
         [<EditorBrowsable(EditorBrowsableState.Never)>] member val Category: string = category
         [<EditorBrowsable(EditorBrowsableState.Never)>] member val Container: Container = container
 
-// We want to generate a projection statement of the shape: VALUE {"sn": root["p"], "snap": root["u"][0].["d"]}
+// We want to generate a projection statement of the shape: VALUE {"sn": root["p"], "d": root["u"][0].["d"], "D": root["u"][0].["D"]}
 // However the Cosmos SDK does not support F# (or C#) records yet https://github.com/Azure/azure-cosmos-dotnet-v3/issues/3728
 // F#'s LINQ support cannot translate parameterless constructor invocations in a Lambda well;
 //  the best native workaround without Expression Manipulation is/was https://stackoverflow.com/a/78206722/11635
-// In C#, you can generate an Expression that works with the Cosmos SDK via `.Select(x => new { sn = x.p, snap = x.u[0].d })`
+// In C#, you can generate an Expression that works with the Cosmos SDK via `.Select(x => new { sn = x.p, d = x.u[0].d, D = x.u[0].D })`
 // This hack is based on https://stackoverflow.com/a/73506241/11635
-type SnAndSnap<'I>() =
+type SnAndSnap() =
     member val sn: FsCodec.StreamName = Unchecked.defaultof<_> with get, set
-    [<System.Text.Json.Serialization.JsonConverter(typeof<JsonCompressedBase64Converter>)>]
-    member val snap: 'I = Unchecked.defaultof<_> with get, set
-    static member CreateItemQueryLambda<'T>(snExpression: Expression -> MemberExpression, snapExpression: Expression<Func<'T, 'I>>) =
+    member val d: System.Text.Json.JsonElement = Unchecked.defaultof<_> with get, set
+    member val D: int = Unchecked.defaultof<_> with get, set
+    static member CreateItemQueryLambda<'T, 'U>(
+            snExpression: Expression -> MemberExpression,
+            uExpression: Expression<Func<'T, 'U>>) =
         let param = Expression.Parameter(typeof<'T>, "x")
-        let targetType = typeof<SnAndSnap<'I>>
-        let snMember = targetType.GetMember(nameof Unchecked.defaultof<SnAndSnap<'I>>.sn)[0]
-        let snapMember = targetType.GetMember(nameof Unchecked.defaultof<SnAndSnap<'I>>.snap)[0]
-        Expression.Lambda<Func<'T, SnAndSnap<'I>>>(
+        let targetType = typeof<SnAndSnap>
+        let snMember = targetType.GetMember(nameof Unchecked.defaultof<SnAndSnap>.sn)[0]
+        let dMember = targetType.GetMember(nameof Unchecked.defaultof<SnAndSnap>.d)[0]
+        let formatMember = targetType.GetMember(nameof Unchecked.defaultof<SnAndSnap>.D)[0]
+        Expression.Lambda<Func<'T, SnAndSnap>>(
             Expression.MemberInit(
                 Expression.New(targetType.GetConstructor [||]),
                 [|  Expression.Bind(snMember, snExpression param) :> MemberBinding
-                    Expression.Bind(snapMember, snapExpression.Body.Replace(snapExpression.Parameters[0], param)) |]),
+                    Expression.Bind(dMember, uExpression.Body.Replace(uExpression.Parameters[0], param))
+                    Expression.Bind(formatMember, uExpression.Body.Replace(uExpression.Parameters[0], param)) |]),
             [| param |])
 
 /// Represents a query projecting information values from an Index and/or Snapshots with a view to rendering the items and/or a count
@@ -177,39 +179,41 @@ type Query<'T, 'M>(inner: Internal.Projection<'T, 'M>) =
 module Index =
 
     [<NoComparison; NoEquality>]
-    type Item<'I> =
+    type Item =
         {   p: string
             _etag: string
-            u: Unfold<'I> ResizeArray }
-    and [<NoComparison; NoEquality>] Unfold<'I> =
+            u: Unfold ResizeArray }
+    and [<NoComparison; NoEquality>] Unfold =
         {   c: string
-            d: 'I }
+            d: System.Text.Json.JsonElement
+            D: int }
 
     let inline prefix categoryName = $"%s{categoryName}-"
     /// The cheapest search basis; the categoryName is a prefix of the `p` partition field
     /// Depending on how much more selective the caseName is, `byCaseName` may be a better choice
     /// (but e.g. if the ration is 1:1 then no point having additional criteria)
-    let byCategoryNameOnly<'I> (container: Microsoft.Azure.Cosmos.Container) categoryName: IQueryable<Item<'I>> =
+    let byCategoryNameOnly<'I> (container: Microsoft.Azure.Cosmos.Container) categoryName: IQueryable<Item> =
         let prefix = prefix categoryName
-        container.GetItemLinqQueryable<Item<'I>>().Where(fun d -> d.p.StartsWith(prefix))
+        container.GetItemLinqQueryable<Item>().Where(fun d -> d.p.StartsWith(prefix))
     // Searches based on the prefix of the `p` field, but also checking the `c` of the relevant unfold is correct
     // A good idea if that'll be significantly cheaper due to better selectivity
-    let byCaseName<'I> (container: Microsoft.Azure.Cosmos.Container) categoryName caseName: IQueryable<Item<'I>> =
+    let byCaseName<'I> (container: Microsoft.Azure.Cosmos.Container) categoryName caseName: IQueryable<Item> =
         let prefix = prefix categoryName
-        container.GetItemLinqQueryable<Item<'I>>().Where(fun d -> d.p.StartsWith(prefix) && d.u[0].c = caseName)
+        container.GetItemLinqQueryable<Item>().Where(fun d -> d.p.StartsWith(prefix) && d.u[0].c = caseName)
 
     /// Returns the StreamName (from the `p` field) for a 0/1 item query; only the TOP 1 item is returned
-    let tryGetStreamNameAsync log cat logLevel container (query: IQueryable<Item<'I>>) ct =
+    let tryGetStreamNameAsync log cat logLevel container (query: IQueryable<Item>) ct =
         Internal.Scalar.tryHeadAsync<string, FsCodec.StreamName> log cat logLevel container (query.Select(fun x -> x.p)) ct
 
-    /// Query the items, returning the Stream name and the Snapshot as a JsonElement (Decompressed if applicable)
-    let projectStreamNameAndSnapshot<'I> snapExpression: Expression<Func<Item<'I>, SnAndSnap<'I>>> =
-        // a very ugly workaround for not being able to write query.Select<Item<'I>,Internal.SnAndSnap<'I>>(fun x -> { p = x.p; snap = x.u[0].d })
-        let pExpression item = Expression.PropertyOrField(item, nameof Unchecked.defaultof<Item<'I>>.p)
-        SnAndSnap.CreateItemQueryLambda(pExpression, snapExpression)
+    // /// Query the items, returning the Stream name and the Snapshot as a JsonElement (Decompressed if applicable)
+    // let projectStreamNameAndSnapshot<'I> uExpression: Expression<Func<Item, SnAndSnap>> =
+    //     // a very ugly workaround for not being able to write query.Select<Item,Internal.SnAndSnap>(fun x -> { p = x.p; d = x.u[0].d; D = x.u[0].D })
+    //     let pExpression item = Expression.PropertyOrField(item, nameof Unchecked.defaultof<Item>.p)
+    //     let uItem name item = Expression.PropertyOrField(uExpression, name)
+    //     SnAndSnap.CreateItemQueryLambda(pExpression, uExpression, uItem (nameof Unchecked.defaultof<Unfold>.d), uItem (nameof Unchecked.defaultof<Unfold>.D))
 
-    let createSnAndSnapshotQuery<'I, 'M> log container cat logLevel (hydrate: SnAndSnap<System.Text.Json.JsonElement> -> 'M) (query: IQueryable<SnAndSnap<'I>>) =
-        Internal.Projection.Create(query, cat, container, log, hydrate, logLevel) |> Query<SnAndSnap<'I>, 'M>
+    let createSnAndSnapshotQuery<'M> log container cat logLevel (hydrate: SnAndSnap -> 'M) (query: IQueryable<SnAndSnap>) =
+        Internal.Projection.Create(query, cat, container, log, hydrate, logLevel) |> Query<SnAndSnap, 'M>
 
 /// Enables querying based on uncompressed Indexed values stored as secondary unfolds alongside the snapshot
 [<NoComparison; NoEquality>]
@@ -227,28 +231,26 @@ type IndexContext<'I>(container, categoryName, caseName, log, [<O; D null>]?quer
 
     /// Fetches a base Queryable that's filtered based on the `categoryName` and `caseName`
     /// NOTE this is relatively expensive to compute a Count on, compared to `CategoryQueryable`
-    member _.ByCaseName(): IQueryable<Index.Item<'I>> =
+    member _.ByCaseName(): IQueryable<Index.Item> =
         Index.byCaseName<'I> container categoryName caseName
 
     /// Fetches a base Queryable that's filtered only on the `categoryName`
-    member _.ByCategory(): IQueryable<Index.Item<'I>> =
-        Index.byCategoryNameOnly<'I> container categoryName
+    member _.ByCategory(): IQueryable<Index.Item> =
+        Index.byCategoryNameOnly container categoryName
 
     /// Runs the query; yields the StreamName from the TOP 1 Item matching the criteria
-    member x.TryGetStreamNameWhereAsync(criteria: Expressions.Expression<Func<Index.Item<'I>, bool>>, ct, [<O; D null>] ?logLevel) =
+    member x.TryGetStreamNameWhereAsync(criteria: Expressions.Expression<Func<Index.Item, bool>>, ct, [<O; D null>] ?logLevel) =
         let logLevel = defaultArg logLevel queryLogLevel
         Index.tryGetStreamNameAsync x.Log container categoryName logLevel (x.ByCategory().Where criteria) ct
 
     /// Runs the query; yields the StreamName from the TOP 1 Item matching the criteria
-    member x.TryGetStreamNameWhere(criteria: Expressions.Expression<Func<Index.Item<'I>, bool>>): Async<FsCodec.StreamName option> =
+    member x.TryGetStreamNameWhere(criteria: Expressions.Expression<Func<Index.Item, bool>>): Async<FsCodec.StreamName option> =
         (fun ct -> x.TryGetStreamNameWhereAsync(criteria, ct)) |> Async.call
 
-    /// Query the items, grabbing the Stream name and the Snapshot; The StreamName and the (Decompressed if applicable) Snapshot are passed to `hydrate`
-    member x.QueryStreamNameAndSnapshot(query: IQueryable<Index.Item<'I>>, selectBody: Expression<Func<Index.Item<'I>, 'I>>,
-                                        hydrate: SnAndSnap<System.Text.Json.JsonElement> -> 'M,
-                                        [<O; D null>] ?logLevel): Query<SnAndSnap<'I>, 'M> =
-        let logLevel = defaultArg logLevel queryLogLevel
-        query.Select(Index.projectStreamNameAndSnapshot<'I> selectBody)
-        |> Index.createSnAndSnapshotQuery x.Log container categoryName logLevel hydrate
-
-// TODO remove this!
+    // /// Query the items, grabbing the Stream name and the Snapshot; The StreamName and the (Decompressed if applicable) Snapshot are passed to `hydrate`
+    // member x.QueryStreamNameAndSnapshot(query: IQueryable<Index.Item>, selectBody: Expression<Func<Index.Item, Index.Unfold>>,
+    //                                     hydrate: SnAndSnap -> 'M,
+    //                                     [<O; D null>] ?logLevel): Query<SnAndSnap, 'M> =
+    //     let logLevel = defaultArg logLevel queryLogLevel
+    //     query.Select(Index.projectStreamNameAndSnapshot selectBody)
+    //     |> Index.createSnAndSnapshotQuery x.Log container categoryName logLevel hydrate
