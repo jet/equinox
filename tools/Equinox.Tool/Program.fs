@@ -356,6 +356,7 @@ let prettySerdes = lazy FsCodec.SystemTextJson.Serdes(FsCodec.SystemTextJson.Opt
 module CosmosQuery =
 
     open FSharp.Control
+    open Equinox.CosmosStore.Linq.Internal
     let inline miB x = Equinox.CosmosStore.Linq.Internal.miB x
     type System.Text.Json.JsonElement with
         member x.Utf8ByteCount = if x.ValueKind = System.Text.Json.JsonValueKind.Null then 0 else x.GetRawText() |> System.Text.Encoding.UTF8.GetByteCount
@@ -390,23 +391,21 @@ module CosmosQuery =
             | [| x |] -> x |> exists
             | xs -> String.Join(" AND ", xs) |> exists
         $"SELECT {selectedFields} FROM c WHERE {partitionKeyCriteria} AND {unfoldFilter} ORDER BY c.i"
+    let private queryDef (a: QueryArguments) =
+        let sql = composeSql a
+        Log.Information("Querying {mode}: {q}", a.Mode, sql)
+        Microsoft.Azure.Cosmos.QueryDefinition sql
     let run (a: QueryArguments) = task {
-        let sw, sw2 = System.Diagnostics.Stopwatch(), System.Diagnostics.Stopwatch.StartNew()
+        let sw = System.Diagnostics.Stopwatch.StartNew()
         let serdes = if a.Pretty then prettySerdes.Value else FsCodec.SystemTextJson.Serdes.Default
         let maybeFileStream = a.Filepath |> Option.map (fun p ->
             Log.Information("Dumping {mode} content to {path}", a.Mode, System.IO.FileInfo(p).FullName)
             System.IO.File.Create p) // Silently truncate if it exists, makes sense for typical usage
-
+        let storeConfig, qo = a.ConfigureStore(Log.Logger), Microsoft.Azure.Cosmos.QueryRequestOptions(MaxItemCount = a.CosmosArgs.QueryMaxItems)
+        let container = match storeConfig with Store.Config.Cosmos (cc, _, _) -> cc.Container | _ -> failwith "Query requires Cosmos"
         let pageStreams, accStreams = System.Collections.Generic.HashSet(), System.Collections.Generic.HashSet()
         let mutable accI, accE, accU, accRus, accBytesRead = 0L, 0L, 0L, 0., 0L
-
-        let storeConfig, queryOpts = a.ConfigureStore(Log.Logger), Microsoft.Azure.Cosmos.QueryRequestOptions(MaxItemCount = a.CosmosArgs.QueryMaxItems)
-        let container = match storeConfig with Store.Config.Cosmos (cc, _, _) -> cc.Container | _ -> failwith "Query requires Cosmos"
-        let sql = composeSql a
-        Log.Information("Querying {mode}: {q}", a.Mode, sql)
-        let qd = Microsoft.Azure.Cosmos.QueryDefinition sql
-        let qi = container.GetItemQueryIterator<System.Text.Json.JsonDocument>(qd, requestOptions = queryOpts)
-        try for rtt, rc, items, rdc, rds, ods in Equinox.CosmosStore.Linq.Internal.Query.enum_ qi do
+        try for rtt, rc, items, rdc, rds, ods in container.GetItemQueryIterator<System.Text.Json.JsonDocument>(queryDef a, requestOptions = qo) |> Query.enum_ do
                 let newestAge = items |> Seq.choose _.Timestamp |> Seq.tryLast |> Option.map (fun ts -> ts - DateTime.UtcNow)
                 let items = [| for x in items -> x.Cast<Equinox.CosmosStore.Core.Tip>() |]
                 let inline arrayLen x = if isNull x then 0 else Array.length x
@@ -414,24 +413,21 @@ module CosmosQuery =
                 let pageI, pageE, pageU = items.Length, items |> Seq.sumBy (_.e >> arrayLen), items |> Seq.sumBy (_.u >> arrayLen)
                 Log.Information("Page {rdc}>{count}i {streams}s {es}e {us}u {rc:f2} RU {s:N1}s {rds:f2}>{ods:f2} MiB age {age:dddd\.hh\:mm\:ss}",
                                 rdc, pageI, pageStreams.Count, pageE, pageU, rc, rtt, miB rds, miB ods, Option.toNullable newestAge)
-
                 maybeFileStream |> Option.iter (fun stream ->
                     for x in items do
                         serdes.SerializeToStream(x, stream)
                         stream.WriteByte(byte '\n'))
                 if a.TeeConsole then
                     items |> Seq.iter (serdes.Serialize >> Console.WriteLine)
-
                 accI <- accI + int64 pageI; accE <- accE + int64 pageE; accU <- accU + int64 pageU
                 accRus <- accRus + rc; accBytesRead <- accBytesRead + int64 ods
-                sw.Restart()
         finally
             let fileSize = maybeFileStream |> Option.map _.Position |> Option.defaultValue 0
             maybeFileStream |> Option.iter _.Close() // Before we log so time includes flush time and no confusion
             let categoryName = FsCodec.StreamName.parse >> FsCodec.StreamName.split >> fun struct (cn, _sid) -> cn
             let accCategories = accStreams |> Seq.map categoryName |> Seq.distinct |> Seq.length
             Log.Information("TOTALS {cats}c {streams:N0}s {count:N0}i {es:N0}e {us:N0}u {ru:N2}RU R/W {rmib:N1}/{wmib:N1}MiB {s:N1}s",
-                            accCategories, accStreams.Count, accI, accE, accU, accRus, miB accBytesRead, miB fileSize, sw2.Elapsed.TotalSeconds) }
+                            accCategories, accStreams.Count, accI, accE, accU, accRus, miB accBytesRead, miB fileSize, sw.Elapsed.TotalSeconds) }
 
 module DynamoInit =
 
