@@ -77,7 +77,8 @@ module Internal =
                 let m = response.Diagnostics.GetQueryMetrics().CumulativeMetrics
                 yield struct (response.Diagnostics.GetClientElapsedTime(), response.RequestCharge, response.Resource,
                               int m.RetrievedDocumentCount, int m.RetrievedDocumentSize, int m.OutputDocumentSize) }
-        let [<EditorBrowsable(EditorBrowsableState.Never)>] toAsyncEnum<'T> log (container: Container) cat (iterator: FeedIterator<'T>) = taskSeq {
+        /// Runs a query that can be hydrated as 'T
+        let enum<'T> (log: ILogger) (container: Container) cat (iterator: FeedIterator<'T>) = taskSeq {
             let startTicks = System.Diagnostics.Stopwatch.GetTimestamp()
             use _ = iterator
             let mutable responses, items, totalRtt, totalRu, totalRdc, totalRds, totalOds = 0, 0, TimeSpan.Zero, 0., 0, 0, 0
@@ -97,14 +98,11 @@ module Internal =
                                                        interval = interval; bytes = totalOds; count = items; ru = totalRu } in log |> Log.event evt
                 log.Information("EqxCosmos {action:l} {count} ({trips}r {totalRtt:f0}ms; {rdc}i {rds:f2}>{ods:f2} MiB) {rc:f2} RU {lat:n0} ms",
                                 "Index", items, responses, totalRtt.TotalMilliseconds, totalRdc, miB totalRds, miB totalOds, totalRu, interval.ElapsedMilliseconds) }
-        /// Runs a query that can by hydrated as 'T
-        let enum<'T> (log: ILogger) (container: Container) cat (queryDefinition: QueryDefinition): TaskSeq<'T> =
-            container.GetItemQueryIterator<'T>(queryDefinition) |> toAsyncEnum<'T> log container cat
         /// Runs a query that renders 'T, Hydrating the results as 'P (can be the same types but e.g. you might want to map an object to a JsonElement etc)
         let enumAs<'T, 'P> (log: ILogger) (container: Container) cat logLevel (query: IQueryable<'T>): TaskSeq<'P> =
             let queryDefinition = query.ToQueryDefinition()
             if log.IsEnabled logLevel then log.Write(logLevel, "CosmosStoreQuery.query {cat} {query}", cat, queryDefinition.QueryText)
-            enum<'P> log container cat queryDefinition
+            container.GetItemQueryIterator<'P> queryDefinition |> enum log container cat
     module AggregateOp =
         /// Runs one of the typical Cosmos SDK extensions, e.g. CountAsync, logging the costs
         let [<EditorBrowsable(EditorBrowsableState.Never)>] exec (log: ILogger) (container: Container) (op: string) (cat: string) (query: IQueryable<'T>) run render: System.Threading.Tasks.Task<'R> = task {
@@ -132,7 +130,7 @@ module Internal =
         let tryHeadAsync<'T, 'R> (log: ILogger) (container: Container) cat logLevel (query: IQueryable<'T>) (_ct: CancellationToken): Task<'R option> =
             let queryDefinition = (top1 query).ToQueryDefinition()
             if log.IsEnabled logLevel then log.Write(logLevel, "CosmosStoreQuery.tryScalar {cat} {query}", queryDefinition.QueryText)
-            container.GetItemQueryIterator<'R>(queryDefinition) |> Query.toAsyncEnum log container cat |> TaskSeq.tryHead
+            container.GetItemQueryIterator<'R> queryDefinition |> Query.enum log container cat |> TaskSeq.tryHead
     type Projection<'T, 'M>(query, category, container, enum: IQueryable<'T> -> TaskSeq<'M>, count: IQueryable<'T> -> CancellationToken -> Task<int>) =
         static member Create<'P>(q, cat, c, log, hydrate: 'P -> 'M, logLevel) =
              Projection<'T, 'M>(q, cat, c, Query.enumAs<'T, 'P> log c cat logLevel >> TaskSeq.map hydrate, AggregateOp.countAsync log c cat logLevel)
