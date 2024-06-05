@@ -30,6 +30,7 @@ type Parameters =
     | [<CliPrefix(CliPrefix.None); Last>]   InitSql of ParseResults<InitSqlParameters>
     | [<CliPrefix(CliPrefix.None); Last>]   Stats of ParseResults<StatsParameters>
     | [<CliPrefix(CliPrefix.None); Last>]   Query of ParseResults<QueryParameters>
+    | [<CliPrefix(CliPrefix.None); Last>]   Top of ParseResults<TopParameters>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Quiet ->                      "Omit timestamps from log output"
@@ -44,6 +45,7 @@ type Parameters =
             | InitSql _ ->                  "Initialize Database Schema (supports `mssql`/`mysql`/`postgres` SqlStreamStore stores)."
             | Stats _ ->                    "inspect store to determine numbers of streams/documents/events and/or config (supports `cosmos` and `dynamo` stores)."
             | Query _ ->                    "Load/Summarise streams based on Cosmos SQL Queries (supports `cosmos` only)."
+            | Top _ ->                      "Scan to determine top categories and streams (supports `cosmos` only)."
 and [<NoComparison; NoEquality; RequireSubcommand>] InitParameters =
     | [<AltCommandLine "-ru"; Unique>]      Rus of int
     | [<AltCommandLine "-A"; Unique>]       Autoscale
@@ -168,9 +170,42 @@ and QueryArguments(p: ParseResults<QueryParameters>) =
     member x.Connect() =                    match Store.Cosmos.config Log.Logger (None, true) x.CosmosArgs with
                                             | Store.Config.Cosmos (cc, _, _) -> cc.Container
                                             | _ -> p.Raise "Query requires Cosmos"
-    member x.ConfigureStore(log: ILogger) =
-        let storeConfig = None, true
-        Store.Cosmos.config log storeConfig x.CosmosArgs
+and [<NoComparison; NoEquality; RequireSubcommand>] TopParameters =
+    | [<AltCommandLine "-sn"; Unique>]      StreamName of string
+    | [<AltCommandLine "-cn"; Unique>]      CategoryName of string
+    | [<AltCommandLine "-cl"; Unique>]      CategoryLike of string
+    | [<AltCommandLine "-S"; Unique>]       Streams
+    | [<MainCommand>]                       Limit of int
+    | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Store.Cosmos.Parameters>
+    interface IArgParserTemplate with
+        member a.Usage = a |> function
+            | StreamName _ ->               "Specify stream name to match against `p`, e.g. `$UserServices-f7c1ce63389a45bdbea1cccebb1b3c8a`."
+            | CategoryName _ ->             "Specify category name to match against `p`, e.g. `$UserServices`."
+            | CategoryLike _ ->             "Specify category name to match against `p` as a Cosmos LIKE expression (with `%` as wildcard, e.g. `$UserServices-%`."
+            | Streams ->                    "Stream level stats"
+            | Limit _ ->                    "Number of items to limit output to"
+            | Cosmos _ ->                   "Parameters for CosmosDB."
+and TopArguments(p: ParseResults<TopParameters>) =
+    member val Criteria =
+        match p.TryGetResult StreamName, p.TryGetResult CategoryName, p.TryGetResult CategoryLike with
+        | Some sn, None, None ->            Criteria.SingleStream sn
+        | Some _, Some _, _
+        | Some _, _, Some _ ->              p.Raise "StreamName and CategoryLike/CategoryName mutually exclusive"
+        | None, Some cn, None ->            Criteria.CatName cn
+        | None, None, Some cl ->            Criteria.CatLike cl
+        | None, None, None ->               Criteria.Unfiltered
+        | None, Some _, Some _ ->           p.Raise "CategoryLike and CategoryName are mutually exclusive"
+    member val CosmosArgs =                 p.GetResult TopParameters.Cosmos |> Store.Cosmos.Arguments
+    member val StreamLevel =                p.Contains TopParameters.Streams
+    member val Count =                      p.GetResult(TopParameters.Limit, 100)
+    member x.Connect() =                    match Store.Cosmos.config Log.Logger (None, true) x.CosmosArgs with
+                                            | Store.Config.Cosmos (cc, _, _) -> cc.Container
+                                            | _ -> failwith "Top requires Cosmos"
+    member x.Execute(sql) =                 let container = x.Connect()
+                                            let qd = Microsoft.Azure.Cosmos.QueryDefinition sql
+                                            let qo = Microsoft.Azure.Cosmos.QueryRequestOptions(MaxItemCount = x.CosmosArgs.QueryMaxItems)
+                                            container.GetItemQueryIterator<System.Text.Json.JsonElement>(qd, requestOptions = qo)
+
 and [<NoComparison; NoEquality; RequireSubcommand>] DumpParameters =
     | [<AltCommandLine "-s"; MainCommand>]  Stream of FsCodec.StreamName
     | [<AltCommandLine "-C"; Unique>]       Correlation
@@ -397,18 +432,20 @@ module CosmosQuery =
         let maybeFileStream = a.Filepath |> Option.map (fun p ->
             Log.Information("Dumping {mode} content to {path}", a.Mode, System.IO.FileInfo(p).FullName)
             System.IO.File.Create p) // Silently truncate if it exists, makes sense for typical usage
-        let storeConfig, qo = a.ConfigureStore(Log.Logger), Microsoft.Azure.Cosmos.QueryRequestOptions(MaxItemCount = a.CosmosArgs.QueryMaxItems)
-        let container = match storeConfig with Store.Config.Cosmos (cc, _, _) -> cc.Container | _ -> failwith "Query requires Cosmos"
+        let qo = Microsoft.Azure.Cosmos.QueryRequestOptions(MaxItemCount = a.CosmosArgs.QueryMaxItems)
+        let container = a.Connect()
         let pageStreams, accStreams = System.Collections.Generic.HashSet(), System.Collections.Generic.HashSet()
         let mutable accI, accE, accU, accRus, accBytesRead = 0L, 0L, 0L, 0., 0L
-        try for rtt, rc, items, rdc, rds, ods in container.GetItemQueryIterator<System.Text.Json.JsonDocument>(queryDef a, requestOptions = qo) |> Query.enum__ do
-                let newestAge = items |> Seq.choose _.Timestamp |> Seq.tryLast |> Option.map (fun ts -> ts - DateTime.UtcNow)
-                let items = [| for x in items -> x.Cast<Equinox.CosmosStore.Core.Tip>() |]
+        let it = container.GetItemQueryIterator<System.Text.Json.JsonDocument>(queryDef a, requestOptions = qo)
+        try for rtt, rc, items, rdc, rds, ods in it |> Query.enum__ do
+                let mutable newestTs = None
+                let items = [| for x in items -> newestTs <- max newestTs x.Timestamp
+                                                 x.Cast<Equinox.CosmosStore.Core.Tip>() |]
                 let inline arrayLen x = if isNull x then 0 else Array.length x
                 pageStreams.Clear(); for x in items do if x.p <> null && pageStreams.Add x.p then accStreams.Add x.p |> ignore
                 let pageI, pageE, pageU = items.Length, items |> Seq.sumBy (_.e >> arrayLen), items |> Seq.sumBy (_.u >> arrayLen)
-                Log.Information("Page{rdc,5}>{count,4}i{streams,5}s{es,5}e{us,5}u{rds,5:f2}>{ods,4:f2} MiB{rc,7:f2} RU{s,5:N1} s age {age:dddd\.hh\:mm\:ss}",
-                                rdc, pageI, pageStreams.Count, pageE, pageU, miB rds, miB ods, rc, rtt.TotalSeconds, Option.toNullable newestAge)
+                Log.Information("Page{rdc,5}>{count,4}i{streams,5}s{es,5}e{us,5}u{rds,5:f2}>{ods,4:f2}MiB{rc,7:f2}RU{s,5:N1}s age {age:dddd\.hh\:mm\:ss}",
+                                rdc, pageI, pageStreams.Count, pageE, pageU, miB rds, miB ods, rc, rtt.TotalSeconds, newestTs.Value - DateTime.UtcNow)
                 maybeFileStream |> Option.iter (fun stream ->
                     for x in items do
                         serdes.SerializeToStream(x, stream)
@@ -421,9 +458,86 @@ module CosmosQuery =
             let fileSize = maybeFileStream |> Option.map _.Position |> Option.defaultValue 0
             maybeFileStream |> Option.iter _.Close() // Before we log so time includes flush time and no confusion
             let categoryName = FsCodec.StreamName.parse >> FsCodec.StreamName.split >> fun struct (cn, _sid) -> cn
-            let accCategories = accStreams |> Seq.map categoryName |> Seq.distinct |> Seq.length
-            Log.Information("TOTALS {cats}c {streams:N0}s {count:N0}i {es:N0}e {us:N0}u R/W {rmib:N1}/{wmib:N1}MiB {ru:N2}RU {s:N1}s",
-                            accCategories, accStreams.Count, accI, accE, accU, miB accBytesRead, miB fileSize, accRus, sw.Elapsed.TotalSeconds) }
+            let accCategories = System.Collections.Generic.HashSet(accStreams |> Seq.map categoryName).Count
+            Log.Information("TOTALS {count:N0}i {cats}c {streams:N0}s {es:N0}e {us:N0}u R/W {rmib:N1}/{wmib:N1}MiB {ru:N2}RU {s:N1}s",
+                            accI, accCategories, accStreams.Count, accE, accU, miB accBytesRead, miB fileSize, accRus, sw.Elapsed.TotalSeconds) }
+
+module CosmosTop =
+
+    open Equinox.CosmosStore.Linq.Internal
+    open FSharp.Control
+
+    let cosmosTimeStamp (x: System.Text.Json.JsonElement) = x.GetProperty("_ts").GetDouble() |> DateTime.UnixEpoch.AddSeconds
+    let tryParseEquinoxBatch (x: System.Text.Json.JsonElement) =
+        let tryProp (id: string): ValueOption<System.Text.Json.JsonElement> =
+            let mutable p = Unchecked.defaultof<_>
+            if x.TryGetProperty(id, &p) then ValueSome p else ValueNone
+        match tryProp "p" with
+        | ValueSome (je: System.Text.Json.JsonElement) when je.ValueKind = System.Text.Json.JsonValueKind.String ->
+            ValueSome struct (je.GetString() |> FsCodec.StreamName.parse, tryProp "e", tryProp "u")
+        | _ -> ValueNone
+
+    let private composeSql (a: TopArguments) =
+        let partitionKeyCriteria =
+            match a.Criteria with
+            | Criteria.SingleStream sn ->   $"c.p = \"{sn}\""
+            | Criteria.CatName n ->         $"c.p LIKE \"{n}-%%\""
+            | Criteria.CatLike pat ->       $"c.p LIKE \"{pat}\""
+            | Criteria.Unfiltered ->        "1=1"
+        $"SELECT * FROM c WHERE {partitionKeyCriteria}"
+    let arrayLen = function ValueNone -> 0 | ValueSome (x: System.Text.Json.JsonElement) -> x.GetArrayLength()
+    let scratch = new System.IO.MemoryStream()
+    let utf8Size (x: System.Text.Json.JsonElement) =
+        scratch.Position <- 0L
+        System.Text.Json.JsonSerializer.Serialize(scratch, x)
+        scratch.Position
+    [<Struct; CustomEquality; NoComparison>]
+    type Stat =
+        { key: string; count: int; events: int; unfolds: int; bytes: int64; eBytes: int64; uBytes: int64 }
+        static member Create(key, d: System.Text.Json.JsonElement, e: System.Text.Json.JsonElement voption, u: System.Text.Json.JsonElement voption) =
+            let eb = match e with ValueSome x -> utf8Size x | ValueNone -> 0
+            let ub = match u with ValueSome x -> utf8Size x | ValueNone -> 0
+            {   key = key; count = 1; events = arrayLen e; unfolds = arrayLen u
+                bytes = utf8Size d; eBytes = eb; uBytes = ub }
+        member x.Merge y =
+            {   key = x.key; count = x.count + y.count; events = x.events + y.events; unfolds = x.unfolds + y.unfolds
+                bytes = x.bytes + y.bytes; eBytes = x.eBytes + y.eBytes; uBytes = x.uBytes + y.uBytes }
+        override x.GetHashCode() = StringComparer.Ordinal.GetHashCode x.key
+        override x.Equals y = match y with :? Stat as y -> StringComparer.Ordinal.Equals(x.key, y.key) | _ -> false
+    let run (a: TopArguments) = task {
+        let sw = System.Diagnostics.Stopwatch.StartNew()
+        let pageStreams, accStreams = System.Collections.Generic.HashSet(), System.Collections.Generic.HashSet()
+        let mutable accI, accE, accU, accRus, accRds, accOds, accBytes = 0L, 0L, 0L, 0., 0L, 0L, 0L
+        let s = System.Collections.Generic.HashSet()
+        let categoryName = FsCodec.StreamName.split >> fun struct (cn, _sid) -> cn
+        let g = if a.StreamLevel then FsCodec.StreamName.toString else categoryName
+        try for rtt, rc, items, rdc, rds, ods in a.Execute(composeSql a) |> Query.enum__ do
+                let mutable pageI, pageE, pageU, pageB, newestTs = 0, 0, 0, 0L, DateTime.MinValue
+                for x in items do
+                    newestTs <- max newestTs (cosmosTimeStamp x)
+                    match tryParseEquinoxBatch x with
+                    | ValueNone -> failwith $"Could not parse document:\n{prettySerdes.Value.Serialize x}"
+                    | ValueSome (sn, e, u) ->
+                        if pageStreams.Add sn then accStreams.Add sn |> ignore
+                        let x = Stat.Create(g sn, x, e, u)
+                        let mutable v = Unchecked.defaultof<_>
+                        if s.TryGetValue(x, &v) then s.Remove x |> ignore; s.Add(v.Merge x) |> ignore
+                        else s.Add x |> ignore
+                        pageI <- pageI + 1; pageE <- pageE + x.events; pageU <- pageU + x.unfolds; pageB <- pageB + x.bytes
+                Log.Information("Page{rdc,5}>{count,4}i{streams,5}s{es,5}e{us,5}u{rds,5:f2}>{ods,4:f2}>{jds,4:f2}MiB{rc,7:f2}RU{s,5:N1}s age {age:dddd\.hh\:mm\:ss}",
+                                rdc, pageI, pageStreams.Count, pageE, pageU, miB rds, miB ods, miB pageB, rc, rtt.TotalSeconds, newestTs - DateTime.UtcNow)
+                pageStreams.Clear()
+                accI <- accI + int64 pageI; accE <- accE + int64 pageE; accU <- accU + int64 pageU
+                accRus <- accRus + rc; accRds <- accRds + int64 rds; accOds <- accOds + int64 ods; accBytes <- accBytes + pageB
+        finally
+
+        let accCats = System.Collections.Generic.HashSet(accStreams |> Seq.map categoryName).Count
+        Log.Information("TOTALS {count:N0}i {cats}c {streams:N0}s {es:N0}e {us:N0}u {tmib:N1}MiB Read {rmib:N1}>{omib:N1} {ru:N2}RU {s:N1}s",
+                        accI, accCats, accStreams.Count, accE, accU, miB accBytes, miB accRds, miB accOds, accRus, sw.Elapsed.TotalSeconds)
+
+        for x in s |> Seq.sortByDescending _.bytes |> Seq.truncate a.Count do
+            Log.Information("{key,-20}:{count,7}i {mib,6:N1}MiB E{events,7} {emib,7:N1} U{unfolds,7} {umib,6:N1}",
+                            x.key, x.count, miB x.bytes, x.events, miB x.eBytes, x.unfolds, miB x.uBytes) }
 
 module DynamoInit =
 
@@ -539,6 +653,7 @@ type Arguments(p: ParseResults<Parameters>) =
         | InitSql a ->  do! SqlInit.databaseOrSchema Log.Logger a
         | Dump a ->     do! Dump.run (Log.Logger, verboseConsole, maybeSeq) a
         | Query a ->    do! CosmosQuery.run (QueryArguments a) |> Async.AwaitTaskCorrect
+        | Top a ->      do! CosmosTop.run (TopArguments a) |> Async.AwaitTaskCorrect
         | Stats a ->    do! CosmosStats.run (Log.Logger, verboseConsole, maybeSeq) a
         | LoadTest a -> let n = p.GetResult(LogFile, fun () -> p.ProgramName + ".log")
                         let reportFilename = System.IO.FileInfo(n).FullName
