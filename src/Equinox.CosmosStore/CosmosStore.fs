@@ -291,11 +291,11 @@ module Log =
                 member val internal Trim = Counters() with get, set
                 member _.Stop() = epoch.Stop()
                 member _.Elapsed = epoch.Elapsed
-            type LogSink(?byCategory) =
-                let byCategory = defaultArg byCategory false
-                let bucket (x: Measurement) = if byCategory then $"{x.container}/{x.Category}" else x.container
+            type LogSink(categorize) =
+                let bucket (x: Measurement) = if categorize then $"{x.container}/{x.Category}" else x.container
                 let (|BucketMsRu|) ({ interval = i; ru = ru } as m) = bucket m, int64 i.ElapsedMilliseconds, ru
                 static let mutable epoch = Epoch()
+                new() = LogSink(false)
                 static member Restart() =
                     let fresh = Epoch()
                     let outgoing = Interlocked.Exchange(&epoch, fresh)
