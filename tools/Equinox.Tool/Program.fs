@@ -477,21 +477,21 @@ module CosmosTop =
 
     module private Parser =
         let scratch = new System.IO.MemoryStream()
-        let inline utf8Size (x: JsonElement) =
+        let utf8Size (x: JsonElement) =
             scratch.Position <- 0L
             JsonSerializer.Serialize(scratch, x)
             scratch.Position
-        let inline inflatedUtf8Size x =
+        let inflatedUtf8Size x =
             scratch.Position <- 0L
             if Equinox.CosmosStore.Core.JsonElement.tryInflateTo scratch x then scratch.Position
             else utf8Size x
+        let infSize = function ValueSome x -> inflatedUtf8Size x | ValueNone -> 0
         // using the length as a decent proxy for UTF-8 length of corr/causation; if you have messy data in there, you'll have bigger problems to worry about
         let inline stringLen x = match x with ValueSome (x: JsonElement) when x.ValueKind <> JsonValueKind.Null -> x.GetString().Length | _ -> 0
         let _e = Unchecked.defaultof<Equinox.CosmosStore.Core.Event> // Or Unfold - both share field names
-        let inline ciSize (x: JsonElement) =
+        let dmcSize (x: JsonElement) =
             (struct (0, 0L), x.EnumerateArray())
             ||> Seq.fold (fun struct (c, i) x ->
-                let inline infSize x = match x with ValueSome x -> inflatedUtf8Size x | ValueNone -> 0
                 struct (c + (x.TryProp(nameof _e.correlationId) |> stringLen) + (x.TryProp(nameof _e.causationId) |> stringLen),
                         i + (x.TryProp(nameof _e.d) |> infSize) + (x.TryProp(nameof _e.m) |> infSize)))
         let _t = Unchecked.defaultof<Equinox.CosmosStore.Core.Tip>
@@ -502,7 +502,7 @@ module CosmosTop =
             | _ -> ValueNone
         let private tryParseEventOrUnfold = function
             | ValueNone -> struct (0, 0L, struct (0, 0L))
-            | ValueSome (x: JsonElement) -> x.GetArrayLength(), utf8Size x, ciSize x
+            | ValueSome (x: JsonElement) -> x.GetArrayLength(), utf8Size x, dmcSize x
         [<Struct; CustomEquality; NoComparison>]
         type Stat =
             { key: string; count: int; events: int; unfolds: int; bytes: int64; eBytes: int64; uBytes: int64; cBytes: int64; iBytes: int64 }
@@ -511,7 +511,7 @@ module CosmosTop =
                     eBytes = x.eBytes + y.eBytes; uBytes = x.uBytes + y.uBytes; cBytes = x.cBytes + y.cBytes; iBytes = x.iBytes + y.iBytes }
             override x.GetHashCode() = StringComparer.Ordinal.GetHashCode x.key
             override x.Equals y = match y with :? Stat as y -> StringComparer.Ordinal.Equals(x.key, y.key) | _ -> false
-            static Create(key, x: JsonElement) =
+            static member Create(key, x: JsonElement) =
                 let struct (e, eb, struct (ec, ei)) = x.TryProp(nameof _t.e) |> tryParseEventOrUnfold
                 let struct (u, ub, struct (uc, ui)) = x.TryProp(nameof _t.u) |> tryParseEventOrUnfold
                 {   key = key; count = 1; events = e; unfolds = u
@@ -547,8 +547,8 @@ module CosmosTop =
         let accCats = (if a.StreamLevel then s |> Seq.map _.key else accStreams) |> Seq.map group |> System.Collections.Generic.HashSet |> _.Count
         let accStreams = if a.StreamLevel then s.Count else accStreams.Count
         let iBytes, cBytes = s |> Seq.sumBy _.iBytes, s |> Seq.sumBy _.cBytes
-        let inline giB x = miB x / 1024.
-        Log.Information("TOTALS {count:N0}i {cats}c {streams:N0}s {es:N0}e {us:N0}u read {rg:f1}GiB output {og:f1}GiB JSON {tg:f1}GiB D+M(inflated) {ig:f1}GiB C+C {cm:f2}MiB {ru:N2}RU {s:N1}s",
+        let giB x = miB x / 1024.
+        Log.Information("TOTALS {count:N0}i {cats:N0}c {streams:N0}s {es:N0}e {us:N0}u read {rg:f1}GiB output {og:f1}GiB JSON {tg:f1}GiB D+M(inflated) {ig:f1}GiB C+C {cm:f2}MiB {ru:N2}RU {s:N1}s",
                         accI, accCats, accStreams, accE, accU, giB accRds, giB accOds, giB accBytes, giB iBytes, miB cBytes, accRus, sw.Elapsed.TotalSeconds)
 
         let sort: Parser.Stat seq -> Parser.Stat seq = a.Order |> function
