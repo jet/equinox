@@ -19,6 +19,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `eqx stats`: `-O` and `-N` to extract oldest and newest `_ts` within a store [#459](https://github.com/jet/equinox/pull/459)
 - `eqx`: `-Q` flag to omit timestamps from console output logging [#459](https://github.com/jet/equinox/pull/459)
 - `Equinox.CosmosStore.Linq`: Add LINQ querying support for Indexed `u`nfolds (`AccessStrategy.Custom`+`CosmosStoreCategory.shouldCompress`) [#450](https://github.com/jet/equinox/pull/450)
+- `eqx top`: Support for analyzing space usage for event and view containers by category and/or stream [#450](https://github.com/jet/equinox/pull/450)
 
 ### Changed
 
