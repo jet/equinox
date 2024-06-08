@@ -289,7 +289,7 @@ module CosmosInit =
             | CosmosInit.Provisioning.Database throughput ->
                 l.Information("CosmosStore provisioning at {mode:l} level for {rus:n0} RU/s", "Database", throughput)
             | CosmosInit.Provisioning.Serverless ->
-                l.Information("CosmosStore provisioning in {mode:l} mode with automatic RU/s as configured in account", "Serverless")
+                l.Information("CosmosStore provisioning in {mode:l} mode with throughput as defined at account level", "Serverless")
             CosmosInit.init log (connector.CreateUninitialized()) (dName, cName) a.ProvisioningMode a.IndexUnfolds a.SkipStoredProc
         | x -> p.Raise $"unexpected subcommand %A{x}"
 
@@ -527,7 +527,7 @@ type Arguments(p: ParseResults<Parameters>) =
     member _.CreateDomainLog() = createDomainLog verbose verboseConsole maybeSeq
     member _.ExecuteSubCommand() = async {
         match p.GetSubCommand() with
-        | Init a ->     (CosmosInit.containerAndOrDb Log.Logger a CancellationToken.None).Wait()
+        | Init a ->     do! CosmosInit.containerAndOrDb Log.Logger a CancellationToken.None |> Async.AwaitTaskCorrect
         | InitAws a ->  do! DynamoInit.table Log.Logger a
         | InitSql a ->  do! SqlInit.databaseOrSchema Log.Logger a
         | Dump a ->     do! Dump.run (Log.Logger, verboseConsole, maybeSeq) a

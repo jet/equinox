@@ -396,7 +396,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     # > TOTALS 1c, 8774s, 389.17RU 4.7s {}   
    
     # Skip loading the _etag to simulate a query where you will only render the result (not `Transact` against it)
-    eqx query -cn '$User' -m readOnly -un Snapshotted cosmos -d db -c $EQUINOX_COSMOS_VIEWS -b 100000
+    eqx query -cn '$User' -m readonly -un Snapshotted cosmos -d db -c $EQUINOX_COSMOS_VIEWS -b 100000
     # > Querying ReadOnly: SELECT c.u FROM c WHERE c.p LIKE "$User-%" AND EXISTS (SELECT VALUE u FROM u IN c.u WHERE u.c = "Snapshotted") {}
     # > Page 8774s, 8774u, 0e 342.33RU 3.8s {}
     # > TOTALS 0c, 8774s, 342.33RU 3.8s {} # 👈 cheaper and only one batch as no .p or ._etag 
