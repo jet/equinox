@@ -350,7 +350,8 @@ module Log =
                                     prevCat.PadRight maxBucketLen, reqs, rps reqs, ups (catRRu + catWRu), ups catRRu, "R", ups catWRu, "W")
                     catR <- 0; catRRu <- 0; catW <- 0; catWRu <- 0; prevCat <- cat
             for bucket in buckets do
-                bucket.Substring(0, bucket.IndexOf '/') |> logOnCatChange
+                let group = match bucket.IndexOf '/' with -1 -> bucket | i -> bucket.Substring(0, i)
+                group |> logOnCatChange
                 for act, counts in stats do
                     match counts.TryBucket bucket with
                     | Some stat when stat.count <> 0L ->
