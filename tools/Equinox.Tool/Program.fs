@@ -617,8 +617,8 @@ module CosmosDestroy =
     let run (a: DestroyArguments) = task {
         let tsw = System.Diagnostics.Stopwatch.StartNew()
         let sql = $"SELECT c.p, c.id, ARRAYLENGTH(c.e) AS es, ARRAYLENGTH(c.u) AS us FROM c WHERE {a.Criteria.Sql}"
-        if a.DryRun then Log.Warning("Dry-run of deleting all Items matching {sql}", sql)
-        else Log.Warning("DESTROYING all Items matching {sql}", sql)
+        if a.DryRun then Log.Warning("Dry-run of deleting items based on {sql}", sql)
+        else Log.Warning("DESTROYING all Items WHERE {sql}", a.Criteria.Sql)
         let container = a.Connect()
         let query =
             let qd = Microsoft.Azure.Cosmos.QueryDefinition sql
