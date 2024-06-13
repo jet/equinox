@@ -152,11 +152,12 @@ and [<NoComparison; NoEquality; RequireSubcommand>] QueryParameters =
             | Cosmos _ ->                   "Parameters for CosmosDB."
 and [<RequireQualifiedAccess>] Mode = Default | SnapOnly | SnapWithStream | ReadOnly | ReadWithStream | Raw
 and [<RequireQualifiedAccess>] Criteria =
-    | SingleStream of string | CatName of string | CatLike of string | Unfiltered
+    | SingleStream of string | CatName of string | CatLike of string | Custom of sql: string | Unfiltered
     member x.Sql = x |> function
         | Criteria.SingleStream sn ->   $"c.p = \"{sn}\""
         | Criteria.CatName n ->         $"c.p LIKE \"{n}-%%\""
         | Criteria.CatLike pat ->       $"c.p LIKE \"{pat}\""
+        | Criteria.Custom filter ->     filter
         | Criteria.Unfiltered ->        "1=1"
 and QueryArguments(p: ParseResults<QueryParameters>) =
     member val Mode =                       p.GetResult(QueryParameters.Mode, if p.Contains QueryParameters.File then Mode.Raw else Mode.Default)
@@ -225,6 +226,7 @@ and [<NoComparison; NoEquality; RequireSubcommand>] DestroyParameters =
     | [<AltCommandLine "-sn"; Unique>]      StreamName of string
     | [<AltCommandLine "-cn"; Unique>]      CategoryName of string
     | [<AltCommandLine "-cl"; Unique>]      CategoryLike of string
+    | [<AltCommandLine "-cs"; Unique>]      CustomFilter of sql: string
     | [<AltCommandLine "-f"; Unique>]       Force
     | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Store.Cosmos.Parameters>
     interface IArgParserTemplate with
@@ -232,18 +234,21 @@ and [<NoComparison; NoEquality; RequireSubcommand>] DestroyParameters =
             | StreamName _ ->               "Specify stream name to match against `p`, e.g. `$UserServices-f7c1ce63389a45bdbea1cccebb1b3c8a`."
             | CategoryName _ ->             "Specify category name to match against `p`, e.g. `$UserServices`."
             | CategoryLike _ ->             "Specify category name to match against `p` as a Cosmos LIKE expression (with `%` as wildcard, e.g. `$UserServices-%`."
+            | CustomFilter _ ->             "Specify a custom filter, referencing the document as `c.` (e.g. `'c.p LIKE \"test-%\" AND c._ts < 1717138092'`)"
             | Force ->                      "Actually delete the documents (default is a dry run, reporting what would be deleted)"
             | Cosmos _ ->                   "Parameters for CosmosDB."
 and DestroyArguments(p: ParseResults<DestroyParameters>) =
     member val Criteria =
-        match p.TryGetResult StreamName, p.TryGetResult CategoryName, p.TryGetResult CategoryLike with
-        | Some sn, None, None ->            Criteria.SingleStream sn
-        | Some _, Some _, _
-        | Some _, _, Some _ ->              p.Raise "StreamName and CategoryLike/CategoryName are mutually exclusive"
-        | None, Some cn, None ->            Criteria.CatName cn
-        | None, None, Some cl ->            Criteria.CatLike cl
-        | None, None, None ->               failwith "Category or stream name criteria must be supplied"
-        | None, Some _, Some _ ->           p.Raise "CategoryLike and CategoryName are mutually exclusive"
+        match p.TryGetResult StreamName, p.TryGetResult CategoryName, p.TryGetResult CategoryLike, p.TryGetResult CustomFilter with
+        | Some sn, None, None, None ->      Criteria.SingleStream sn
+        | Some _, Some _, _, None
+        | Some _, _, Some _, None ->        p.Raise "StreamName and CategoryLike/CategoryName are mutually exclusive"
+        | None, Some cn, None, None ->      Criteria.CatName cn
+        | None, None, Some cl, None ->      Criteria.CatLike cl
+        | None, None, None, Some filter ->  Criteria.Custom filter
+        | _, _, _, Some _ ->                p.Raise "Custom SQL and Category/Stream name settings are mutually exclusive"
+        | None, None, None, None ->         failwith "Category, stream name, or custom SQL must be supplied"
+        | None, Some _, Some _, None ->     p.Raise "CategoryLike and CategoryName are mutually exclusive"
     member val CosmosArgs =                 p.GetResult DestroyParameters.Cosmos |> Store.Cosmos.Arguments
     member val DryRun =                     p.Contains Force |> not
     member x.Connect() =                    match Store.Cosmos.config Log.Logger (None, true) x.CosmosArgs with
@@ -658,7 +663,7 @@ module CosmosDestroy =
          finally
 
          let accCats = accStreams |> Seq.map StreamName.categoryName |> System.Collections.Generic.HashSet |> _.Count
-         Log.Information("TOTALS {count:N0}i {cats:N0}c {streams:N0}s {es:N0}e {us:N0}u read {rmib:f1}MiB output {omib:f1}MiB {rru:N2}RRU Avg {ru:N2}WRU/s Delete {ru:N2}WRU Total {s:N1}s",
+         Log.Information("TOTALS {count:N0}i {cats:N0}c {streams:N0}s {es:N0}e {us:N0}u read {rmib:f1}MiB output {omib:f1}MiB {rru:N2}RRU Avg {aru:N2}WRU/s Delete {dru:N2}WRU Total {s:N1}s",
                          accI, accCats, accStreams.Count, accE, accU, miB accRds, miB accOds, accRus, accDelRu / tsw.Elapsed.TotalSeconds, accDelRu, tsw.Elapsed.TotalSeconds) }
 
 module DynamoInit =
