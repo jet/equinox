@@ -636,7 +636,7 @@ module CosmosDestroy =
                     if not a.DryRun then
                         let! res = container.DeleteItemStreamAsync(i.id, Microsoft.Azure.Cosmos.PartitionKey i.p)
                         let ru = res.Headers.RequestCharge in idRu <- idRu + ru; pdRu <- pdRu + ru
-                        if not res.IsSuccessStatusCode then
+                        if not res.IsSuccessStatusCode && not (res.StatusCode = System.Net.HttpStatusCode.NotFound) then
                             failwith $"Deletion of {i.p}/{i.id} failed with Code: {res.StatusCode} Message: {res.ErrorMessage}\n{res.Diagnostics}"
                     if isw.Elapsed.TotalSeconds > 30 then
                         Log.Information(".. Deleted {count,5}i {streams,7}s{es,7}e{us,7}u {rus,7:N2}WRU/s {s,6:N1}s",
