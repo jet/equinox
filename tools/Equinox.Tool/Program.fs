@@ -251,6 +251,8 @@ and DestroyArguments(p: ParseResults<DestroyParameters>) =
         | None, Some _, Some _, None ->     p.Raise "CategoryLike and CategoryName are mutually exclusive"
     member val CosmosArgs =                 p.GetResult DestroyParameters.Cosmos |> Store.Cosmos.Arguments
     member val DryRun =                     p.Contains Force |> not
+    member val Dop =                        4
+    member val StatsInterval =              TimeSpan.FromSeconds 30
     member x.Connect() =                    match Store.Cosmos.config Log.Logger (None, true) x.CosmosArgs with
                                             | Store.Config.Cosmos (cc, _, _) -> cc.Container
                                             | _ -> failwith "Destroy requires Cosmos"
@@ -626,6 +628,22 @@ module CosmosDestroy =
     open Equinox.CosmosStore.Linq.Internal
     open FSharp.Control
 
+    type Sem(max) =
+        let inner = new SemaphoreSlim(max)
+        member _.IsEmpty = inner.CurrentCount = max
+        member _.TryWait(ms: int) = inner.WaitAsync ms
+        member _.Release() = inner.Release() |> ignore
+
+    module Channel =
+
+        open System.Threading.Channels
+        let unboundedSr<'t> = Channel.CreateUnbounded<'t>(UnboundedChannelOptions(SingleReader = true))
+        let write (w: ChannelWriter<_>) = w.TryWrite >> ignore
+        let inline readAll (r: ChannelReader<_>) () = seq {
+            let mutable msg = Unchecked.defaultof<_>
+            while r.TryRead(&msg) do
+                yield msg }
+
     let run (a: DestroyArguments) = task {
         let tsw = System.Diagnostics.Stopwatch.StartNew()
         let sql = $"SELECT c.p, c.id, ARRAYLENGTH(c.e) AS es, ARRAYLENGTH(c.u) AS us FROM c WHERE {a.Criteria.Sql}"
@@ -638,28 +656,58 @@ module CosmosDestroy =
             container.GetItemQueryIterator<SnEventsUnfolds>(qd, requestOptions = qo)
         let pageStreams, accStreams = System.Collections.Generic.HashSet(), System.Collections.Generic.HashSet()
         let mutable accI, accE, accU, accRus, accDelRu, accRds, accOds = 0L, 0L, 0L, 0., 0., 0L, 0L
+        let deletionDop = Sem a.Dop
+        let writeResult, readResults = let c = Channel.unboundedSr<struct (float * string)> in Channel.write c.Writer, Channel.readAll c.Reader
         try for rtt, rc, items, rdc, rds, ods in query |> Query.enum__ do
-                let mutable pageI, pageE, pageU, pdRu, idRu = 0, 0, 0, 0., 0.
-                let psw, isw = System.Diagnostics.Stopwatch.StartNew(), System.Diagnostics.Stopwatch.StartNew()
+                let mutable pageI, pageE, pageU, pRu, iRu = 0, 0, 0, 0., 0.
+                let pageSw, intervalSw = System.Diagnostics.Stopwatch.StartNew(), System.Diagnostics.Stopwatch.StartNew()
+                let drainResults () =
+                    let mutable failMessage = null
+                    for ru, exn in readResults () do
+                        iRu <- iRu + ru; pRu <- pRu + ru
+                        if exn <> null && failMessage <> null then failMessage <- exn
+                    if intervalSw.Elapsed > a.StatsInterval then
+                        Log.Information(".. Deleted {count,5}i {streams,7}s{es,7}e{us,7}u {rus,7:N2}WRU/s {s,6:N1}s",
+                                        pageI, pageStreams.Count, pageE, pageU, iRu / intervalSw.Elapsed.TotalSeconds, pageSw.Elapsed.TotalSeconds)
+                        intervalSw.Restart()
+                        iRu <- 0
+                    if failMessage <> null then failwith failMessage
+                    (a.StatsInterval - intervalSw.Elapsed).TotalMilliseconds |> int
+                let awaitState check = task {
+                    let mutable reserved = false
+                    while not reserved do
+                        match drainResults () with
+                        | wait when wait <= 0 -> ()
+                        | timeoutAtNextLogInterval ->
+                            match! check timeoutAtNextLogInterval with
+                            | false -> ()
+                            | true -> reserved <- true }
+                let checkEmpty () = task {
+                    if deletionDop.IsEmpty then return true else
+                    do! System.Threading.Tasks.Task.Delay 1
+                    return deletionDop.IsEmpty }
+                let awaitCapacity () = awaitState deletionDop.TryWait
+                let releaseCapacity () = deletionDop.Release()
+                let awaitCompletion () = awaitState (fun _timeout -> checkEmpty ())
                 for i in items do
                     if pageStreams.Add i.p then accStreams.Add i.p |> ignore
                     pageI <- pageI + 1; pageE <- pageE + i.es; pageU <- pageU + i.us
                     if not a.DryRun then
-                        let! res = container.DeleteItemStreamAsync(i.id, Microsoft.Azure.Cosmos.PartitionKey i.p)
-                        let ru = res.Headers.RequestCharge in idRu <- idRu + ru; pdRu <- pdRu + ru
-                        if not res.IsSuccessStatusCode && not (res.StatusCode = System.Net.HttpStatusCode.NotFound) then
-                            failwith $"Deletion of {i.p}/{i.id} failed with Code: {res.StatusCode} Message: {res.ErrorMessage}\n{res.Diagnostics}"
-                    if isw.Elapsed.TotalSeconds > 30 then
-                        Log.Information(".. Deleted {count,5}i {streams,7}s{es,7}e{us,7}u {rus,7:N2}WRU/s {s,6:N1}s",
-                                        pageI, pageStreams.Count, pageE, pageU, idRu / isw.Elapsed.TotalSeconds, psw.Elapsed.TotalSeconds)
-                        isw.Restart()
-                        idRu <- 0
-                let ps = psw.Elapsed.TotalSeconds
+                        do! awaitCapacity ()
+                        ignore <| task { // we could do a Task.Run dance, but kicking it off inline without waiting suits us fine as results processed above
+                            let! res = container.DeleteItemStreamAsync(i.id, Microsoft.Azure.Cosmos.PartitionKey i.p)
+                            releaseCapacity ()
+                            let exn =
+                                if res.IsSuccessStatusCode || res.StatusCode = System.Net.HttpStatusCode.NotFound then null
+                                else $"Deletion of {i.p}/{i.id} failed with Code: {res.StatusCode} Message: {res.ErrorMessage}\n{res.Diagnostics}"
+                            writeResult (res.Headers.RequestCharge, exn) }
+                do! awaitCompletion () // we want stats output and/or failure exceptions to align with Pages
+                let ps = pageSw.Elapsed.TotalSeconds
                 Log.Information("Page{rdc,6}>{count,5}i {streams,7}s{es,7}e{us,7}u{rds,8:f2}>{ods,4:f2} {prc,8:f2}RRU {rs,5:N1}s {rus:N2}WRU/s {ps,5:N1}s",
-                                rdc, pageI, pageStreams.Count, pageE, pageU, miB rds, miB ods, rc, rtt.TotalSeconds, pdRu / ps, ps)
+                                rdc, pageI, pageStreams.Count, pageE, pageU, miB rds, miB ods, rc, rtt.TotalSeconds, pRu / ps, ps)
                 pageStreams.Clear()
                 accI <- accI + int64 pageI; accE <- accE + int64 pageE; accU <- accU + int64 pageU
-                accRus <- accRus + rc; accDelRu <- accDelRu + pdRu; accRds <- accRds + int64 rds; accOds <- accOds + int64 ods
+                accRus <- accRus + rc; accDelRu <- accDelRu + pRu; accRds <- accRds + int64 rds; accOds <- accOds + int64 ods
          finally
 
          let accCats = accStreams |> Seq.map StreamName.categoryName |> System.Collections.Generic.HashSet |> _.Count
