@@ -13,6 +13,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Equinox.CosmosStore`: Group metrics by Container Name [#449](https://github.com/jet/equinox/pull/449)
 - `Equinox.Core.Batcher`: Add Settable `Linger` [#454](https://github.com/jet/equinox/pull/454)
 - `Equinox.CosmosStore`: Group metrics by Category; split out `Tip` [#453](https://github.com/jet/equinox/pull/453)
+- `eqx stats`: Added `-O` and `-N` to extract oldest and newest `_ts` within a store [#458](https://github.com/jet/equinox/pull/458)
+- `eqx`: Added `-Q` flag to omit timestamps from console output logging [#458](https://github.com/jet/equinox/pull/458)
 
 ### Changed
 
@@ -20,6 +22,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Equinox.MessageDb`: Up min `Npgsql` to v `7.0.7` as `7.0.0` is on CVE blacklist
 
 ### Removed
+
+- `eqx stats`: `-A` (all stats) is now the default unless you specify >=1 of the individual stats via `ESDNO` flags [#458](https://github.com/jet/equinox/pull/458)
+
 ### Fixed
 
 <a name="4.0.4"></a>
