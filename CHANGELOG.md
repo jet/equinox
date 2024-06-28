@@ -11,6 +11,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 
 - `Equinox.CosmosStore`: Group metrics by Container Name [#449](https://github.com/jet/equinox/pull/449)
+- `Equinox.Core.Batcher`: Add Settable `Linger` [#454](https://github.com/jet/equinox/pull/454)
 - `Equinox.CosmosStore`: Group metrics by Category; split out `Tip` [#453](https://github.com/jet/equinox/pull/453)
 
 ### Changed
