@@ -545,7 +545,6 @@ module internal Sync =
 
 module Initialization =
 
-    // Note: the Cosmos SDK does not (currently) support changing the Throughput mode of an existing Database or Container.
     type [<RequireQualifiedAccess>] Throughput = Manual of rus: int | Autoscale of maxRus: int
     type [<RequireQualifiedAccess>] Provisioning = Container of Throughput | Database of Throughput | Serverless
     let private (|ThroughputProperties|) = function
@@ -558,7 +557,7 @@ module Initialization =
         | Provisioning.Container _ | Provisioning.Serverless -> createDatabaseIfNotExists client None dName
         | Provisioning.Database (ThroughputProperties tp) -> async {
             let! d = createDatabaseIfNotExists client (Some tp) dName
-            let! _ = Async.call (fun ct -> d.ReplaceThroughputAsync(tp, cancellationToken = ct))
+            do! Async.call (fun ct -> d.ReplaceThroughputAsync(tp, cancellationToken = ct)) |> Async.Ignore
             return d }
     let private createContainerIfNotExists (d: Database) cp maybeTp = async {
         let! r = Async.call (fun ct -> d.CreateContainerIfNotExistsAsync(cp, throughputProperties = Option.toObj maybeTp, cancellationToken = ct))
@@ -608,7 +607,7 @@ module Initialization =
 
     let initAux (client: CosmosClient) (dName, cName) mode = async {
         let! d = createOrProvisionDatabase client dName mode
-        return! createOrProvisionContainer d (cName, "/id", applyAuxContainerProperties) mode } // as per Cosmos team, Partition Key must be "/id"
+        return! createOrProvisionContainer d (cName, "/id", applyAuxContainerProperties) mode } // per Cosmos team, Partition Key must be "/id"
 
     /// Per Container, we need to ensure the stored procedure has been created exactly once (per process lifetime)
     type internal ContainerInitializerGuard(container: Container, ?initContainer: Container -> CancellationToken -> Task<unit>) =
