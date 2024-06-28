@@ -183,6 +183,7 @@ and [<NoComparison; NoEquality; RequireSubcommand>] TopParameters =
     | [<AltCommandLine "-sn"; Unique>]      StreamName of string
     | [<AltCommandLine "-cn"; Unique>]      CategoryName of string
     | [<AltCommandLine "-cl"; Unique>]      CategoryLike of string
+    | [<AltCommandLine "-cs"; Unique>]      CustomFilter of sql: string
     | [<AltCommandLine "-S"; Unique>]       Streams
     | [<AltCommandLine "-T"; Unique>]       TsOrder
     | [<AltCommandLine "-c">]               Limit of int
@@ -192,7 +193,8 @@ and [<NoComparison; NoEquality; RequireSubcommand>] TopParameters =
         member a.Usage = a |> function
             | StreamName _ ->               "Specify stream name to match against `p`, e.g. `$UserServices-f7c1ce63389a45bdbea1cccebb1b3c8a`."
             | CategoryName _ ->             "Specify category name to match against `p`, e.g. `$UserServices`."
-            | CategoryLike _ ->             "Specify category name to match against `p` as a Cosmos LIKE expression (with `%` as wildcard, e.g. `$UserServices-%`."
+            | CategoryLike _ ->             "Specify category name to match against `p` as a Cosmos LIKE expression (with `%` as wildcard, e.g. `$UserServices-%`)."
+            | CustomFilter _ ->             "Specify a custom filter, referencing the document as `c.` (e.g. `'c.p LIKE \"test-%\" AND c._ts < 1717138092'`)"
             | Streams ->                    "Stream level stats"
             | TsOrder ->                    "Retrieve data in `_ts` ORDER (generally has significant RU impact). Default: Use continuation tokens"
             | Sort _ ->                     "Sort order for results"
@@ -201,14 +203,13 @@ and [<NoComparison; NoEquality; RequireSubcommand>] TopParameters =
 and Order = Name | Items | Events | Unfolds | Size | EventSize | UnfoldSize | InflateSize | CorrCauseSize
 and TopArguments(p: ParseResults<TopParameters>) =
     member val Criteria =
-        match p.TryGetResult TopParameters.StreamName, p.TryGetResult TopParameters.CategoryName, p.TryGetResult TopParameters.CategoryLike with
-        | Some sn, None, None ->            Criteria.SingleStream sn
-        | Some _, Some _, _
-        | Some _, _, Some _ ->              p.Raise "StreamName and CategoryLike/CategoryName are mutually exclusive"
-        | None, Some cn, None ->            Criteria.CatName cn
-        | None, None, Some cl ->            Criteria.CatLike cl
-        | None, None, None ->               Criteria.Unfiltered
-        | None, Some _, Some _ ->           p.Raise "CategoryLike and CategoryName are mutually exclusive"
+        match p.TryGetResult TopParameters.StreamName, p.TryGetResult TopParameters.CategoryName, p.TryGetResult TopParameters.CategoryLike, p.TryGetResult TopParameters.CustomFilter with
+        | None, None, None, None ->         Criteria.Unfiltered
+        | Some sn, None, None, None ->      Criteria.SingleStream sn
+        | None, Some cn, None, None ->      Criteria.CatName cn
+        | None, None, Some cl, None ->      Criteria.CatLike cl
+        | None, None, None, Some filter ->  Criteria.Custom filter
+        | _ ->                              p.Raise "StreamName/CategoryLike/CategoryName/CustomFilter are mutually exclusive"
     member val CosmosArgs =                 p.GetResult TopParameters.Cosmos |> Store.Cosmos.Arguments
     member val StreamLevel =                p.Contains Streams
     member val Count =                      p.GetResult(Limit, 100)
@@ -217,7 +218,7 @@ and TopArguments(p: ParseResults<TopParameters>) =
     member x.StreamCount =                  p.GetResult(Limit, x.Count * 10)
     member x.Connect() =                    match Store.Cosmos.config Log.Logger (None, true) x.CosmosArgs with
                                             | Store.Config.Cosmos (cc, _, _) -> cc.Container
-                                            | _ -> failwith "Top requires Cosmos"
+                                            | _ -> p.Raise "Top requires Cosmos"
     member x.Execute(sql) =                 let container = x.Connect()
                                             let qd = Microsoft.Azure.Cosmos.QueryDefinition sql
                                             let qo = Microsoft.Azure.Cosmos.QueryRequestOptions(MaxItemCount = x.CosmosArgs.QueryMaxItems)
@@ -228,34 +229,33 @@ and [<NoComparison; NoEquality; RequireSubcommand>] DestroyParameters =
     | [<AltCommandLine "-cl"; Unique>]      CategoryLike of string
     | [<AltCommandLine "-cs"; Unique>]      CustomFilter of sql: string
     | [<AltCommandLine "-f"; Unique>]       Force
+    | [<AltCommandLine "-w"; Unique>]       Parallelism of dop: int
     | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Store.Cosmos.Parameters>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | StreamName _ ->               "Specify stream name to match against `p`, e.g. `$UserServices-f7c1ce63389a45bdbea1cccebb1b3c8a`."
             | CategoryName _ ->             "Specify category name to match against `p`, e.g. `$UserServices`."
-            | CategoryLike _ ->             "Specify category name to match against `p` as a Cosmos LIKE expression (with `%` as wildcard, e.g. `$UserServices-%`."
+            | CategoryLike _ ->             "Specify category name to match against `p` as a Cosmos LIKE expression (with `%` as wildcard, e.g. `$UserServices-%`)."
             | CustomFilter _ ->             "Specify a custom filter, referencing the document as `c.` (e.g. `'c.p LIKE \"test-%\" AND c._ts < 1717138092'`)"
             | Force ->                      "Actually delete the documents (default is a dry run, reporting what would be deleted)"
+            | Parallelism _ ->              "Number of concurrent delete requests permitted to run in parallel. Default: 32"
             | Cosmos _ ->                   "Parameters for CosmosDB."
 and DestroyArguments(p: ParseResults<DestroyParameters>) =
     member val Criteria =
         match p.TryGetResult StreamName, p.TryGetResult CategoryName, p.TryGetResult CategoryLike, p.TryGetResult CustomFilter with
+        | None, None, None, None ->         p.Raise "Category, stream name, or custom SQL must be supplied"
         | Some sn, None, None, None ->      Criteria.SingleStream sn
-        | Some _, Some _, _, None
-        | Some _, _, Some _, None ->        p.Raise "StreamName and CategoryLike/CategoryName are mutually exclusive"
         | None, Some cn, None, None ->      Criteria.CatName cn
         | None, None, Some cl, None ->      Criteria.CatLike cl
         | None, None, None, Some filter ->  Criteria.Custom filter
-        | _, _, _, Some _ ->                p.Raise "Custom SQL and Category/Stream name settings are mutually exclusive"
-        | None, None, None, None ->         failwith "Category, stream name, or custom SQL must be supplied"
-        | None, Some _, Some _, None ->     p.Raise "CategoryLike and CategoryName are mutually exclusive"
+        | _ ->                              p.Raise "StreamName/CategoryLike/CategoryName/CustomFilter are mutually exclusive"
     member val CosmosArgs =                 p.GetResult DestroyParameters.Cosmos |> Store.Cosmos.Arguments
     member val DryRun =                     p.Contains Force |> not
-    member val Dop =                        4
+    member val Dop =                        p.GetResult(Parallelism, 32)
     member val StatsInterval =              TimeSpan.FromSeconds 30
     member x.Connect() =                    match Store.Cosmos.config Log.Logger (None, true) x.CosmosArgs with
                                             | Store.Config.Cosmos (cc, _, _) -> cc.Container
-                                            | _ -> failwith "Destroy requires Cosmos"
+                                            | _ -> p.Raise "Destroy requires Cosmos"
 and SnEventsUnfolds = { p: string; id: string; es: int; us: int }
 and [<NoComparison; NoEquality; RequireSubcommand>] DumpParameters =
     | [<AltCommandLine "-s"; MainCommand>]  Stream of FsCodec.StreamName
@@ -415,7 +415,7 @@ module CosmosStats =
             log.Information("Computing {measures} ({mode})", Seq.map render ops, (if inParallel then "in parallel" else "serially"))
             ops |> Seq.map (fun (name, sql) -> async {
                     let! res = Microsoft.Azure.Cosmos.QueryDefinition sql
-                               |> container.GetItemQueryIterator<int>
+                               |> container.GetItemQueryIterator<int64>
                                |> Query.enum_ log container "Stat" null LogEventLevel.Debug |> TaskSeq.head |> Async.AwaitTaskCorrect
                     match name with
                     | "Oldest" | "Newest" -> log.Information("{stat,-10}: {result,13} ({d:u})", name, res, DateTime.UnixEpoch.AddSeconds(float res))
@@ -570,7 +570,7 @@ module CosmosTop =
     let run (a: TopArguments) = task {
         let sw = System.Diagnostics.Stopwatch.StartNew()
         let pageStreams, accStreams = System.Collections.Generic.HashSet(), System.Collections.Generic.HashSet()
-        let mutable accI, accE, accU, accRus, accRds, accOds, accBytes = 0L, 0L, 0L, 0., 0L, 0L, 0L
+        let mutable accI, accE, accU, accRus, accRds, accOds, accBytes, accParse = 0L, 0L, 0L, 0., 0L, 0L, 0L, TimeSpan.Zero
         let s = System.Collections.Generic.HashSet()
         let group = if a.StreamLevel then id else StreamName.categoryName
         try for rtt, rc, items, rdc, rds, ods in a.Execute(sql a) |> Query.enum__ do
@@ -589,14 +589,15 @@ module CosmosTop =
                 pageStreams.Clear()
                 accI <- accI + int64 pageI; accE <- accE + int64 pageE; accU <- accU + int64 pageU
                 accRus <- accRus + rc; accRds <- accRds + int64 rds; accOds <- accOds + int64 ods; accBytes <- accBytes + pageB
+                accParse <- accParse + sw.Elapsed
         finally
 
         let accCats = (if a.StreamLevel then s |> Seq.map _.key else accStreams) |> Seq.map group |> System.Collections.Generic.HashSet |> _.Count
         let accStreams = if a.StreamLevel then s.Count else accStreams.Count
         let iBytes, cBytes = s |> Seq.sumBy _.iBytes, s |> Seq.sumBy _.cBytes
         let giB x = miB x / 1024.
-        Log.Information("TOTALS {count:N0}i {cats:N0}c {streams:N0}s {es:N0}e {us:N0}u read {rg:f1}GiB output {og:f1}GiB JSON {tg:f1}GiB D+M(inflated) {ig:f1}GiB C+C {cm:f2}MiB {ru:N2}RU {s:N1}s",
-                        accI, accCats, accStreams, accE, accU, giB accRds, giB accOds, giB accBytes, giB iBytes, miB cBytes, accRus, sw.Elapsed.TotalSeconds)
+        Log.Information("TOTALS {count:N0}i {cats:N0}c {streams:N0}s {es:N0}e {us:N0}u read {rg:f1}GiB output {og:f1}GiB JSON {tg:f1}GiB D+M(inflated) {ig:f1}GiB C+C {cm:f2}MiB Parse {ps:N3}s Total {ru:N2}RU {s:N1}s",
+                        accI, accCats, accStreams, accE, accU, giB accRds, giB accOds, giB accBytes, giB iBytes, miB cBytes, accParse.TotalSeconds, accRus, sw.Elapsed.TotalSeconds)
 
         let sort: Parser.Stat seq -> Parser.Stat seq = a.Order |> function
             | Order.Name -> Seq.sortBy _.key
@@ -609,7 +610,7 @@ module CosmosTop =
             | Order.InflateSize -> Seq.sortByDescending _.iBytes
             | Order.CorrCauseSize -> Seq.sortByDescending _.cBytes
         let render (x: Parser.Stat) =
-            Log.Information("{count,7}i {tm,6:N2}MiB E{events,7} {em,7:N1} U{unfolds,7} {um,6:N1} D+M{dm,6:N1} C+C{cm,5:N1} {key}",
+            Log.Information("{count,8}i {tm,7:N2}MiB E{events,8} {em,7:N1} U{unfolds,8} {um,7:N1} D+M{dm,7:N1} C+C{cm,6:N1} {key}",
                             x.count, miB x.bytes, x.events, miB x.eBytes, x.unfolds, miB x.uBytes, miB x.iBytes, miB x.cBytes, x.key)
         if a.StreamLevel then
             let collapsed = s |> Seq.groupBy (_.key >> StreamName.categoryName) |> Seq.map (fun (cat, xs) -> { (xs |> Seq.reduce _.Merge) with key = cat })
