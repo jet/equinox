@@ -375,7 +375,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
     ```powershell
     # run queries to determine how many streams, docs, events there are in the container
-    eqx -VC stats -SDEP cosmos # -P to run in parallel # -V -C to show underlying query being used
+    eqx -V stats -P cosmos # -P to run in parallel # -V to show underlying query being used
     ```
 
 5. Use the `eqx` tool to query streams and/or snapshots in a CosmosDB store
