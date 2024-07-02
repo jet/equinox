@@ -588,7 +588,7 @@ module CosmosTop =
                 accParse <- accParse + sw.Elapsed
         finally
 
-        let accCats = (if a.StreamLevel then s |> Seq.map _.key else accStreams) |> Seq.map group |> System.Collections.Generic.HashSet |> _.Count
+        let accCats = (if a.StreamLevel then s |> Seq.map _.key else accStreams) |> Seq.map StreamName.categoryName |> System.Collections.Generic.HashSet |> _.Count
         let accStreams = if a.StreamLevel then s.Count else accStreams.Count
         let iBytes, cBytes = s |> Seq.sumBy _.iBytes, s |> Seq.sumBy _.cBytes
         let giB x = miB x / 1024.
