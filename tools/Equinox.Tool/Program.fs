@@ -12,7 +12,7 @@ module CosmosInit = Equinox.CosmosStore.Core.Initialization
 
 let [<Literal>] appName = "equinox-tool"
 
-[<NoEquality; NoComparison>]
+[<NoComparison; NoEquality>]
 type Parameters =
     | [<AltCommandLine "-Q"; Unique>]       Quiet
     | [<AltCommandLine "-V"; Unique>]       Verbose
