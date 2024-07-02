@@ -8,6 +8,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ## [Unreleased]
 
+<a name="4.1.0"></a>
+## 4.1.0 - 2024-04
+
 ### Added
 
 - `Equinox.CosmosStore`: Group metrics by Container Name [#449](https://github.com/jet/equinox/pull/449)
@@ -15,11 +18,15 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Equinox.CosmosStore`: Group metrics by Category; split out `Tip` [#453](https://github.com/jet/equinox/pull/453)
 - `eqx stats`: Added `-O` and `-N` to extract oldest and newest `_ts` within a store [#459](https://github.com/jet/equinox/pull/459)
 - `eqx`: Added `-Q` flag to omit timestamps from console output logging [#459](https://github.com/jet/equinox/pull/459)
+- `Equinox.CosmosStore.Linq`: Add LINQ querying support for Indexed `u`nfolds (`AccessStrategy.Custom`+`CosmosStoreCategory.shouldCompress`) [#450](https://github.com/jet/equinox/pull/450)
+- `eqx top`: Support for analyzing space usage for event and view containers by category and/or stream [#450](https://github.com/jet/equinox/pull/450)
+- `eqx destroy`: Support for deleting the items(documents) underlying a category/stream/arbitrary `WHERE` clause [#450](https://github.com/jet/equinox/pull/450)
 
 ### Changed
 
-- `Equinox.*Store`,`Equinox.*Store.Prometheus`: Pin `Equinox` dependencies to `[4.0.0, 5.0.0)`] [#448](https://github.com/jet/equinox/pull/448)
+- `Equinox.*Store`,`Equinox.*Store.Prometheus`: Pin `Equinox` dependencies to `[4.0.2, 5.0.0)`] [#448](https://github.com/jet/equinox/pull/448)
 - `Equinox.MessageDb`: Up min `Npgsql` to v `7.0.7` as `7.0.0` is on CVE blacklist
+- `CosmosStore`: Require `Microsoft.Azure.Cosmos` v `3.38.1` [#450](https://github.com/jet/equinox/pull/450)
 
 ### Removed
 
