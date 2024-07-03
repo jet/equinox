@@ -599,30 +599,32 @@ module CosmosTop =
                 accParse <- accParse + sw.Elapsed
         finally
 
-        let accCats = (if a.StreamLevel then s |> Seq.map _.key else accStreams) |> Seq.map StreamName.categoryName |> System.Collections.Generic.HashSet |> _.Count
-        let accStreams = if a.StreamLevel then s.Count else accStreams.Count
+        let accCats = (if a.StreamLevel then s |> Seq.map _.key else accStreams) |> Seq.map StreamName.categoryName |> Seq.distinct |> Seq.length
         let iBytes, cBytes = s |> Seq.sumBy _.iBytes, s |> Seq.sumBy _.cBytes
         let giB x = miB x / 1024.
         Log.Information("TOTALS {count:N0}i {cats:N0}c {streams:N0}s {es:N0}e {us:N0}u read {rg:f1}GiB output {og:f1}GiB JSON {tg:f1}GiB D+M(inflated) {ig:f1}GiB C+C {cm:f2}MiB Parse {ps:N3}s Total {ru:N2}RU {s:N1}s",
-                        accI, accCats, accStreams, accE, accU, giB accRds, giB accOds, giB accBytes, giB iBytes, miB cBytes, accParse.TotalSeconds, accRus, sw.Elapsed.TotalSeconds)
+                        accI, accCats, accStreams.Count, accE, accU, giB accRds, giB accOds, giB accBytes, giB iBytes, miB cBytes, accParse.TotalSeconds, accRus, sw.Elapsed.TotalSeconds)
 
-        let sort: Parser.Stat seq -> Parser.Stat seq = a.Order |> function
-            | Order.Name -> Seq.sortBy _.key
-            | Order.Size -> Seq.sortByDescending _.bytes
-            | Order.Items -> Seq.sortByDescending _.count
-            | Order.Events -> Seq.sortByDescending _.events
-            | Order.Unfolds -> Seq.sortByDescending _.unfolds
-            | Order.EventSize -> Seq.sortByDescending _.eBytes
-            | Order.UnfoldSize -> Seq.sortByDescending _.uBytes
-            | Order.InflateSize -> Seq.sortByDescending _.iBytes
-            | Order.CorrCauseSize -> Seq.sortByDescending _.cBytes
-        let render (x: Parser.Stat) =
-            Log.Information("{count,8}i {tm,7:N2}MiB E{events,8} {em,7:N1} U{unfolds,8} {um,7:N1} D+M{dm,7:N1} C+C{cm,6:N1} {key}",
-                            x.count, miB x.bytes, x.events, miB x.eBytes, x.unfolds, miB x.uBytes, miB x.iBytes, miB x.cBytes, x.key)
+        let sortBy (f: 'x -> Parser.Stat) = a.Order |> function
+            | Order.Name -> Seq.sortBy (f >> _.key)
+            | Order.Size -> Seq.sortByDescending (f >> _.bytes)
+            | Order.Items -> Seq.sortByDescending (f >> _.count)
+            | Order.Events -> Seq.sortByDescending (f >> _.events)
+            | Order.Unfolds -> Seq.sortByDescending (f >> _.unfolds)
+            | Order.EventSize -> Seq.sortByDescending (f >> _.eBytes)
+            | Order.UnfoldSize -> Seq.sortByDescending (f >> _.uBytes)
+            | Order.InflateSize -> Seq.sortByDescending (f >> _.iBytes)
+            | Order.CorrCauseSize -> Seq.sortByDescending (f >> _.cBytes)
+        let streamOrCatTemplate s = "{count,8}i {tm,7:N2}MiB" + s + " E{events,8} {em,7:N1} U{unfolds,8} {um,7:N1} D+M{dm,7:N1} C+C{cm,6:N1} {key}"
         if a.StreamLevel then
-            let collapsed = s |> Seq.groupBy (_.key >> StreamName.categoryName) |> Seq.map (fun (cat, xs) -> { (xs |> Seq.reduce _.Merge) with key = cat })
-            sort collapsed |> Seq.truncate a.Count |> Seq.iter render
-        sort s |> Seq.truncate (if a.StreamLevel then a.StreamCount else a.Count) |> Seq.iter render }
+            let renderWithStreamCount (s: int, x: Parser.Stat) =
+                Log.Information(streamOrCatTemplate " {streams,8}s", x.count, miB x.bytes, s, x.events, miB x.eBytes, x.unfolds, miB x.uBytes, miB x.iBytes, miB x.cBytes, x.key)
+            s |> Seq.groupBy (_.key >> StreamName.categoryName)
+              |> Seq.map (fun (cat, streams) -> Seq.length streams, { (streams |> Seq.reduce _.Merge) with key = cat })
+              |> sortBy snd |> Seq.truncate a.Count |> Seq.iter renderWithStreamCount
+        let renderWithoutStreamCount (x: Parser.Stat) =
+            Log.Information(streamOrCatTemplate "", x.count, miB x.bytes, x.events, miB x.eBytes, x.unfolds, miB x.uBytes, miB x.iBytes, miB x.cBytes, x.key)
+        s |> sortBy id |> Seq.truncate (if a.StreamLevel then a.StreamCount else a.Count) |> Seq.iter renderWithoutStreamCount }
 
 module CosmosDestroy =
 
