@@ -8,6 +8,11 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ## [Unreleased]
 
+### Added
+### Changed
+### Removed
+### Fixed
+
 <a name="4.1.0"></a>
 ## 4.1.0 - 2024-04
 
@@ -24,15 +29,14 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Changed
 
-- `Equinox.*Store`,`Equinox.*Store.Prometheus`: Pin `Equinox` dependencies to `[4.0.2, 5.0.0)`] [#448](https://github.com/jet/equinox/pull/448)
+- `Equinox.*Store`,`Equinox.*Store.Prometheus`: Pin `Equinox` dependencies to `[4.0.3, 5.0.0)`] [#450](https://github.com/jet/equinox/pull/450)
 - `Equinox.CosmosStore`: Minimum `System.Text.Json` requirement updated to `8.0.4` as that's the lowest non-flagged version [#462](https://github.com/jet/equinox/pull/462)
+- `Equinox.CosmosStore`: Require `Microsoft.Azure.Cosmos` v `3.38.1` re metrics [#450](https://github.com/jet/equinox/pull/450)
 - `Equinox.MessageDb`: Up min `Npgsql` to v `7.0.7` as `7.0.0` is on CVE blacklist
 
 ### Removed
 
 - `eqx stats`: `-A` (all stats) is now the default unless you specify >=1 of the individual stats via `ESDNO` flags [#459](https://github.com/jet/equinox/pull/459)
-
-### Fixed
 
 <a name="4.0.4"></a>
 ## [4.0.4] - 2024-05-08
@@ -783,7 +787,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Fixed
 
-- Improve CosmosDb connection string parse error message 5b1b56bd94350ef47bd84ddbbb5b028e45fbb462
+- Improve CosmosDb connection string parse error message
 - change from `licenseUrl` to `license` in `.nupkg`
 - Make `xUnit` dependency consistently `2.4.0`
 
@@ -792,7 +796,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/4.0.4...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/4.1.0...HEAD
+[4.1.0]: https://github.com/jet/equinox/compare/4.0.4...4.1.0
 [4.0.4]: https://github.com/jet/equinox/compare/4.0.3...4.0.4
 [4.0.3]: https://github.com/jet/equinox/compare/4.0.2...4.0.3
 [4.0.2]: https://github.com/jet/equinox/compare/4.0.0...4.0.2
