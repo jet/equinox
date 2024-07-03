@@ -90,7 +90,7 @@ module Cosmos =
         member _.MaxRetryWaitTime =     p.GetResult(RetriesWaitTimeS, 5.) |> TimeSpan.FromSeconds
         member _.TipMaxEvents =         p.GetResult(TipMaxEvents, 256)
         member _.TipMaxJsonLength =     p.GetResult(TipMaxJsonLength, 30_000)
-        member _.QueryMaxItemsOr(def: int) =  p.GetResult(QueryMaxItems, def)
+        member _.QueryMaxItemsOr(def: int) = p.GetResult(QueryMaxItems, def)
         member x.QueryMaxItems =        x.QueryMaxItemsOr 10
 
     let logContainer (log: ILogger) role (mode, endpoint, db, container) =
@@ -118,12 +118,12 @@ module Cosmos =
             match connect log a with
             | (connector, databaseId, containerId), None ->
                 let client = connector.Connect(databaseId, [| containerId |]) |> Async.RunSynchronously
-                CosmosStoreContext(client, databaseId, containerId, a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength, queryMaxItems = a.QueryMaxItems 10)
+                CosmosStoreContext(client, databaseId, containerId, a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength, queryMaxItems = a.QueryMaxItems)
             | (connector, databaseId, containerId), Some (aConnector, aDatabaseId, aContainerId) ->
                 let cosmosClient = connector.CreateAndInitialize(databaseId, [| containerId |]) |> Async.RunSynchronously
                 let archiveCosmosClient = aConnector.CreateAndInitialize(aDatabaseId, [| aContainerId |]) |> Async.RunSynchronously
                 let client = CosmosStoreClient(cosmosClient, archiveCosmosClient)
-                CosmosStoreContext(client, databaseId, containerId, a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength, queryMaxItems = a.QueryMaxItems 10,
+                CosmosStoreContext(client, databaseId, containerId, a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength, queryMaxItems = a.QueryMaxItems,
                                    archiveDatabaseId = aDatabaseId, archiveContainerId = aContainerId)
         log.Information("CosmosStore Tip thresholds: {maxTipJsonLength}b {maxTipEvents}e Query paging {queryMaxItems} items",
                         a.TipMaxJsonLength, a.TipMaxEvents, a.QueryMaxItems)
