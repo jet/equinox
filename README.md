@@ -432,7 +432,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     # > TOTALS 11c, 206,356s, 7,886.75RU R/W 290.4/290.4MiB 225.3s {}
    
     # Prepare a breakdown of which categories are using the most capacity within the store
-    eqx -Q top cosmos -d db -c $EQUINOX_COSMOS_CONTAINER -b 9999
+    eqx -Q top cosmos -d db -c $EQUINOX_COSMOS_CONTAINER
     # Page 3276>3276i 3276s    0e 3991u 4.00>4.00<4.22MiB 103.74RU  3.5s D+M 5.1 C+C 0.00 201ms age 0000.00:33:13 {}
     # Page 3177>3177i 3177s    0e 4593u 4.00>4.01<4.20MiB 105.22RU  3.2s D+M 4.7 C+C 0.00 146ms age 0000.02:23:48 {}
     # Page 2708>2708i 2708s    0e 5044u 4.00>4.00<4.19MiB 105.76RU  3.4s D+M 4.5 C+C 0.00  84ms age 0002.23:10:55 {}
@@ -451,7 +451,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     #      394i    0.44MiB E       0     0.0 U     394     0.3 D+M    0.7 C+C   0.0 $Invoice {}
    
     # Drill into the Friend data (different test data to preceding article)
-    eqx top -cn '$Friend' cosmos -d db -c $EQUINOX_COSMOS_CONTAINER -b 9999
+    eqx top -cn '$Friend' cosmos -d db -c $EQUINOX_COSMOS_CONTAINER
     # Page 4787>4787i 4787s    0e 4787u 4.00>4.00<4.19MiB 218.54RU  3.6s D+M 4.5 C+C 0.00 259ms age 0013.22:52:15 {}
     # Page 4955>4955i 4955s    0e 4955u 4.00>4.00<4.19MiB 200.20RU  3.2s D+M 4.1 C+C 0.00 202ms age 0013.22:52:18 {}
     # Page 4715>4715i 4715s    0e 4715u 4.00>4.00<4.21MiB 201.26RU  3.2s D+M 4.4 C+C 0.00 145ms age 0013.22:52:22 {}
@@ -464,7 +464,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     #    37498i   32.55MiB E       0     0.1 U   37498    21.7 D+M   33.2 C+C   0.0 $Friend {}
 
     # DRY RUN of deleting (note no `-f` supplied)
-    eqx destroy -cn '$Friend' cosmos -d db -c $EQUINOX_COSMOS_CONTAINER -b 9999
+    eqx destroy -cn '$Friend' cosmos -d db -c $EQUINOX_COSMOS_CONTAINER
     # W Dry-run of deleting items based on SELECT c.p, c.id, ARRAYLENGTH(c.e) AS es, ARRAYLENGTH(c.u) AS us FROM c WHERE c.p LIKE "$Friend%" {}
     # I Page  9999> 9999i    9999s      0e   9999u    8.21>0.76   415.07RRU   1.4s 0.00WRU/s   0.0s {}
     # I Page  9999> 9999i    9999s      0e   9999u    8.48>0.76   404.70RRU   0.8s 0.00WRU/s   0.0s {}
@@ -473,7 +473,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     # I TOTALS 37,498i 1c 37,498s 0e 37,498u read 31.0MiB output 2.9MiB 1,514.73RRU Avg 0.00WRU/s Delete 0.00WRU Total 7.8s {}
    
     # Whack them (note the `--force` supplied)
-    eqx destroy -cn '$Friend' --force cosmos -d db -c $EQUINOX_COSMOS_CONTAINER -b 9999
+    eqx destroy -cn '$Friend' --force cosmos -d db -c $EQUINOX_COSMOS_CONTAINER
     # W DESTROYING all Items WHERE c.p LIKE "$ResourceRole%" {}
     # I .. Deleted  6347i    6347s      0e   6347u 1,671.52WRU/s   30.0s {}
     # I Page  9999> 9999i    9999s      0e   9999u    8.21>0.76   415.17RRU   1.2s 1,678.54WRU/s  47.2s {}
@@ -484,13 +484,13 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     ^C           
    
     # Get impatient; up the concurrency (-w 192) from the default 32 (note the `--force` supplied)
-    eqx destroy -cn '$Friend' --force -w 192 cosmos -d db -c $EQUINOX_COSMOS_CONTAINER -b 9999
+    eqx destroy -cn '$Friend' --force -w 192 cosmos -d db -c $EQUINOX_COSMOS_CONTAINER
     # W DESTROYING all Items WHERE c.p LIKE "$ResourceRole%" {}
     # I Page  3946> 3946i    3946s      0e   3946u    3.05>0.30   176.23RRU   0.8s 5,107.71WRU/s   6.1s {}
     # I TOTALS 3,946i 1c 3,946s 0e 3,946u read 3.0MiB output 0.3MiB 176.23RRU Avg 3,058.48WRU/s Delete 31,360.10WRU Total 10.3s {}
 
     # Analyze the largest streams in the '$Permission' category 
-    eqx top -S -cl '$Perm%' cosmos -d db -c $EQUINOX_COSMOS_CONTAINER -b 9999
+    eqx top -S -cl '$Perm%' cosmos -d db -c $EQUINOX_COSMOS_CONTAINER
     # I Page  254> 254i  254s    0e  254u 4.33>4.33<4.65MiB 349.76RU  3.9s D+M 8.2 C+C 0.00 105ms age 0013.23:34:02 {}
     # I Page 1671>1671i 1671s    0e 1671u 2.39>2.40<2.54MiB  91.57RU  2.1s D+M 2.9 C+C 0.00  99ms age 0013.23:34:07 {}
     # I TOTALS 1,925i 1,925c 1,925s 0e 1,925u read 0.0GiB output 0.0GiB JSON 0.0GiB D+M(inflated) 0.0GiB C+C 0.00MiB Parse 0.207s Total 441.33RU 9.4s {}
