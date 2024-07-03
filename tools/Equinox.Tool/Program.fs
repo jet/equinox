@@ -610,11 +610,11 @@ module CosmosTop =
             | Order.UnfoldSize -> Seq.sortByDescending (snd >> _.uBytes)
             | Order.InflateSize -> Seq.sortByDescending (snd >> _.iBytes)
             | Order.CorrCauseSize -> Seq.sortByDescending (snd >> _.cBytes)
-        let inline streamOrCatTemplate s = "{count,8}i {tm,7:N2}MiB" + s + " E{events,8} {em,7:N1} U{unfolds,8} {um,7:N1} D+M{dm,7:N1} C+C{cm,6:N1} {key}"
-        let catTemplate, streamTemplate = streamOrCatTemplate " S{streams,8}", streamOrCatTemplate ""
+        let streamTemplate = "{count,8}i {tm,7:N2}MiB E{events,8} {em,7:N1} U{unfolds,8} {um,7:N1} D+M{dm,7:N1} C+C{cm,6:N1} {key}"
+        let catTemplate = "S{streams,8} " + streamTemplate
         let render (streams, x: Parser.Stat) =
             if streams = 0 then Log.Information(streamTemplate, x.count, miB x.bytes, x.events, miB x.eBytes, x.unfolds, miB x.uBytes, miB x.iBytes, miB x.cBytes, x.key)
-            else Log.Information(catTemplate, x.count, miB x.bytes, streams, x.events, miB x.eBytes, x.unfolds, miB x.uBytes, miB x.iBytes, miB x.cBytes, x.key)
+            else Log.Information(catTemplate, streams, x.count, miB x.bytes, x.events, miB x.eBytes, x.unfolds, miB x.uBytes, miB x.iBytes, miB x.cBytes, x.key)
         if a.StreamLevel then
             s |> Seq.groupBy (_.key >> StreamName.categoryName)
               |> Seq.map (fun (cat, streams) -> Seq.length streams, { (streams |> Seq.reduce _.Merge) with key = cat })
