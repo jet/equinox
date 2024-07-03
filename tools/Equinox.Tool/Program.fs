@@ -221,7 +221,7 @@ and TopArguments(p: ParseResults<TopParameters>) =
                                             | _ -> p.Raise "Top requires Cosmos"
     member x.Execute(sql) =                 let container = x.Connect()
                                             let qd = Microsoft.Azure.Cosmos.QueryDefinition sql
-                                            let qo = Microsoft.Azure.Cosmos.QueryRequestOptions(MaxItemCount = x.CosmosArgs.QueryMaxItems)
+                                            let qo = Microsoft.Azure.Cosmos.QueryRequestOptions(MaxItemCount = x.CosmosArgs.QueryMaxItemsOr 9999)
                                             container.GetItemQueryIterator<System.Text.Json.JsonElement>(qd, requestOptions = qo)
 and [<NoComparison; NoEquality; RequireSubcommand>] DestroyParameters =
     | [<AltCommandLine "-sn"; Unique>]      StreamName of string
@@ -648,7 +648,7 @@ module CosmosDestroy =
         let container = a.Connect()
         let query =
             let qd = Microsoft.Azure.Cosmos.QueryDefinition sql
-            let qo = Microsoft.Azure.Cosmos.QueryRequestOptions(MaxItemCount = a.CosmosArgs.QueryMaxItems)
+            let qo = Microsoft.Azure.Cosmos.QueryRequestOptions(MaxItemCount = a.CosmosArgs.QueryMaxItemsOr 9999)
             container.GetItemQueryIterator<SnEventsUnfolds>(qd, requestOptions = qo)
         let pageStreams, accStreams = System.Collections.Generic.HashSet(), System.Collections.Generic.HashSet()
         let mutable accI, accE, accU, accRus, accDelRu, accRds, accOds = 0L, 0L, 0L, 0., 0., 0L, 0L
