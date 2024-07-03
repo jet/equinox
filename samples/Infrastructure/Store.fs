@@ -71,7 +71,7 @@ module Cosmos =
                 | ArchiveContainer _ -> "specify a container name for Archive store. Default: use same as Primary Container"
                 | TipMaxEvents _ ->     "specify maximum number of events to hold in Tip before calving off to a frozen Batch. Default: 256"
                 | TipMaxJsonLength _ -> "specify maximum length of JSON (as measured by JSON.stringify) to hold in Tip before calving off to a frozen Batch. Default: 30,000"
-                | QueryMaxItems _ ->    "specify maximum number of batches of events to retrieve in per query response. Default: 10"
+                | QueryMaxItems _ ->    "specify maximum number of batches of events to retrieve in per query response. Default: 10/9999"
     type Arguments(p : ParseResults<Parameters>) =
         member val Verbose =            p.Contains StoreVerbose
         member val Mode =               p.TryGetResult ConnectionMode
@@ -85,12 +85,13 @@ module Cosmos =
                                         then Some (x.ArchiveConnection, x.ArchiveDatabase, x.ArchiveContainer)
                                         else None
 
-        member x.Timeout =              p.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
-        member x.Retries =              p.GetResult(Retries,1)
-        member x.MaxRetryWaitTime =     p.GetResult(RetriesWaitTimeS, 5.) |> TimeSpan.FromSeconds
-        member x.TipMaxEvents =         p.GetResult(TipMaxEvents, 256)
-        member x.TipMaxJsonLength =     p.GetResult(TipMaxJsonLength, 30_000)
-        member x.QueryMaxItems =        p.GetResult(QueryMaxItems, 10)
+        member _.Timeout =              p.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
+        member _.Retries =              p.GetResult(Retries,1)
+        member _.MaxRetryWaitTime =     p.GetResult(RetriesWaitTimeS, 5.) |> TimeSpan.FromSeconds
+        member _.TipMaxEvents =         p.GetResult(TipMaxEvents, 256)
+        member _.TipMaxJsonLength =     p.GetResult(TipMaxJsonLength, 30_000)
+        member _.QueryMaxItemsOr(def: int) =  p.GetResult(QueryMaxItems, def)
+        member x.QueryMaxItems =        x.QueryMaxItemsOr 10
 
     let logContainer (log: ILogger) role (mode, endpoint, db, container) =
         log.Information("CosmosDB {role:l} {mode} {connection} Database {database} Container {container}",
@@ -112,17 +113,17 @@ module Cosmos =
             | None -> None
         archive |> Option.iter (fun (client, db, container) -> logContainer log "Archive" (a.Mode, client.Endpoint, db, container))
         primary, archive
-    let config (log : ILogger) (cache, unfolds) (a : Arguments) =
+    let config (log: ILogger) (cache, unfolds) (a: Arguments) =
         let context =
             match connect log a with
             | (connector, databaseId, containerId), None ->
                 let client = connector.Connect(databaseId, [| containerId |]) |> Async.RunSynchronously
-                CosmosStoreContext(client, databaseId, containerId, a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength, queryMaxItems = a.QueryMaxItems)
+                CosmosStoreContext(client, databaseId, containerId, a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength, queryMaxItems = a.QueryMaxItems 10)
             | (connector, databaseId, containerId), Some (aConnector, aDatabaseId, aContainerId) ->
                 let cosmosClient = connector.CreateAndInitialize(databaseId, [| containerId |]) |> Async.RunSynchronously
                 let archiveCosmosClient = aConnector.CreateAndInitialize(aDatabaseId, [| aContainerId |]) |> Async.RunSynchronously
                 let client = CosmosStoreClient(cosmosClient, archiveCosmosClient)
-                CosmosStoreContext(client, databaseId, containerId, a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength, queryMaxItems = a.QueryMaxItems,
+                CosmosStoreContext(client, databaseId, containerId, a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength, queryMaxItems = a.QueryMaxItems 10,
                                    archiveDatabaseId = aDatabaseId, archiveContainerId = aContainerId)
         log.Information("CosmosStore Tip thresholds: {maxTipJsonLength}b {maxTipEvents}e Query paging {queryMaxItems} items",
                         a.TipMaxJsonLength, a.TipMaxEvents, a.QueryMaxItems)
