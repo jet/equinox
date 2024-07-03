@@ -118,12 +118,12 @@ module Cosmos =
             match connect log a with
             | (connector, databaseId, containerId), None ->
                 let client = connector.Connect(databaseId, [| containerId |]) |> Async.RunSynchronously
-                CosmosStoreContext(client, databaseId, containerId, a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength, queryMaxItems = a.QueryMaxItems 10)
+                CosmosStoreContext(client, databaseId, containerId, a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength, queryMaxItems = a.QueryMaxItems)
             | (connector, databaseId, containerId), Some (aConnector, aDatabaseId, aContainerId) ->
                 let cosmosClient = connector.CreateAndInitialize(databaseId, [| containerId |]) |> Async.RunSynchronously
                 let archiveCosmosClient = aConnector.CreateAndInitialize(aDatabaseId, [| aContainerId |]) |> Async.RunSynchronously
                 let client = CosmosStoreClient(cosmosClient, archiveCosmosClient)
-                CosmosStoreContext(client, databaseId, containerId, a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength, queryMaxItems = a.QueryMaxItems 10,
+                CosmosStoreContext(client, databaseId, containerId, a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength, queryMaxItems = a.QueryMaxItems,
                                    archiveDatabaseId = aDatabaseId, archiveContainerId = aContainerId)
         log.Information("CosmosStore Tip thresholds: {maxTipJsonLength}b {maxTipEvents}e Query paging {queryMaxItems} items",
                         a.TipMaxJsonLength, a.TipMaxEvents, a.QueryMaxItems)
