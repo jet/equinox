@@ -26,7 +26,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Changed
 
-- `Equinox.*Store`,`Equinox.*Store.Prometheus`: Pin `Equinox` dependencies to `[4.0.0, 5.0.0)`] [#448](https://github.com/jet/equinox/pull/448)
+- `Equinox.*Store`,`Equinox.*Store.Prometheus`: Pin `Equinox` dependencies to `[4.0.2, 5.0.0)`] [#448](https://github.com/jet/equinox/pull/448)
 - `Equinox.CosmosStore`: Minimum `Microsoft.Azure.Cosmos` requirement updated to `3.43.0` to avail of integrated `System.Text.Json` support [#467](https://github.com/jet/equinox/pull/467)
 - `Equinox.CosmosStore.CosmosStoreConnector`: Removed mandatory `requestTimeout` argument [#467](https://github.com/jet/equinox/pull/467)
 - `Equinox.CosmosStore`: Minimum `System.Text.Json` requirement updated to `8.0.4` as that's the lowest non-flagged version [#462](https://github.com/jet/equinox/pull/462)
