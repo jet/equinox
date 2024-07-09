@@ -1469,10 +1469,16 @@ type EventsContext
 
     /// Appends the supplied batch of events, subject to a consistency check based on the `position`
     /// Callers should implement appropriate idempotent handling, or use Equinox.Decider for that purpose
-    member x.Sync(streamName, position, events: IEventData<_>[], ct): Task<AppendResult<Position>> = task {
+    // TOCONSIDER remove for V5, make unfolds optional/default to empty
+    member x.Sync(streamName, position, events: IEventData<_>[], ct): Task<AppendResult<Position>> =
+        x.Sync(streamName, position, events, Array.empty, ct)
+
+    /// Appends the supplied batch of events (and, optionally, unfolds), subject to a consistency check based on the `position`
+    /// Callers should implement appropriate idempotent handling, or use Equinox.Decider for that purpose
+    member _.Sync(streamName, position, events: IEventData<_>[], unfolds: Unfold[], ct): Task<AppendResult<Position>> = task {
         do! context.EnsureStoredProcedureInitialized ct
         let store, stream = resolve streamName
-        let batch = Sync.mkBatch stream events Array.empty
+        let batch = Sync.mkBatch stream events unfolds
         match! store.Sync(log, stream, SyncExp.fromVersionOrAppendAtEnd position.index, batch, ct) with
         | InternalSyncResult.Written (Token.Unpack pos) -> return AppendResult.Ok pos
         | InternalSyncResult.Conflict (pos, events) -> return AppendResult.Conflict (pos, events)
