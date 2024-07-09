@@ -11,10 +11,10 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 
 - `Equinox.CosmosStore`: Group metrics by Container Name [#449](https://github.com/jet/equinox/pull/449)
-- `Equinox.Core.Batcher`: Add Settable `Linger` [#454](https://github.com/jet/equinox/pull/454)
-- `Equinox.CosmosStore`: Group metrics by Category; split out `Tip` [#453](https://github.com/jet/equinox/pull/453)
-- `eqx stats`: Added `-O` and `-N` to extract oldest and newest `_ts` within a store [#459](https://github.com/jet/equinox/pull/459)
-- `eqx`: Added `-Q` flag to omit timestamps from console output logging [#459](https://github.com/jet/equinox/pull/459)
+- `Equinox.CosmosStore`: Group metrics by Category; split out `Tip` activity [#453](https://github.com/jet/equinox/pull/453)
+- `Equinox.CosmosStore`: Support Ingesting unfolds [#460](https://github.com/jet/equinox/pull/460)
+- `eqx stats`: `-O` and `-N` to extract oldest and newest `_ts` within a store [#459](https://github.com/jet/equinox/pull/459)
+- `eqx`: `-Q` flag to omit timestamps from console output logging [#459](https://github.com/jet/equinox/pull/459)
 
 ### Changed
 
