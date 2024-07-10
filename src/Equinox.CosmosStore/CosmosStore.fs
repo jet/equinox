@@ -539,7 +539,7 @@ module internal Sync =
     let mkBatch (stream: string) (events: IEventData<_>[]) unfolds: Tip =
         {   p = stream; id = Tip.WellKnownDocumentId; n = -1L(*Server-managed*); i = -1L(*Server-managed*); _etag = null
             e = Array.map mkEvent events; u = unfolds }
-    let mkUnfold baseIndex (compressor, x: IEventData<_>): Unfold =
+    let mkUnfold baseIndex (compressor, x: IEventData<'F>): Unfold =
         {   i = baseIndex; t = x.Timestamp
             c = x.EventType; d = compressor x.Data; m = compressor x.Meta }
 
@@ -1467,18 +1467,16 @@ type EventsContext
     member x.Read(streamName, [<O; D null>] ?ct, [<O; D null>] ?position, [<O; D null>] ?maxCount, [<O; D null>] ?direction): Task<Position*ITimelineEvent<EventBody>[]> =
         x.GetInternal((streamName, position), ?ct = ct, ?maxCount = maxCount, ?direction = direction) |> yieldPositionAndData
 
-    /// Appends the supplied batch of events, subject to a consistency check based on the `position`
-    /// Callers should implement appropriate idempotent handling, or use Equinox.Decider for that purpose
-    // TOCONSIDER remove for V5, make unfolds optional/default to empty
+    [<System.Obsolete "Will be removed in V5 in favor of the overload that requires explict passing of the Unfolds">]
     member x.Sync(streamName, position, events: IEventData<_>[], ct): Task<AppendResult<Position>> =
         x.Sync(streamName, position, events, Array.empty, ct)
 
     /// Appends the supplied batch of events (and, optionally, unfolds), subject to a consistency check based on the `position`
     /// Callers should implement appropriate idempotent handling, or use Equinox.Decider for that purpose
-    member _.Sync(streamName, position, events: IEventData<_>[], unfolds: Unfold[], ct): Task<AppendResult<Position>> = task {
+    member _.Sync(streamName, position, events: IEventData<_>[], unfolds: #IEventData<EventBody>[], ct): Task<AppendResult<Position>> = task {
         do! context.EnsureStoredProcedureInitialized ct
         let store, stream = resolve streamName
-        let batch = Sync.mkBatch stream events unfolds
+        let batch = Sync.mkBatch stream events [| for x in unfolds -> Sync.mkUnfold position.index (id, x) |]
         match! store.Sync(log, stream, SyncExp.fromVersionOrAppendAtEnd position.index, batch, ct) with
         | InternalSyncResult.Written (Token.Unpack pos) -> return AppendResult.Ok pos
         | InternalSyncResult.Conflict (pos, events) -> return AppendResult.Conflict (pos, events)
@@ -1487,7 +1485,7 @@ type EventsContext
     /// Low level, non-idempotent call appending events to a stream without a concurrency control mechanism in play
     /// NB Should be used sparingly; Equinox.Decider enables building equivalent equivalent idempotent handling with minimal code.
     member x.NonIdempotentAppend(streamName, events: IEventData<_>[], ct): Task<Position> = task {
-        match! x.Sync(streamName, Position.fromAppendAtEnd, events, ct) with
+        match! x.Sync(streamName, Position.fromAppendAtEnd, events, Array.empty, ct) with
         | AppendResult.Ok token -> return token
         | x -> return invalidOp $"Conflict despite it being disabled %A{x}" }
 
@@ -1537,7 +1535,7 @@ module Events =
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
     let append (ctx: EventsContext) (streamName: StreamName) (index: int64) (events: IEventData<_>[]): Async<AppendResult<int64>> =
-        Async.call (fun ct -> ctx.Sync(streamName, Position.fromIndex index, events, ct) |> stripSyncResult)
+        Async.call (fun ct -> ctx.Sync(streamName, Position.fromIndex index, events, Array.empty, ct) |> stripSyncResult)
 
     /// Appends a batch of events to a stream at the the present Position without any conflict checks.
     /// NB typically, it is recommended to ensure idempotency of operations by using the `append` and related API as
