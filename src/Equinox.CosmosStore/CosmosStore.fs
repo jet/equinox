@@ -1476,7 +1476,9 @@ type EventsContext
     member _.Sync(streamName, position, events: IEventData<_>[], unfolds: #IEventData<EventBody>[], ct): Task<AppendResult<Position>> = task {
         do! context.EnsureStoredProcedureInitialized ct
         let store, stream = resolve streamName
-        let batch = Sync.mkBatch stream events [| for x in unfolds -> Sync.mkUnfold position.index (id, x) |]
+
+        let baseIndex = position.index + int64 events.Length
+        let batch = Sync.mkBatch stream events [| for x in unfolds -> Sync.mkUnfold baseIndex (id, x) |]
         match! store.Sync(log, stream, SyncExp.fromVersionOrAppendAtEnd position.index, batch, ct) with
         | InternalSyncResult.Written (Token.Unpack pos) -> return AppendResult.Ok pos
         | InternalSyncResult.Conflict (pos, events) -> return AppendResult.Conflict (pos, events)
