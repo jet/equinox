@@ -186,7 +186,8 @@ and [<NoComparison; NoEquality; RequireSubcommand>] TopParameters =
     | [<AltCommandLine "-cs"; Unique>]      CustomFilter of sql: string
     | [<AltCommandLine "-S"; Unique>]       Streams
     | [<AltCommandLine "-T"; Unique>]       TsOrder
-    | [<AltCommandLine "-c">]               Limit of int
+    | [<Unique>]                            CategoryLimit of int
+    | [<AltCommandLine "-limit">]           StreamsLimit of int
     | [<MainCommand; AltCommandLine "-s"; Unique>] Sort of Order
     | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Store.Cosmos.Parameters>
     interface IArgParserTemplate with
@@ -198,7 +199,8 @@ and [<NoComparison; NoEquality; RequireSubcommand>] TopParameters =
             | Streams ->                    "Stream level stats"
             | TsOrder ->                    "Retrieve data in `_ts` ORDER (generally has significant RU impact). Default: Use continuation tokens"
             | Sort _ ->                     "Sort order for results"
-            | Limit _ ->                    "Number of categories to limit output to (Streams limit is 10x the category limit). Default: 100"
+            | CategoryLimit _ ->            "Number of categories to limit output to. Default: unlimited."
+            | StreamsLimit _ ->             "Number of streams to limit output to. Default: 50"
             | Cosmos _ ->                   "Parameters for CosmosDB."
 and Order = Name | Items | Events | Unfolds | Size | EventSize | UnfoldSize | InflateSize | CorrCauseSize
 and TopArguments(p: ParseResults<TopParameters>) =
@@ -212,10 +214,10 @@ and TopArguments(p: ParseResults<TopParameters>) =
         | _ ->                              p.Raise "StreamName/CategoryLike/CategoryName/CustomFilter are mutually exclusive"
     member val CosmosArgs =                 p.GetResult TopParameters.Cosmos |> Store.Cosmos.Arguments
     member val StreamLevel =                p.Contains Streams
-    member val Count =                      p.GetResult(Limit, 100)
+    member val CategoriesLimit =            p.GetResult(CategoryLimit, Int32.MaxValue)
     member val TsOrder =                    p.Contains TsOrder
     member val Order =                      p.GetResult(Sort, Order.Size)
-    member x.StreamCount =                  p.GetResult(Limit, x.Count * 10)
+    member val StreamsLimit =               p.GetResult(StreamsLimit, 50)
     member x.Connect() =                    match Store.Cosmos.config Log.Logger (None, true) x.CosmosArgs with
                                             | Store.Config.Cosmos (cc, _, _) -> cc.Container
                                             | _ -> p.Raise "Top requires Cosmos"
@@ -625,9 +627,9 @@ module CosmosTop =
         if a.StreamLevel then
             s |> Seq.groupBy (_.key >> StreamName.categoryName)
               |> Seq.map (fun (cat, streams) -> Seq.length streams, { (streams |> Seq.reduce _.Merge) with key = cat })
-              |> sort |> Seq.truncate a.Count
+              |> sort |> Seq.truncate a.CategoriesLimit
               |> Seq.iter render
-        s |> Seq.map (fun x -> 0, x) |> sort |> Seq.truncate (if a.StreamLevel then a.StreamCount else a.Count) |> Seq.iter render }
+        s |> Seq.map (fun x -> 0, x) |> sort |> Seq.truncate (if a.StreamLevel then a.StreamsLimit else a.CategoriesLimit) |> Seq.iter render }
 
 module CosmosDestroy =
 
