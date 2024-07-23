@@ -105,6 +105,7 @@ and [<NoComparison; NoEquality; RequireSubcommand>] InitSqlParameters =
             | Postgres _ ->                 "Configure Postgres Store."
 and [<NoComparison; NoEquality; RequireSubcommand>] StatsParameters =
     | [<AltCommandLine "-E"; Unique>]       Events
+    | [<AltCommandLine "-U"; Unique>]       Unfolds
     | [<AltCommandLine "-S"; Unique>]       Streams
     | [<AltCommandLine "-D"; Unique>]       Documents
     | [<AltCommandLine "-O"; Unique>]       Oldest
@@ -115,6 +116,7 @@ and [<NoComparison; NoEquality; RequireSubcommand>] StatsParameters =
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Events ->                     "Count the number of Events in the store."
+            | Unfolds ->                    "Count the number of Unfolds in the store."
             | Streams ->                    "Count the number of Streams in the store."
             | Documents ->                  "Count the number of Documents in the store."
             | Oldest ->                     "Oldest document, based on the _ts field"
@@ -154,11 +156,11 @@ and [<RequireQualifiedAccess>] Mode = Default | SnapOnly | SnapWithStream | Read
 and [<RequireQualifiedAccess>] Criteria =
     | SingleStream of string | CatName of string | CatLike of string | Custom of sql: string | Unfiltered
     member x.Sql = x |> function
-        | Criteria.SingleStream sn ->   $"c.p = \"{sn}\""
-        | Criteria.CatName n ->         $"c.p LIKE \"{n}-%%\""
-        | Criteria.CatLike pat ->       $"c.p LIKE \"{pat}\""
-        | Criteria.Custom filter ->     filter
-        | Criteria.Unfiltered ->        "1=1"
+        | Criteria.SingleStream sn ->       $"c.p = \"{sn}\""
+        | Criteria.CatName n ->             $"c.p LIKE \"{n}-%%\""
+        | Criteria.CatLike pat ->           $"c.p LIKE \"{pat}\""
+        | Criteria.Custom filter ->         filter
+        | Criteria.Unfiltered ->            "1=1"
 and QueryArguments(p: ParseResults<QueryParameters>) =
     member val Mode =                       p.GetResult(QueryParameters.Mode, if p.Contains QueryParameters.File then Mode.Raw else Mode.Default)
     member val Pretty =                     p.Contains QueryParameters.Pretty
@@ -400,10 +402,10 @@ module CosmosStats =
     let run (log : ILogger, _verboseConsole, _maybeSeq) (p : ParseResults<StatsParameters>) =
         match p.GetSubCommand() with
         | StatsParameters.Cosmos sp ->
-            let doS, doD, doE, doO, doN =
-                let s, d, e, o, n = p.Contains StatsParameters.Streams, p.Contains Documents, p.Contains StatsParameters.Events, p.Contains Oldest, p.Contains Newest
+            let doS, doD, doE, doU, doO, doN =
+                let s, d, e, u, o, n = p.Contains StatsParameters.Streams, p.Contains Documents, p.Contains StatsParameters.Events, p.Contains StatsParameters.Unfolds, p.Contains Oldest, p.Contains Newest
                 let all = not (s || d || e || o || n)
-                all || s, all || d, all || e, all || o, all || n
+                all || s, all || d, all || e, all || u, all || o, all || n
             let doS = doS || (not doD && not doE) // default to counting streams only unless otherwise specified
             let inParallel = p.Contains Parallel
             let connector, dName, cName = CosmosInit.connect log sp
@@ -411,6 +413,8 @@ module CosmosStats =
             let ops = [| if doS then "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """
                          if doD then "Documents", """SELECT VALUE COUNT(1) FROM c"""
                          if doE then "Events",    """SELECT VALUE SUM(c.n) FROM c WHERE c.id="-1" """
+                         if doU then "Unfolded",  """SELECT VALUE SUM(ARRAY_LENGTH(c.u) > 0 ? 1 : 0) FROM c WHERE c.id="-1" """
+                         if doU then "Unfolds",   """SELECT VALUE SUM(ARRAYLENGTH(c.u)) FROM c WHERE c.id="-1" """
                          if doO then "Oldest",    """SELECT VALUE MIN(c._ts) FROM c"""
                          if doN then "Newest",    """SELECT VALUE MAX(c._ts) FROM c""" |]
             let render = if log.IsEnabled LogEventLevel.Debug then snd else fst
