@@ -107,7 +107,7 @@ and [<NoComparison; NoEquality; RequireSubcommand>] StatsParameters =
     | [<AltCommandLine "-E"; Unique>]       Events
     | [<AltCommandLine "-U"; Unique>]       Unfolds
     | [<AltCommandLine "-S"; Unique>]       Streams
-    | [<AltCommandLine "-D"; Unique>]       Documents
+    | [<AltCommandLine "-D"; AltCommandLine "-I"; Unique>] Items
     | [<AltCommandLine "-O"; Unique>]       Oldest
     | [<AltCommandLine "-N"; Unique>]       Newest
     | [<AltCommandLine "-P"; Unique>]       Parallel
@@ -118,7 +118,7 @@ and [<NoComparison; NoEquality; RequireSubcommand>] StatsParameters =
             | Events ->                     "Count the number of Events in the store."
             | Unfolds ->                    "Count the number of Unfolds in the store."
             | Streams ->                    "Count the number of Streams in the store."
-            | Documents ->                  "Count the number of Documents in the store."
+            | Items ->                      "Count the number of Items(Documents) in the store."
             | Oldest ->                     "Oldest document, based on the _ts field"
             | Newest ->                     "Newest document, based on the _ts field"
             | Parallel ->                   "Run in Parallel (CAREFUL! can overwhelm RU allocations)."
@@ -402,16 +402,16 @@ module CosmosStats =
     let run (log : ILogger, _verboseConsole, _maybeSeq) (p : ParseResults<StatsParameters>) =
         match p.GetSubCommand() with
         | StatsParameters.Cosmos sp ->
-            let doS, doD, doE, doU, doO, doN =
-                let s, d, e, u, o, n = p.Contains StatsParameters.Streams, p.Contains Documents, p.Contains StatsParameters.Events, p.Contains StatsParameters.Unfolds, p.Contains Oldest, p.Contains Newest
-                let all = not (s || d || e || o || n)
-                all || s, all || d, all || e, all || u, all || o, all || n
-            let doS = doS || (not doD && not doE) // default to counting streams only unless otherwise specified
+            let doS, doI, doE, doU, doO, doN =
+                let s, i, e, u, o, n = p.Contains StatsParameters.Streams, p.Contains StatsParameters.Items, p.Contains StatsParameters.Events, p.Contains StatsParameters.Unfolds, p.Contains Oldest, p.Contains Newest
+                let all = not (s || i || e || u || o || n)
+                all || s, all || i, all || e, all || u, all || o, all || n
+            let doS = doS || (not doI && not doE) // default to counting streams only unless otherwise specified
             let inParallel = p.Contains Parallel
             let connector, dName, cName = CosmosInit.connect log sp
             let container = connector.CreateUninitialized().GetContainer(dName, cName)
             let ops = [| if doS then "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """
-                         if doD then "Documents", """SELECT VALUE COUNT(1) FROM c"""
+                         if doI then "Items",     """SELECT VALUE COUNT(1) FROM c"""
                          if doE then "Events",    """SELECT VALUE SUM(c.n) FROM c WHERE c.id="-1" """
                          if doU then "Unfolded",  """SELECT VALUE SUM(ARRAY_LENGTH(c.u) > 0 ? 1 : 0) FROM c WHERE c.id="-1" """
                          if doU then "Unfolds",   """SELECT VALUE SUM(ARRAYLENGTH(c.u)) FROM c WHERE c.id="-1" """
