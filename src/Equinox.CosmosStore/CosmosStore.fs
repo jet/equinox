@@ -364,7 +364,7 @@ module Log =
                 nameof res.Prune,       res.Prune
                 nameof res.Delete,      res.Delete
                 nameof res.Trim,        res.Trim |]
-            let isRead = function nameof res.Tip | nameof res.Read | nameof res.Index | nameof res.Prune -> true | _ -> false
+            let isRead = function nameof res.Tip | nameof res.Read | nameof res.Index | nameof res.Prune | nameof res.Resync -> true | _ -> false
             let buckets = stats |> Seq.collect (fun (_n, stat) -> stat.Buckets) |> Seq.distinct |> Seq.sort |> Seq.toArray
             if Array.isEmpty buckets then () else
 
