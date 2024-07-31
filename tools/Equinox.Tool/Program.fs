@@ -422,10 +422,11 @@ module CosmosStats =
             ops |> Seq.map (fun (name, sql) -> async {
                     let! res = Microsoft.Azure.Cosmos.QueryDefinition sql
                                |> container.GetItemQueryIterator<int64>
-                               |> Query.enum_ log container "Stat" null LogEventLevel.Debug |> TaskSeq.head |> Async.AwaitTaskCorrect
-                    match name with
-                    | "Oldest" | "Newest" -> log.Information("{stat,-10}: {result,13} ({d:u})", name, res, DateTime.UnixEpoch.AddSeconds(float res))
-                    | _ -> log.Information("{stat,-10}: {result,13:N0}", name, res) })
+                               |> Query.enum_ log container "Stat" null LogEventLevel.Debug |> TaskSeq.tryHead |> Async.AwaitTaskCorrect
+                    match name, res with
+                    | ("Oldest" | "Newest"), Some res -> log.Information("{stat,-10}: {result,13} ({d:u})", name, res, DateTime.UnixEpoch.AddSeconds(float res))
+                    | _, Some res -> log.Information("{stat,-10}: {result,13:N0}", name, res)
+                    | _, None -> () }) // handle no Oldest/Newest not producing a result
                 |> if inParallel then Async.Parallel else Async.Sequential
                 |> Async.Ignore<unit[]>
         | StatsParameters.Dynamo sp -> async {
