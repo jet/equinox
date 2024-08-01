@@ -359,7 +359,7 @@ module Log =
                         let rut = if isRead act then catR <- catR + stat.count; catRRu <- catRRu + ru; "R"
                                                 else catW <- catW + stat.count; catWRu <- catWRu + ru; "W"
                         let inline avg x = x / float stat.count
-                        log.Information("{bucket} {act,-7}{count,6}r {minRu,5:f1}-{maxRu,3:f0} {rut:l}RU{lat,5:f0} ms @ {rps,5:f0} r/s {rups,5:f0} RU/s Σ {ru,7:f0} avg={avgRu,4:f1}",
+                        log.Information("{bucket} {act,-8}{count,6}r {minRu,5:f1}-{maxRu,3:f0} {rut:l}RU{lat,5:f0} ms @ {rps,5:f0} r/s {rups,5:f0} RU/s Σ {ru,7:f0} avg={avgRu,4:f1}",
                                         bucket.PadRight maxBucketLen, act, stat.count, stat.minRu, stat.maxRu, rut, avg (float stat.ms), rps stat.count, ups ru, ru, avg ru)
                     | _ -> ()
             null |> logOnCatChange
