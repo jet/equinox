@@ -85,11 +85,11 @@ module Cosmos =
                                         then Some (x.ArchiveConnection, x.ArchiveDatabase, x.ArchiveContainer)
                                         else None
 
-        member x.Timeout =              p.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
-        member x.Retries =              p.GetResult(Retries,1)
-        member x.MaxRetryWaitTime =     p.GetResult(RetriesWaitTimeS, 5.) |> TimeSpan.FromSeconds
-        member x.TipMaxEvents =         p.GetResult(TipMaxEvents, 256)
-        member x.TipMaxJsonLength =     p.GetResult(TipMaxJsonLength, 30_000)
+        member _.Timeout =              p.GetResult(Timeout, 5.) |> TimeSpan.FromSeconds
+        member _.Retries =              p.GetResult(Retries, 1)
+        member _.MaxRetryWaitTime =     p.GetResult(RetriesWaitTimeS, 5.) |> TimeSpan.FromSeconds
+        member _.TipMaxEvents =         p.GetResult(TipMaxEvents, 256)
+        member _.TipMaxJsonLength =     p.GetResult(TipMaxJsonLength, 30_000)
         member x.QueryMaxItems =        p.GetResult(QueryMaxItems, 10)
 
     let logContainer (log: ILogger) role (mode, endpoint, db, container) =
@@ -112,7 +112,7 @@ module Cosmos =
             | None -> None
         archive |> Option.iter (fun (client, db, container) -> logContainer log "Archive" (a.Mode, client.Endpoint, db, container))
         primary, archive
-    let config (log : ILogger) (cache, unfolds) (a : Arguments) =
+    let config (log: ILogger) (cache, unfolds) (a: Arguments) =
         let context =
             match connect log a with
             | (connector, databaseId, containerId), None ->

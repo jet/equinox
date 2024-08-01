@@ -114,7 +114,7 @@ type LogSink(customTags: seq<string * string>) =
                 | QueryRes (_direction,         m) -> observeRes  ("R", "query",    "queryPage")                  m
                 | Op       (Operation.Append,   m) -> observe     ("W", "transact", "append",        "ok")        m
                 | Op       (Operation.Calve,    m) -> observe     ("W", "transact", "calve",         "ok")        m
-                | Op       (Operation.AppendConflict, m) ->observe("W", "transact", "append",         "conflict")  m
+                | Op       (Operation.AppendConflict, m) ->observe("W", "transact", "append",        "conflict")  m
                 | Op       (Operation.CalveConflict, m) -> observe("W", "transact", "calve",         "conflict")  m
                 | Op       (Operation.Prune,    m) -> observe_    ("R", "prune",    "pruneQuery")                 m
                 | PruneRes                      m  -> observeRes  ("R", "prune",    "pruneQueryPage")             m

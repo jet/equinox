@@ -1,5 +1,9 @@
 ﻿module Equinox.Tool.Program
 
+#if DEBUG // as of V8, compiling in Debug fails but release succeeds
+#nowarn "3511"
+#endif
+
 open Argu
 open FSharp.AWS.DynamoDB // Throughput
 open Samples.Infrastructure
@@ -12,7 +16,7 @@ module CosmosInit = Equinox.CosmosStore.Core.Initialization
 
 let [<Literal>] appName = "equinox-tool"
 
-[<NoEquality; NoComparison>]
+[<NoComparison; NoEquality>]
 type Parameters =
     | [<AltCommandLine "-Q"; Unique>]       Quiet
     | [<AltCommandLine "-V"; Unique>]       Verbose
