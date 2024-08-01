@@ -112,6 +112,7 @@ type LogSink(customTags: seq<string * string>) =
                 | Op       (Operation.Tip304,   m) -> observeTip  ("R", "query",    "tip",           "ok", "304") m
                 | Op       (Operation.Query,    m) -> observe     ("R", "query",    "query",         "ok")        m
                 | QueryRes (_direction,         m) -> observeRes  ("R", "query",    "queryPage")                  m
+                | Op       (Operation.Index,    m) -> observe     ("R", "linq",     "query",         "ok")        m
                 | Op       (Operation.Write,    m) -> observe     ("W", "transact", "sync",          "ok")        m
                 | Op       (Operation.Conflict, m) -> observe     ("W", "transact", "conflict",      "conflict")  m
                 | Op       (Operation.Resync,   m) -> observe     ("W", "transact", "resync",        "conflict")  m
