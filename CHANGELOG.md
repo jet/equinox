@@ -778,7 +778,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Fixed
 
-- Improve CosmosDb connection string parse error message 5b1b56bd94350ef47bd84ddbbb5b028e45fbb462
+- Improve CosmosDb connection string parse error message
 - change from `licenseUrl` to `license` in `.nupkg`
 - Make `xUnit` dependency consistently `2.4.0`
 
