@@ -13,6 +13,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Equinox.CosmosStore`: Group metrics by Container Name [#449](https://github.com/jet/equinox/pull/449)
 - `Equinox.CosmosStore`: Group metrics by Category; split out `Tip` activity [#453](https://github.com/jet/equinox/pull/453)
 - `Equinox.CosmosStore`: Support Ingesting unfolds [#460](https://github.com/jet/equinox/pull/460)
+- `Equinox.CosmosStore.EventsContext.Sync`: Support syncing of unfolds [#460](https://github.com/jet/equinox/pull/460)
 - `eqx stats`: `-O`, `-N` flags extract oldest and newest `_ts` within a store [#459](https://github.com/jet/equinox/pull/459)
 - `eqx`: `-Q` flag omits timestamps from console output logging [#459](https://github.com/jet/equinox/pull/459)
 
