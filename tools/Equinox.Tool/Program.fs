@@ -189,8 +189,8 @@ and [<NoComparison; NoEquality; RequireSubcommand>] TopParameters =
     | [<AltCommandLine "-S"; Unique>]       Streams
     | [<AltCommandLine "-T"; Unique>]       TsOrder
     | [<Unique>]                            CategoryLimit of int
-    | [<AltCommandLine "-limit">]           StreamsLimit of int
-    | [<MainCommand; AltCommandLine "-s"; Unique>] Sort of Order
+    | [<AltCommandLine "-limit"; Unique>]   StreamsLimit of int
+    | [<AltCommandLine "-s"; Unique>]       Sort of Order
     | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Store.Cosmos.Parameters>
     interface IArgParserTemplate with
         member a.Usage = a |> function
@@ -484,7 +484,7 @@ module CosmosQuery =
         let sql = composeSql a
         Log.Information("Querying {mode}: {q}", a.Mode, sql)
         Microsoft.Azure.Cosmos.QueryDefinition sql
-    let run (a: QueryArguments) = task {
+    let run quiet (a: QueryArguments) = task {
         let sw = System.Diagnostics.Stopwatch.StartNew()
         let serdes = if a.Pretty then prettySerdes.Value else FsCodec.SystemTextJson.Serdes.Default
         let maybeFileStream = a.Filepath |> Option.map (fun p ->
@@ -502,8 +502,9 @@ module CosmosQuery =
                 let inline arrayLen x = if isNull x then 0 else Array.length x
                 pageStreams.Clear(); for x in items do if x.p <> null && pageStreams.Add x.p then accStreams.Add x.p |> ignore
                 let pageI, pageE, pageU = items.Length, items |> Seq.sumBy (_.e >> arrayLen), items |> Seq.sumBy (_.u >> arrayLen)
-                Log.Information("Page{rdc,5}>{count,4}i{streams,5}s{es,5}e{us,5}u{rds,5:f2}>{ods,4:f2}MiB{rc,7:f2}RU{s,5:N1}s age {age:dddd\.hh\:mm\:ss}",
-                                rdc, pageI, pageStreams.Count, pageE, pageU, miB rds, miB ods, rc, rtt.TotalSeconds, DateTime.UtcNow - newestTs)
+                let ll = if quiet then LogEventLevel.Debug else LogEventLevel.Information
+                Log.Write(ll, "Page{rdc,5}>{count,4}i{streams,5}s{es,5}e{us,5}u{rds,5:f2}>{ods,4:f2}MiB{rc,7:f2}RU{s,5:N1}s age {age:dddd\.hh\:mm\:ss}",
+                              rdc, pageI, pageStreams.Count, pageE, pageU, miB rds, miB ods, rc, rtt.TotalSeconds, DateTime.UtcNow - newestTs)
                 maybeFileStream |> Option.iter (fun stream ->
                     for x in items do
                         serdes.SerializeToStream(x, stream)
@@ -574,7 +575,7 @@ module CosmosTop =
                     bytes = utf8Size x; eBytes = eb; uBytes = ub; cBytes = int64 (ec + uc); iBytes = ei + ui }
     let [<Literal>] OrderByTs = " ORDER BY c._ts"
     let private sql (a: TopArguments) = $"SELECT * FROM c WHERE {a.Criteria.Sql}{if a.TsOrder then OrderByTs else null}"
-    let run (a: TopArguments) = task {
+    let run quiet (a: TopArguments) = task {
         let sw = System.Diagnostics.Stopwatch.StartNew()
         let pageStreams, accStreams = System.Collections.Generic.HashSet(), System.Collections.Generic.HashSet()
         let mutable accI, accE, accU, accRus, accRds, accOds, accBytes, accParse = 0L, 0L, 0L, 0., 0L, 0L, 0L, TimeSpan.Zero
@@ -591,8 +592,9 @@ module CosmosTop =
                     s.Add(if s.TryGetValue(x, &v) then s.Remove x |> ignore; v.Merge x else x) |> ignore
                     pageI <- pageI + 1; pageE <- pageE + x.events; pageU <- pageU + x.unfolds
                     pageB <- pageB + x.bytes; pageCc <- pageCc + x.cBytes; pageDm <- pageDm + x.iBytes
-                Log.Information("Page{rdc,5}>{count,4}i{streams,5}s{es,5}e{us,5}u{rds,5:f2}>{ods,4:f2}<{jds,4:f2}MiB{rc,7:f2}RU{s,5:N1}s D+M{im,4:f1} C+C{cm,5:f2} {ms,3}ms age {age:dddd\.hh\:mm\:ss}",
-                                rdc, pageI, pageStreams.Count, pageE, pageU, miB rds, miB ods, miB pageB, rc, rtt.TotalSeconds, miB pageDm, miB pageCc, sw.ElapsedMilliseconds, DateTime.UtcNow - newestTs)
+                let ll = if quiet then LogEventLevel.Debug else LogEventLevel.Information
+                Log.Write(ll, "Page{rdc,5}>{count,4}i{streams,5}s{es,5}e{us,5}u{rds,5:f2}>{ods,4:f2}<{jds,4:f2}MiB{rc,7:f2}RU{s,5:N1}s D+M{im,4:f1} C+C{cm,5:f2} {ms,3}ms age {age:dddd\.hh\:mm\:ss}",
+                              rdc, pageI, pageStreams.Count, pageE, pageU, miB rds, miB ods, miB pageB, rc, rtt.TotalSeconds, miB pageDm, miB pageCc, sw.ElapsedMilliseconds, DateTime.UtcNow - newestTs)
                 pageStreams.Clear()
                 accI <- accI + int64 pageI; accE <- accE + int64 pageE; accU <- accU + int64 pageU
                 accRus <- accRus + rc; accRds <- accRds + int64 rds; accOds <- accOds + int64 ods; accBytes <- accBytes + pageB
@@ -833,8 +835,8 @@ type Arguments(p: ParseResults<Parameters>) =
         | InitAws a ->  do! DynamoInit.table Log.Logger a
         | InitSql a ->  do! SqlInit.databaseOrSchema Log.Logger a
         | Dump a ->     do! Dump.run (Log.Logger, verboseConsole, maybeSeq) a
-        | Query a ->    do! CosmosQuery.run (QueryArguments a) |> Async.AwaitTaskCorrect
-        | Top a ->      do! CosmosTop.run (TopArguments a) |> Async.AwaitTaskCorrect
+        | Query a ->    do! CosmosQuery.run quiet (QueryArguments a) |> Async.AwaitTaskCorrect
+        | Top a ->      do! CosmosTop.run quiet (TopArguments a) |> Async.AwaitTaskCorrect
         | Destroy a ->  do! CosmosDestroy.run (DestroyArguments a) |> Async.AwaitTaskCorrect
         | Stats a ->    do! CosmosStats.run (Log.Logger, verboseConsole, maybeSeq) a
         | LoadTest a -> let n = p.GetResult(LogFile, fun () -> p.ProgramName + ".log")
