@@ -29,6 +29,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `eqx stats`: `-I` flag; relabel Documents as Items, retaining existing `-D` flag [#464](https://github.com/jet/equinox/pull/464)
 - `eqx`: `-Q` flag omits timestamps from console output logging [#459](https://github.com/jet/equinox/pull/459)
 - `Equinox.CosmosStore.Linq`: Add LINQ querying support for Indexed `u`nfolds (`AccessStrategy.Custom`+`CosmosStoreCategory.shouldCompress`) [#450](https://github.com/jet/equinox/pull/450)
+- `eqx dump`, `eqx query`: `-sl` Support for specifying streams to dump via a [CosmosDB `LIKE` expression](https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/query/keywords#like) [#450](https://github.com/jet/equinox/pull/450)
+- `eqx dump`: `-Q` strips intervals, regularizes snapshots, logs stream names [#450](https://github.com/jet/equinox/pull/450)
 - `eqx top`: Support for analyzing space usage for event and view containers by category and/or stream [#450](https://github.com/jet/equinox/pull/450)
 - `eqx destroy`: Support for deleting the items(documents) underlying a category/stream/arbitrary `WHERE` clause [#450](https://github.com/jet/equinox/pull/450)
 
