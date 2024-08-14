@@ -100,11 +100,16 @@ module Internal =
                                 action, items, responses, totalRtt.TotalMilliseconds, totalRdc, miB totalRds, miB totalOds, totalRu, interval.ElapsedMilliseconds) }
         /// Runs a query that can be hydrated as 'T
         let enum log container cat = enum_ log container "Index" cat Events.LogEventLevel.Information
+        let exec__<'R> (log: ILogger) (container: Container) cat logLevel (queryDefinition: QueryDefinition): TaskSeq<'R> =
+            if log.IsEnabled logLevel then log.Write(logLevel, "CosmosStoreQuery.run {cat} {query}", cat, queryDefinition.QueryText)
+            container.GetItemQueryIterator<'R> queryDefinition |> enum_ log container "Query" cat logLevel
         /// Runs a query that renders 'T, Hydrating the results as 'P (can be the same types but e.g. you might want to map an object to a JsonElement etc)
         let enumAs<'T, 'P> (log: ILogger) (container: Container) cat logLevel (query: IQueryable<'T>): TaskSeq<'P> =
             let queryDefinition = query.ToQueryDefinition()
-            if log.IsEnabled logLevel then log.Write(logLevel, "CosmosStoreQuery.query {cat} {query}", cat, queryDefinition.QueryText)
-            container.GetItemQueryIterator<'P> queryDefinition |> enum log container cat
+            exec__<'P> log container cat logLevel queryDefinition
+        /// Execute a query, hydrating as 'R
+        let exec<'R> (log: ILogger) (container: Container) logLevel (queryDefinition: QueryDefinition): TaskSeq<'R> =
+            exec__<'R> log container "%" logLevel queryDefinition
     module AggregateOp =
         /// Runs one of the typical Cosmos SDK extensions, e.g. CountAsync, logging the costs
         let [<EditorBrowsable(EditorBrowsableState.Never)>] exec (log: ILogger) (container: Container) (op: string) (cat: string) (query: IQueryable<'T>) run render: System.Threading.Tasks.Task<'R> = task {
