@@ -82,12 +82,12 @@ let ``Event aggregation should carry set semantics`` (commands: Command list) =
     // fold over events using regular set semantics and compare outcomes
     let evolveSet (state: HashSet<SkuId>) (event: Events.Event) =
         match event with
+        | Events.Snapshotted items ->
+            state.Clear()
+            state.UnionWith(items.items |> Seq.map _.skuId)
         | Events.Added appended -> state.UnionWith appended.skus
         | Events.Removed removed -> state.ExceptWith removed.skus
         | Events.Merged merged -> state.UnionWith(merged.items |> Seq.map _.skuId)
-        | Events.Compacted compacted ->
-            state.Clear()
-            state.UnionWith(compacted.items |> Seq.map _.skuId)
         state
 
     let state',events = establish commands

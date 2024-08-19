@@ -14,14 +14,11 @@ module Events =
     type Added =            { skus: SkuId []; dateSaved: DateTimeOffset }
     type Removed =          { skus: SkuId [] }
     type Merged =           { items: Item [] }
-    module Compaction =
-        type Compacted =    { items: Item [] }
-        // NB need to revise this tag if you break the unfold schema
-        let [<Literal>] EventType = "compacted"
+    type Snapshotted =      { items: Item [] }
 
     type Event =
         /// Checkpoint with snapshot of entire preceding event fold, avoiding need for any further reads
-        | [<System.Runtime.Serialization.DataMember(Name=Compaction.EventType)>] Compacted of Compaction.Compacted
+        | [<System.Runtime.Serialization.DataMember(Name="Snapshotted")>] Snapshotted of Snapshotted
 
         /// Inclusion of another set of state in this one
         | Merged of Merged
@@ -55,17 +52,17 @@ module Fold =
 
     module Snapshot =
 
-        let generate state = Compacted { items = state }
-        let isOrigin = function Compacted _ -> true | _ -> false
+        let generate state = Snapshotted { items = state }
+        let isOrigin = function Snapshotted _ -> true | _ -> false
         let config = isOrigin, generate
 
     let fold (state: State) (events: seq<Event>): State =
         let index = InternalState state
         for event in events do
             match event with
-            | Compacted { items = skus } -> index.Replace skus
-            | Merged { items = skus} ->     index.Append skus
-            | Removed { skus = skus } ->    index.Remove skus
+            | Snapshotted { items = skus } ->   index.Replace skus
+            | Merged { items = skus} ->         index.Append skus
+            | Removed { skus = skus } ->        index.Remove skus
             | Added { dateSaved = d; skus = skus } ->
                 index.Append(seq { for sku in skus -> { skuId = sku; dateSaved = d }})
         index.ToExternalState()
@@ -79,7 +76,7 @@ type private Index(state: Events.Item seq) =
 
     member _.DoesNotAlreadyContainSameOrMoreRecent effectiveDate sku =
         match index.TryGetValue sku with
-        | true,item when item.dateSaved >= effectiveDate -> false
+        | true, item when item.dateSaved >= effectiveDate -> false
         | _ -> true
     member this.DoesNotAlreadyContainItem(item: Events.Item) =
         this.DoesNotAlreadyContainSameOrMoreRecent item.dateSaved item.skuId
