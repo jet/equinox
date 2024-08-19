@@ -37,9 +37,13 @@ let [<Literal>] private CategoryName = "Counter"
 // For this sample, we let callers just pass a string, and we trust it's suitable for use as a StreamId directly
 let private streamId = FsCodec.StreamId.gen id
 
+(* NOTE the State is never stored directly, so it can be as simple and direct as necessary
+   Typically it's immutable, which enables it to be cached and/or safely have concurrent readers and writers etc *)
 type State = int
 let initial: State = 0
-(* Evolve takes the present state and one event and figures out the next state *)
+(* Evolve takes the present state and one event and figures out the next state
+   NOTE the logic should always be simple, with no decisions - it's just gathering/tracking facts that may be relevant to making a decision later
+   If you ever want to make it log or print outputs, that's a bad sign *)
 let evolve state event: State =
     match event with
     | Incremented -> state + 1
@@ -50,10 +54,11 @@ let evolve state event: State =
    It's equivalent to LINQ's Aggregate function *)
 let fold state = Array.fold evolve state
 
-(* There's no Command DU
-   instead we have decision functions, and the Service passes one (together with any relevant inputs and helpers) to Decider.Transact
+(* NOTE There's no Command DU (the history does show how it once worked using that)
+   Instead we have decision functions, and the Service passes one (together with any relevant inputs and helpers) to Decider.Transact
+   Each decision function gets to represent the outcome of the decision as zero, one or more events
    One implication of that is that each decision can return a relevant result (though in many cases, returning unit is sufficient)
-   Each decision function gets to represent the outcome of the decision as zero, one or more events *)
+   Equally importantly, for a real app, unit testing the decision logic is simple and direct, with extraneous boilerplate *)
 
 let increment state = [| if state < 100 then Incremented |]
 let decrement state = [| if state > 0 then Decremented |]
