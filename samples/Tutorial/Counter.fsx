@@ -37,49 +37,46 @@ let [<Literal>] private CategoryName = "Counter"
 // For this sample, we let callers just pass a string, and we trust it's suitable for use as a StreamId directly
 let private streamId = FsCodec.StreamId.gen id
 
-type State = State of int
-let initial : State = State 0
-(* Evolve takes the present state and one event and figures out the next state*)
-let evolve state event =
-    match event, state with
-    | Incremented, State s -> State (s + 1)
-    | Decremented, State s -> State (s - 1)
-    | Cleared { value = x }, _ -> State x
+type State = int
+let initial: State = 0
+(* Evolve takes the present state and one event and figures out the next state *)
+let evolve state event: State =
+    match event with
+    | Incremented -> state + 1
+    | Decremented -> state - 1
+    | Cleared { value = x } -> x
 
 (* Fold is folding the evolve function over all events to get the current state
    It's equivalent to LINQ's Aggregate function *)
-let fold state events = Array.fold evolve state events
+let fold state = Array.fold evolve state
 
-(* Commands are the things we intend to happen, though they may not*)
-type Command =
-    | Increment
-    | Decrement
-    | Clear of int
+(* There's no Command DU
+   instead we have decision functions, and the Service passes one (together with any relevant inputs and helpers) to Decider.Transact
+   One implication of that is that each decision can return a relevant result (though in many cases, returning unit is sufficient)
+   Each decision function gets to represent the outcome of the decision as zero, one or more events *)
 
-(* Decide consumes a command and the current state to decide what events actually happened.
-   This particular counter allows numbers from 0 to 100. *)
-
-let decide command (State state) = [|
-    match command with
-    | Increment ->
-        if state < 100 then Incremented
-    | Decrement ->
-        if state > 0 then Decremented
-    | Clear i ->
-        if state <> i then Cleared {value = i } |]
+let increment state = [| if state < 100 then Incremented |]
+let decrement state = [| if state > 0 then Decremented |]
+let reset value state = [| if state <> value then Cleared { value = value } |]
 
 type Service internal (resolve: string -> Equinox.Decider<Event, State>) =
 
-    member _.Execute(instanceId, command) : Async<unit> =
+    member _.Decrement(instanceId) : Async<unit> =
         let decider = resolve instanceId
-        decider.Transact(decide command)
+        decider.Transact decrement
+        
+    member _.Increment(instanceId) : Async<unit> =
+        let decider = resolve instanceId
+        decider.Transact increment
 
     member x.Reset(instanceId, value) : Async<unit> =
-        x.Execute(instanceId, Clear value)
-
-    member _.Read instanceId : Async<int> =
         let decider = resolve instanceId
-        decider.Query(fun (State value) -> value)
+        decider.Transact(reset value)
+
+    member _.Read instanceId: Async<int> =
+        let decider = resolve instanceId
+        // id is the identity function, returning the full state. For anything real, you'd make probably project to a DTO
+        decider.Query id
 
 (* Out of the box, logging is via Serilog (can be wired to anything imaginable).
    We wire up logging for demo purposes using MemoryStore.VolatileStore's Committed event
@@ -100,9 +97,10 @@ let codec = FsCodec.Box.Codec.Create()
 let cat = Equinox.MemoryStore.MemoryStoreCategory(store, CategoryName, codec, fold, initial)
 let service = Service(streamId >> Equinox.Decider.forStream log cat)
 
-let clientId = "ClientA"
-service.Read(clientId) |> Async.RunSynchronously
-service.Execute(clientId, Increment) |> Async.RunSynchronously
-service.Read(clientId) |> Async.RunSynchronously
-service.Reset(clientId, 5) |> Async.RunSynchronously
-service.Read(clientId) |> Async.RunSynchronously
+let instanceId = "ClientA"
+service.Read(instanceId) |> Async.RunSynchronously
+service.Increment(instanceId) |> Async.RunSynchronously
+service.Decrement(instanceId) |> Async.RunSynchronously
+service.Read(instanceId) |> Async.RunSynchronously
+service.Reset(instanceId, 5) |> Async.RunSynchronously
+service.Read(instanceId) |> Async.RunSynchronously
