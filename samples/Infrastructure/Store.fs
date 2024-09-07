@@ -101,7 +101,7 @@ module Cosmos =
     // - In hot-warm scenarios, the Archive Container will frequently be within the same account and hence can share a CosmosClient
     // For these typical purposes, CosmosStoreClient.Connect should be used to establish the Client, not custom wiring as we have here
     let createConnector (a: Arguments) connectionString =
-        CosmosStoreConnector(Discovery.ConnectionString connectionString, a.Timeout, a.Retries, a.MaxRetryWaitTime, ?mode = a.Mode)
+        CosmosStoreConnector(Discovery.ConnectionString connectionString, a.Retries, a.MaxRetryWaitTime, ?mode = a.Mode, timeout = a.Timeout)
     let connect (log: ILogger) (a: Arguments) =
         let primaryConnector, primaryDatabase, primaryContainer as primary = createConnector a a.Connection, a.Database, a.Container
         logContainer log "Primary" (a.Mode, primaryConnector.Endpoint, primaryDatabase, primaryContainer)
