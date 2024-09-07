@@ -1164,12 +1164,16 @@ type DiscoveryMode =
 
 /// Manages establishing a CosmosClient, which is used by CosmosStoreClient to read from the underlying Cosmos DB Container.
 type CosmosClientFactory(options) =
-    static member CreateDefaultOptions(requestTimeout: TimeSpan, maxRetryAttemptsOnRateLimitedRequests: int, maxRetryWaitTimeOnRateLimitedRequests: TimeSpan) =
+    static member CreateDefaultOptions(maxRetryAttemptsOnRateLimitedRequests: int, maxRetryWaitTimeOnRateLimitedRequests: TimeSpan, serializerOptions) =
         CosmosClientOptions(
             MaxRetryAttemptsOnRateLimitedRequests = maxRetryAttemptsOnRateLimitedRequests,
             MaxRetryWaitTimeOnRateLimitedRequests = maxRetryWaitTimeOnRateLimitedRequests,
-            RequestTimeout = requestTimeout,
-            Serializer = CosmosJsonSerializer(JsonSerializerOptions()))
+            UseSystemTextJsonSerializerWithOptions = serializerOptions)
+    [<Obsolete "Will be removed in V5; please use the overload that includes `serializerOptions`">]
+    static member CreateDefaultOptions(requestTimeout: TimeSpan, maxRetryAttemptsOnRateLimitedRequests: int, maxRetryWaitTimeOnRateLimitedRequests: TimeSpan) =
+        let o = CosmosClientFactory.CreateDefaultOptions(maxRetryAttemptsOnRateLimitedRequests, maxRetryWaitTimeOnRateLimitedRequests, JsonSerializerOptions.Default)
+        o.RequestTimeout <- requestTimeout
+        o
     /// CosmosClientOptions for this CosmosClientFactory as configured (NOTE while the Options object is not immutable, it should not have setters called on it)
     member val Options = options
     /// Creates an instance of CosmosClient without actually validating or establishing the connection
@@ -1204,8 +1208,6 @@ type Discovery =
 type CosmosStoreConnector
     (   // CosmosDB endpoint/credentials specification.
         discovery: Discovery,
-        // Timeout to apply to individual reads/write round-trips going to CosmosDB. CosmosDB Default: 1m.
-        requestTimeout: TimeSpan,
         // Maximum number of times to attempt when failure reason is a 429 from CosmosDB, signifying RU limits have been breached. CosmosDB default: 9
         maxRetryAttemptsOnRateLimitedRequests: int,
         // Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDB in the 429 response). CosmosDB default: 30s
@@ -1213,16 +1215,30 @@ type CosmosStoreConnector
         // Connection mode (default: ConnectionMode.Direct (best performance, same as Microsoft.Azure.Cosmos SDK default)
         // NOTE: default for Equinox.Cosmos.Connector (i.e. V2) was Gateway (worst performance, least trouble, Microsoft.Azure.DocumentDb SDK default)
         [<O; D null>] ?mode: ConnectionMode,
+        // System.Text.Json SerializerOptions (Defaults to default options)
+        [<O; D null>] ?serializerOptions: System.Text.Json.JsonSerializerOptions,
         // consistency mode (default: use configuration specified for Database)
         [<O; D null>] ?defaultConsistencyLevel: ConsistencyLevel,
+        // Timeout to apply to individual reads/write round-trips going to CosmosDB. CosmosDB Default: 6s
+        // NOTE Per CosmosDB Client guidance, it's recommended to leave this at its default
+        [<O; D null>] ?requestTimeout: TimeSpan,
         [<O; D null>] ?customize: Action<CosmosClientOptions>) =
     let discoveryMode = discovery.ToDiscoveryMode()
+    let serializerOptions = serializerOptions |> Option.defaultValue System.Text.Json.JsonSerializerOptions.Default
     let factory =
-        let o = CosmosClientFactory.CreateDefaultOptions(requestTimeout, maxRetryAttemptsOnRateLimitedRequests, maxRetryWaitTimeOnRateLimitedRequests)
+        let o = CosmosClientFactory.CreateDefaultOptions(maxRetryAttemptsOnRateLimitedRequests, maxRetryWaitTimeOnRateLimitedRequests, serializerOptions)
         mode |> Option.iter (fun x -> o.ConnectionMode <- x)
+        requestTimeout |> Option.iter (fun x -> o.RequestTimeout <- x)
         defaultConsistencyLevel |> Option.iter (fun x -> o.ConsistencyLevel <- x)
         customize |> Option.iter (fun c -> c.Invoke o)
         CosmosClientFactory o
+
+    [<Obsolete "For backcompat only; will be removed in V5">]
+    new(discovery, requestTimeout: TimeSpan, maxRetryAttemptsOnRateLimitedRequests: int, maxRetryWaitTimeOnRateLimitedRequests,
+        ?mode, ?defaultConsistencyLevel, ?customize) =
+        CosmosStoreConnector(discovery, maxRetryAttemptsOnRateLimitedRequests, maxRetryWaitTimeOnRateLimitedRequests, ?mode = mode,
+                             ?defaultConsistencyLevel = defaultConsistencyLevel, requestTimeout = requestTimeout, ?customize = customize,
+                             ?serializerOptions = None)
 
     /// The <c>CosmosClientOptions</c> used when connecting to CosmosDB
     member _.Options = factory.Options
