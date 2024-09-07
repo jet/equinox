@@ -9,6 +9,14 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="4.1.0"></a>
+## 4.1.0 - 2024/5
+
+### Added
 
 - `Equinox.CosmosStore`: Use `Microsoft.Azure.Cosmos` integrated `System.Text.Json` support; added ability to specify `serializerOptions` [#467](https://github.com/jet/equinox/pull/467)
 - `Equinox.CosmosStore`: Group metrics by Container Name [#449](https://github.com/jet/equinox/pull/449)
@@ -16,21 +24,27 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Equinox.CosmosStore`: Support Ingesting unfolds [#460](https://github.com/jet/equinox/pull/460)
 - `Equinox.CosmosStore.EventsContext.Sync`: Support syncing of unfolds [#460](https://github.com/jet/equinox/pull/460)
 - `eqx stats`: `-O`, `-N` flags extract oldest and newest `_ts` within a store [#459](https://github.com/jet/equinox/pull/459)
+- `eqx stats`: `-U` flag to count streams with unfolds and total number thereof; `-I` alias relabel Documents as Items [#464](https://github.com/jet/equinox/pull/464)
+- `eqx stats`: `-I` flag; relabel Documents as Items, retaining existing `-D` flag [#464](https://github.com/jet/equinox/pull/464)
 - `eqx`: `-Q` flag omits timestamps from console output logging [#459](https://github.com/jet/equinox/pull/459)
+- `Equinox.CosmosStore.Linq`: Add LINQ querying support for Indexed `u`nfolds (`AccessStrategy.Custom`+`CosmosStoreCategory.shouldCompress`) [#450](https://github.com/jet/equinox/pull/450)
+- `eqx dump`, `eqx query`: `-sl` Support for specifying streams to dump via a [CosmosDB `LIKE` expression](https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/query/keywords#like) [#450](https://github.com/jet/equinox/pull/450)
+- `eqx dump`: `-Q` strips intervals, regularizes snapshots, logs stream names [#450](https://github.com/jet/equinox/pull/450)
+- `eqx top`: Support for analyzing space usage for event and view containers by category and/or stream [#450](https://github.com/jet/equinox/pull/450)
+- `eqx destroy`: Support for deleting the items(documents) underlying a category/stream/arbitrary `WHERE` clause [#450](https://github.com/jet/equinox/pull/450)
 
 ### Changed
 
-- `Equinox.*Store`,`Equinox.*Store.Prometheus`: Pin `Equinox` dependencies to `[4.0.0, 5.0.0)`] [#448](https://github.com/jet/equinox/pull/448)
+- `Equinox.*Store`,`Equinox.*Store.Prometheus`: Pin `Equinox` dependencies to `[4.0.3, 5.0.0)`] [#450](https://github.com/jet/equinox/pull/450)
 - `Equinox.CosmosStore`: Minimum `Microsoft.Azure.Cosmos` requirement updated to `3.43.0` to avail of integrated `System.Text.Json` support [#467](https://github.com/jet/equinox/pull/467)
 - `Equinox.CosmosStore.CosmosStoreConnector`: Removed mandatory `requestTimeout` argument [#467](https://github.com/jet/equinox/pull/467)
 - `Equinox.CosmosStore`: Minimum `System.Text.Json` requirement updated to `8.0.4` as that's the lowest non-flagged version [#462](https://github.com/jet/equinox/pull/462)
+- `Equinox.CosmosStore`: Require `Microsoft.Azure.Cosmos` v `3.38.1` re metrics [#450](https://github.com/jet/equinox/pull/450)
 - `Equinox.MessageDb`: Up min `Npgsql` to v `7.0.7` as `7.0.0` is on CVE blacklist
 
 ### Removed
 
 - `eqx stats`: `-A` (all stats) is now the default unless you specify >=1 of the individual stats via `ESDNO` flags [#459](https://github.com/jet/equinox/pull/459)
-
-### Fixed
 
 <a name="4.0.4"></a>
 ## [4.0.4] - 2024-05-08
@@ -790,7 +804,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/4.0.4...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/4.1.0...HEAD
+[4.1.0]: https://github.com/jet/equinox/compare/4.0.4...4.1.0
 [4.0.4]: https://github.com/jet/equinox/compare/4.0.3...4.0.4
 [4.0.3]: https://github.com/jet/equinox/compare/4.0.2...4.0.3
 [4.0.2]: https://github.com/jet/equinox/compare/4.0.0...4.0.2
