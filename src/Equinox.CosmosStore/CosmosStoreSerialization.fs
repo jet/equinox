@@ -31,6 +31,23 @@ module JsonElement =
         if value.ValueKind = JsonValueKind.Null then value
         else value |> toUtf8Bytes |> Deflate.compress |> JsonSerializer.SerializeToElement
 
+[<System.Obsolete "Unused internal type; will be removed in V5">]
+type CosmosJsonSerializer(options : JsonSerializerOptions) =
+    inherit Microsoft.Azure.Cosmos.CosmosSerializer()
+
+    override _.FromStream<'T>(stream) =
+        use _ = stream
+
+        if stream.Length = 0L then Unchecked.defaultof<'T>
+        elif typeof<Stream>.IsAssignableFrom(typeof<'T>) then box stream :?> 'T
+        else JsonSerializer.Deserialize<'T>(stream, options)
+
+    override _.ToStream<'T>(input : 'T) =
+        let memoryStream = new MemoryStream()
+        JsonSerializer.Serialize(memoryStream, input, input.GetType(), options)
+        memoryStream.Position <- 0L
+        memoryStream :> Stream
+
 /// Manages inflating of the UTF-8 json bytes to make the index record minimal from the perspective of the writer stored proc
 /// Only relevant for unfolds in the Tip
 type JsonCompressedBase64Converter() =
