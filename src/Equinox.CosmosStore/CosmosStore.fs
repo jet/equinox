@@ -1169,7 +1169,7 @@ type CosmosClientFactory(options) =
             MaxRetryAttemptsOnRateLimitedRequests = maxRetryAttemptsOnRateLimitedRequests,
             MaxRetryWaitTimeOnRateLimitedRequests = maxRetryWaitTimeOnRateLimitedRequests,
             RequestTimeout = requestTimeout,
-            UseSystemTextJsonSerializerWithOptions = JsonSerializerOptions.Default)
+            UseSystemTextJsonSerializerWithOptions = JsonSerializerOptions())
     /// Default when rendering/parsing Batch/Tip/Event/Unfold - omitting null values
     static member val DefaultJsonSerializerOptions = JsonSerializerOptions(DefaultIgnoreCondition = Serialization.JsonIgnoreCondition.WhenWritingNull)
     /// CosmosClientOptions for this CosmosClientFactory as configured (NOTE while the Options object is not immutable, it should not have setters called on it)
