@@ -22,6 +22,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Equinox.*Store`,`Equinox.*Store.Prometheus`: Pin `Equinox` dependencies to `[4.0.0, 5.0.0)`] [#448](https://github.com/jet/equinox/pull/448)
 - `Equinox.CosmosStore`: Update `System.Text.Json` dep to `6.0.10` per [CVE-2024-43485](https://github.com/advisories/GHSA-8g4q-xg66-9fp4) [#470](https://github.com/jet/equinox/pull/470)
 - `Equinox.MessageDb`: Up min `Npgsql` to v `7.0.7` as `7.0.0` is on CVE blacklist
+- `Equinox.MemoryStore`: Remove unused TrySync args [#466](https://github.com/jet/equinox/pull/466)
 
 ### Removed
 
