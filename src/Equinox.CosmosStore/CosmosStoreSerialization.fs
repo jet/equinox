@@ -12,11 +12,13 @@ module private Deflate =
         compressor.Flush() // Could `Close`, but not required
         output.ToArray()
 
-    let inflate (compressedBytes: byte[]) =
+    let inflateTo output (compressedBytes: byte[]) =
         let input = new MemoryStream(compressedBytes)
         let decompressor = new System.IO.Compression.DeflateStream(input, System.IO.Compression.CompressionMode.Decompress, leaveOpen = true)
-        let output = new MemoryStream()
         decompressor.CopyTo(output)
+    let inflate compressedBytes =
+        let output = new MemoryStream()
+        compressedBytes |> inflateTo output
         output.ToArray()
 
 module JsonElement =
@@ -26,10 +28,13 @@ module JsonElement =
 
     // Avoid introduction of HTML escaping for things like quotes etc (Options.Default uses Options.Create(), which defaults to unsafeRelaxedJsonEscaping=true)
     let private optionsNoEscaping = JsonSerializerOptions(Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping)
-    let private toUtf8Bytes (value : JsonElement) = JsonSerializer.SerializeToUtf8Bytes(value, options = optionsNoEscaping)
-    let deflate (value : JsonElement) : JsonElement =
+    let private toUtf8Bytes (value: JsonElement) = JsonSerializer.SerializeToUtf8Bytes(value, options = optionsNoEscaping)
+    let deflate (value: JsonElement): JsonElement =
         if value.ValueKind = JsonValueKind.Null then value
         else value |> toUtf8Bytes |> Deflate.compress |> JsonSerializer.SerializeToElement
+    let tryInflateTo ms (x: JsonElement) =
+        if x.ValueKind <> JsonValueKind.String then false
+        else x.GetBytesFromBase64() |> Deflate.inflateTo ms; true
 
 [<System.Obsolete "Unused internal type; will be removed in V5">]
 type CosmosJsonSerializer(options : JsonSerializerOptions) =
