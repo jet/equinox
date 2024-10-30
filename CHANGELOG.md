@@ -20,7 +20,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Changed
 
 - `Equinox.*Store`,`Equinox.*Store.Prometheus`: Pin `Equinox` dependencies to `[4.0.0, 5.0.0)`] [#448](https://github.com/jet/equinox/pull/448)
-- `Equinox.CosmosStore`: Minimum `System.Text.Json` requirement updated to `8.0.4` as that's the lowest non-flagged version [#462](https://github.com/jet/equinox/pull/462)
+- `Equinox.CosmosStore`: Update `System.Text.Json` dep to `6.0.10` per [CVE-2024-43485](https://github.com/advisories/GHSA-8g4q-xg66-9fp4) [#470](https://github.com/jet/equinox/pull/470)
 - `Equinox.MessageDb`: Up min `Npgsql` to v `7.0.7` as `7.0.0` is on CVE blacklist
 
 ### Removed
