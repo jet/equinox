@@ -385,7 +385,7 @@ type SyncResponse = { etag: string; n: int64; conflicts: Unfold[]; e: Event[] }
 
 module internal SyncStoredProc =
 
-    let [<Literal>] name = "EquinoxEventsInTip4"  // NB need to rename/number for any breaking change
+    let [<Literal>] name = "EquinoxEventsInTip5"  // NB need to rename/number for any breaking change
     let [<Literal>] body = """
 // Manages the merging of the supplied Request Batch into the stream, potentially storing events in the Tip
 
@@ -410,6 +410,10 @@ function sync(req, expIndex, expEtag, maxEventsInTip, maxStringifyLen) {
         } else if (!current && ((expIndex === -2 && expEtag !== null) || expIndex > 0)) {
             // If there is no Tip page, the writer has no possible reason for writing at an index other than zero, and an etag exp must be fulfilled
             response.setBody({ etag: null, n: 0, conflicts: [], e: [] });
+        } else if (current && expIndex !== -2 && current.n === expIndex + req.e.length && req.u.length > 0) {
+            // For CosmosStoreSink blind write of events and unfolds; all the events are present, we just need to update unfolds
+            req.e = [];
+            executeUpsert(current);
         } else if (current && ((expIndex === -2 && expEtag !== current._etag) || (expIndex !== -2 && expIndex !== current.n))) {
             // Where possible, we extract conflicting events from e and/or u in order to avoid another read cycle;
             // yielding [] triggers the client to go loading the events itself
