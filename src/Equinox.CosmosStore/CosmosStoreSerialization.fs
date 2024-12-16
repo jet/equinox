@@ -31,6 +31,7 @@ module JsonElement =
         if value.ValueKind = JsonValueKind.Null then value
         else value |> toUtf8Bytes |> Deflate.compress |> JsonSerializer.SerializeToElement
 
+[<System.Obsolete "Unused internal type; will be removed in V5">]
 type CosmosJsonSerializer(options : JsonSerializerOptions) =
     inherit Microsoft.Azure.Cosmos.CosmosSerializer()
 
