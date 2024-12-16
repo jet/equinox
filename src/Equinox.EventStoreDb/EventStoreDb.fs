@@ -455,7 +455,7 @@ type EventStoreConnector
 
     member _.Connect
         (   // Name should be sufficient to uniquely identify this connection within a single app instance's logs
-            name, discovery: Discovery, ?clusterNodePreference): EventStoreClient =
+            name: string, discovery: Discovery, ?clusterNodePreference): EventStoreClient =
         if name = null then nullArg "name"
         let name = String.concat ";" <| seq {
             name
