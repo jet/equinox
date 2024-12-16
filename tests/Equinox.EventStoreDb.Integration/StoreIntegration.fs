@@ -425,7 +425,7 @@ type GeneralTests(testOutputHelper) =
 
         let! before, after =
             let mapResult result (ctx: Equinox.ISyncContext<_>) = result, ctx.Version
-            decider.TransactEx((fun state -> state.Version, [| SimplestThing.StuffHappened |]), mapResult)
+            decider.TransactEx((fun c -> c.Version, [| SimplestThing.StuffHappened |]), mapResult = mapResult)
         test <@ [before; after] = [0L; 1L] @> }
 
 #if STORE_MESSAGEDB

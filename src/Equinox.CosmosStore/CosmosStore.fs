@@ -1467,7 +1467,7 @@ type EventsContext
     member x.Read(streamName, [<O; D null>] ?ct, [<O; D null>] ?position, [<O; D null>] ?maxCount, [<O; D null>] ?direction): Task<Position*ITimelineEvent<EventBody>[]> =
         x.GetInternal((streamName, position), ?ct = ct, ?maxCount = maxCount, ?direction = direction) |> yieldPositionAndData
 
-    [<System.Obsolete "Will be removed in V5 in favor of the overload that requires explict passing of the Unfolds">]
+    [<System.Obsolete "Will be removed in V5 in favor of the overload that requires explicit passing of the Unfolds">]
     member x.Sync(streamName, position, events: IEventData<_>[], ct): Task<AppendResult<Position>> =
         x.Sync(streamName, position, events, Array.empty, ct)
 
