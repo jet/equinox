@@ -131,6 +131,8 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
 
 # Currently Supported Data Stores
 
+For greenfield development without any pre-made choice on the data store, we recommend MessageDB for local storage and Azure Cosmos DB for cloud storage, with MemoryStore for tests.
+
 - `MemoryStore`: In-memory store (volatile, for unit or integration test purposes). Fulfils the full contract Equinox imposes on a store, but without I/O costs [(it's ~100 LOC wrapping a `ConcurrentDictionary`)](https://github.com/jet/equinox/blob/master/src/Equinox.MemoryStore/MemoryStore.fs). Also enables [take serialization/deserialization out of the picture](https://github.com/jet/FsCodec#boxcodec) in tests. See also [`Propulsion.MemoryStore` Change Feed Simulator for integration testing of Reactors](https://github.com/jet/dotnet-templates#eqxshipping). 
 - [Amazon Dynamo DB](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Introduction.html): Shares most features with `Equinox.CosmosStore` ([from which it was ported in #321](https://github.com/jet/equinox/pull/321)). See above for detailed comparison.
 - [Azure Cosmos DB](https://docs.microsoft.com/en-us/azure/cosmos-db): contains some fragments of code dating back to 2016, however [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) was arrived at based on intensive benchmarking (squash-merged in [#42](https://github.com/jet/equinox/pull/42)). The V2, 3 and 4 release lines are being used in production systems. (The V3 release provides support for significantly more efficient packing of events ([storing events in the 'Tip'](https://github.com/jet/equinox/pull/251))). :pray: [@dongdongcai](https://github.com/dongdongcai)
