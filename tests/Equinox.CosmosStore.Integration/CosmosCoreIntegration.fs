@@ -10,10 +10,11 @@ open System
 
 type TestEvents() =
     static member private Create(i, ?eventType, ?json) =
+        let enc = System.Text.Json.JsonSerializer.SerializeToElement >> FsCodec.SystemTextJson.Compression.Encode
         FsCodec.Core.EventData.Create
             (   sprintf "%s:%d" (defaultArg eventType "test_event") i,
-                System.Text.Json.JsonSerializer.SerializeToElement (defaultArg json "{\"d\":\"d\"}"),
-                System.Text.Json.JsonSerializer.SerializeToElement "{\"m\":\"m\"}")
+                enc (defaultArg json "{\"d\":\"d\"}"),
+                enc "{\"m\":\"m\"}")
     static member Create(i, c) = Array.init c (fun x -> TestEvents.Create(x + i))
 
 type Tests(testOutputHelper) =
@@ -64,14 +65,14 @@ type Tests(testOutputHelper) =
         test <@ match res with Choice2Of2 (:? InvalidOperationException as ex) -> ex.Message.StartsWith "Must write either events or unfolds." | x -> failwith $"%A{x}" @>
     }
 
-    let stringOfEventBody (x : System.Text.Json.JsonElement) = x.GetRawText()
-    let xmlDiff (x: string) (y: string) =
-        match JsonDiffPatchDotNet.JsonDiffPatch().Diff(JToken.Parse x,JToken.Parse y) with
+    let stringOfEncodedBody (x: Equinox.CosmosStore.Core.EncodedBody) = FsCodec.SystemTextJson.Compression.DecodeToJsonElement(x).GetRawText()
+    let jsonDiff (x: string) (y: string) =
+        match JsonDiffPatchDotNet.JsonDiffPatch().Diff(JToken.Parse x, JToken.Parse y) with
         | null -> ""
         | d -> string d
     let verifyUtf8JsonEquals i x y =
-        let sx,sy = stringOfEventBody x, stringOfEventBody y
-        test <@ ignore i; x = y || "" = xmlDiff sx sy @>
+        let sx,sy = stringOfEncodedBody x, stringOfEncodedBody y
+        test <@ ignore i; x = y || "" = jsonDiff sx sy @>
 
     let add6EventsIn2BatchesEx ctx streamName splitAt = async {
         let index = 0L
@@ -87,7 +88,7 @@ type Tests(testOutputHelper) =
 
     let add6EventsIn2Batches ctx streamName = add6EventsIn2BatchesEx ctx streamName 1
 
-    let verifyCorrectEventsEx direction baseIndex (expected: IEventData<_>[]) (xs: ITimelineEvent<_>[]) =
+    let verifyCorrectEventsEx direction baseIndex (expected: IEventData<Equinox.CosmosStore.Core.EncodedBody>[]) (xs: ITimelineEvent<Equinox.CosmosStore.Core.EncodedBody>[]) =
         let xs, baseIndex =
             if direction = Direction.Forward then xs, baseIndex
             else Array.rev xs, baseIndex - int64 (Array.length expected) + 1L

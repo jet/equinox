@@ -2,7 +2,6 @@
 
 open Domain
 open Equinox
-open FsCodec.SystemTextJson.Interop // use ToJsonElementCodec because we are doing an overkill example
 open Microsoft.Extensions.DependencyInjection
 open System
 
@@ -18,7 +17,7 @@ type Store(store) =
             MemoryStore.MemoryStoreCategory(store, name, codec, fold, initial)
         | Store.Config.Cosmos (store, caching, unfolds) ->
             let accessStrategy = if unfolds then CosmosStore.AccessStrategy.Snapshot snapshot else CosmosStore.AccessStrategy.Unoptimized
-            CosmosStore.CosmosStoreCategory<'event,'state,_>(store, name, codec.ToJsonElementCodec(), fold, initial, accessStrategy, caching)
+            CosmosStore.CosmosStoreCategory<'event,'state,_>(store, name, FsCodec.SystemTextJson.Compression.EncodeTryCompress codec, fold, initial, accessStrategy, caching)
         | Store.Config.Dynamo (store, caching, unfolds) ->
             let accessStrategy = if unfolds then DynamoStore.AccessStrategy.Snapshot snapshot else DynamoStore.AccessStrategy.Unoptimized
             DynamoStore.DynamoStoreCategory<'event,'state,_>(store, name, FsCodec.Compression.EncodeTryCompress codec, fold, initial, accessStrategy, caching)

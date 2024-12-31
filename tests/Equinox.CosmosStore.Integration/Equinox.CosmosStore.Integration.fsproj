@@ -13,7 +13,7 @@
     <Compile Include="DocumentStoreIntegration.fs" />
     <Compile Include="AccessStrategies.fs" />
     <Compile Include="CosmosCoreIntegration.fs" />
-    <Compile Include="JsonConverterTests.fs" />
+    <Compile Include="FsCodecCompressionTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
