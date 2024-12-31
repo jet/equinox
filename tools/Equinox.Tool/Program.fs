@@ -356,7 +356,7 @@ module CosmosQuery =
     let inline miB x = float x / 1024. / 1024.
     let private unixEpoch = DateTime.UnixEpoch
     type System.Text.Json.JsonElement with
-        member x.Size = if x.ValueKind = System.Text.Json.JsonValueKind.Null then 0 else x.GetRawText().Length
+        member x.Utf8ByteCount = if x.ValueKind = System.Text.Json.JsonValueKind.Null then 0 else x.GetRawText() |> System.Text.Encoding.UTF8.GetByteCount
     type System.Text.Json.JsonDocument with
         member x.Cast<'T>() = System.Text.Json.JsonSerializer.Deserialize<'T>(x.RootElement)
         member x.Timestamp =
@@ -406,7 +406,7 @@ module CosmosQuery =
         try while query.HasMoreResults do
                 sw.Restart()
                 let! page = query.ReadNextAsync(CancellationToken.None) |> Async.AwaitTaskCorrect
-                let pageSize = page.Resource |> Seq.sumBy _.RootElement.Size
+                let pageSize = page.Resource |> Seq.sumBy _.RootElement.Utf8ByteCount
                 let newestAge = page.Resource |> Seq.choose _.Timestamp |> Seq.tryLast |> Option.map (fun ts -> ts - DateTime.UtcNow)
                 let items = [| for x in page.Resource -> x.Cast<Equinox.CosmosStore.Core.Tip>() |]
                 let inline arrayLen x = if isNull x then 0 else Array.length x
@@ -484,14 +484,14 @@ module Dump =
 
         let initial = List.empty
         let fold state events = (events, state) ||> Seq.foldBack (fun e l -> e :: l)
-        let tryDecode (x : FsCodec.ITimelineEvent<ReadOnlyMemory<byte>>) = ValueSome x
+        let tryDecode (x: FsCodec.ITimelineEvent<ReadOnlyMemory<byte>>) = ValueSome x
         let idCodec = FsCodec.Codec.Create((fun _ -> failwith "No encoding required"), tryDecode, (fun _ _ -> failwith "No mapCausation"))
         let isOriginAndSnapshot = (fun (event : FsCodec.ITimelineEvent<_>) -> not doE && event.IsUnfold), fun _state -> failwith "no snapshot required"
         let formatUnfolds, formatEvents =
             if p.Contains FlattenUnfolds then id else prettifyJson
             , if p.Contains Pretty then prettifyJson else id
         let mutable payloadBytes = 0
-        let render format (data : ReadOnlyMemory<byte>) =
+        let render format (data: ReadOnlyMemory<byte>) =
             payloadBytes <- payloadBytes + data.Length
             if data.IsEmpty then null
             elif not doS then $"%6d{data.Length}b"

@@ -4,7 +4,7 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <PackageValidationBaselineVersion>4.0.0</PackageValidationBaselineVersion>
+<!--    <PackageValidationBaselineVersion>4.1.0</PackageValidationBaselineVersion>-->
   </PropertyGroup>
 
   <ItemGroup>
@@ -12,7 +12,6 @@
     <Compile Include="..\Equinox\LazyTask.fs" />
     <Compile Include="..\Equinox.Core\TaskCell.fs" />
     <Compile Include="..\Equinox.Core\Internal.fs" />
-    <Compile Include="CosmosStoreSerialization.fs" />
     <Compile Include="CosmosStore.fs" />
   </ItemGroup>
 
