@@ -29,8 +29,9 @@ module Cart =
         StoreCategory(context, Cart.CategoryName, codec, fold, initial, AccessStrategy.MultiSnapshot unfArgs, Equinox.CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log
         |> Cart.create
+    let createCategorySnapshot context = StoreCategory(context, Cart.CategoryName, codec, fold, initial, AccessStrategy.Snapshot Cart.Fold.Snapshot.config, Equinox.CachingStrategy.NoCaching)
     let createServiceWithSnapshotStrategy log context =
-        StoreCategory(context, Cart.CategoryName, codec, fold, initial, AccessStrategy.Snapshot Cart.Fold.Snapshot.config, Equinox.CachingStrategy.NoCaching)
+        createCategorySnapshot context
         |> Equinox.Decider.forStream log
         |> Cart.create
     let createServiceWithSnapshotStrategyAndCaching log context cache =

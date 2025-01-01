@@ -71,7 +71,7 @@ module Cosmos =
                 | ArchiveContainer _ -> "specify a container name for Archive store. Default: use same as Primary Container"
                 | TipMaxEvents _ ->     "specify maximum number of events to hold in Tip before calving off to a frozen Batch. Default: 256"
                 | TipMaxJsonLength _ -> "specify maximum length of JSON (as measured by JSON.stringify) to hold in Tip before calving off to a frozen Batch. Default: 30,000"
-                | QueryMaxItems _ ->    "specify maximum number of batches of events to retrieve in per query response. Default: 10"
+                | QueryMaxItems _ ->    "specify maximum number of batches of events to retrieve in per query response. Default: 10/9999"
     type Arguments(p : ParseResults<Parameters>) =
         member val Verbose =            p.Contains StoreVerbose
         member val Mode =               p.TryGetResult ConnectionMode
@@ -90,7 +90,8 @@ module Cosmos =
         member _.MaxRetryWaitTime =     p.GetResult(RetriesWaitTimeS, 5.) |> TimeSpan.FromSeconds
         member _.TipMaxEvents =         p.GetResult(TipMaxEvents, 256)
         member _.TipMaxJsonLength =     p.GetResult(TipMaxJsonLength, 30_000)
-        member x.QueryMaxItems =        p.GetResult(QueryMaxItems, 10)
+        member _.QueryMaxItemsOr(def: int) = p.GetResult(QueryMaxItems, def)
+        member x.QueryMaxItems =        x.QueryMaxItemsOr 10
 
     let logContainer (log: ILogger) role (mode, endpoint, db, container) =
         log.Information("CosmosDB {role:l} {mode} {connection} Database {database} Container {container}",
