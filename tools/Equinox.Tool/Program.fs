@@ -575,9 +575,12 @@ module CosmosTop =
             scratch.Position
         let inflatedUtf8Size x =
             scratch.Position <- 0L
-            if Equinox.CosmosStore.Core.JsonElement.tryInflateTo scratch x then scratch.Position
-            else utf8Size x
-        let infSize = function ValueSome x -> inflatedUtf8Size x | ValueNone -> 0
+            FsCodec.SystemTextJson.Encoding.ExpandTo(scratch, x)
+            scratch.Position
+        let infSize dataField formatField (x: JsonElement) =
+            match x.TryProp dataField, x.TryProp formatField with
+            | ValueNone, _ -> 0L
+            | ValueSome d, df -> inflatedUtf8Size (df |> ValueOption.map _.GetInt32() |> ValueOption.defaultValue 0, x)
         // using the length as a decent proxy for UTF-8 length of corr/causation; if you have messy data in there, you'll have bigger problems to worry about
         let inline stringLen x = match x with ValueSome (x: JsonElement) when x.ValueKind <> JsonValueKind.Null -> x.GetString().Length | _ -> 0
         let _e = Unchecked.defaultof<Equinox.CosmosStore.Core.Event> // Or Unfold - both share field names
@@ -585,7 +588,7 @@ module CosmosTop =
             (struct (0, 0L), x.EnumerateArray())
             ||> Seq.fold (fun struct (c, i) x ->
                 struct (c + (x.TryProp(nameof _e.correlationId) |> stringLen) + (x.TryProp(nameof _e.causationId) |> stringLen),
-                        i + (x.TryProp(nameof _e.d) |> infSize) + (x.TryProp(nameof _e.m) |> infSize)))
+                        i + infSize "d" "D" x + infSize "m" "M" x))
         let private tryParseEventOrUnfold = function
             | ValueNone -> struct (0, 0L, struct (0, 0L))
             | ValueSome (x: JsonElement) -> x.GetArrayLength(), utf8Size x, dmcSize x
