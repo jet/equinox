@@ -17,6 +17,10 @@ type EncodedBody = (struct (int * JsonElement))
 module internal EncodedBody =
     let internal jsonRawText: EncodedBody -> string = ValueTuple.snd >> _.GetRawText()
     let internal jsonUtf8Bytes = jsonRawText >> System.Text.Encoding.UTF8.GetByteCount
+    let [<Literal>] deflateEncoding = 1
+    // prior to the addition of the `D` field in 4.1.0, the integrated compression support
+    // was predicated entirely on a JSON String `d` value in the Unfold as implying it was UTF8->Deflate->Base64 encoded
+    let parseUnfold = function struct (0, e: JsonElement) when e.ValueKind = JsonValueKind.String -> struct (deflateEncoding, e) | x -> x
 
 /// A single Domain Event from the array held in a Batch
 [<NoEquality; NoComparison>]
@@ -28,12 +32,14 @@ type Event =
         c: string
 
         /// Event body, as UTF-8 encoded JSON ready to be injected into the JSON being rendered for CosmosDB
+        [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingDefault)>]
         d: JsonElement // Can be JSON Null for Nullary cases
         /// The encoding scheme used for `d`
         [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingDefault)>]
         D: int
 
         /// Optional metadata
+        [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingDefault)>]
         m: JsonElement
         /// The encoding scheme used for `m`
         [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingDefault)>]
@@ -90,12 +96,14 @@ type Unfold =
         c: string // required
 
         /// Event body - JSON -> Deflate -> Base64 -> JsonElement
+        [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingDefault)>]
         d: JsonElement // required
         /// The encoding scheme used for `d`
         [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingDefault)>]
         D: int
 
         /// Optional metadata, same encoding as `d` (can be null; not written if missing)
+        [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingDefault)>]
         m: JsonElement
         /// The encoding scheme used for `m`
         [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingDefault)>]
@@ -170,7 +178,7 @@ type internal Enum private () =
     static member internal Events(b: Batch, ?minIndex, ?maxIndex) =
         Enum.Events(b.i, b.e, ?minIndex = minIndex, ?maxIndex = maxIndex)
     static member Unfolds(xs: Unfold[]): ITimelineEvent<EncodedBody> seq = seq {
-        for x in xs -> FsCodec.Core.TimelineEvent.Create(x.i, x.c, (x.D, x.d), (x.M, x.m), Guid.Empty, null, null, x.t, isUnfold = true) }
+        for x in xs -> FsCodec.Core.TimelineEvent.Create(x.i, x.c, EncodedBody.parseUnfold (x.D, x.d), (x.M, x.m), Guid.Empty, null, null, x.t, isUnfold = true) }
     static member EventsAndUnfolds(x: Tip, ?minIndex, ?maxIndex): ITimelineEvent<EncodedBody> seq =
         Enum.Events(x, ?minIndex = minIndex, ?maxIndex = maxIndex)
         |> Seq.append (Enum.Unfolds x.u)
