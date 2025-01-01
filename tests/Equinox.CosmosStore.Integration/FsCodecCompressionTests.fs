@@ -9,7 +9,6 @@
 module Equinox.CosmosStore.Integration.FsCodecCompressionTests
 
 open Equinox.CosmosStore
-open Equinox.Store.Integration
 open FsCheck.Xunit
 open Swensen.Unquote
 open System
@@ -81,7 +80,7 @@ type BackCompatTests() =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ```Can inflate pre v 4.1 Deflate encoded snapshots`` () = Async.RunSynchronously <| async {
         let context = createPrimaryContext Serilog.Log.Logger 10
-        let cat = DocumentStoreIntegration.Cart.createCategorySnapshot context
+        let cat = Equinox.Store.Integration.DocumentStoreIntegration.Cart.createCategorySnapshot context
         let expected: Domain.Cart.Fold.State = {
             items = [
                 { skuId = SkuId Guid.Empty; quantity = 4; returnsWaived = Some true } ] }
