@@ -10,7 +10,7 @@ open System
 
 type TestEvents() =
     static member private Create(i, ?eventType, ?json) =
-        let enc = System.Text.Json.JsonSerializer.SerializeToElement >> FsCodec.SystemTextJson.Compression.Encode
+        let enc = System.Text.Json.JsonSerializer.SerializeToElement >> FsCodec.SystemTextJson.EncodedBody.Uncompressed
         FsCodec.Core.EventData.Create
             (   sprintf "%s:%d" (defaultArg eventType "test_event") i,
                 enc (defaultArg json "{\"d\":\"d\"}"),
@@ -65,7 +65,7 @@ type Tests(testOutputHelper) =
         test <@ match res with Choice2Of2 (:? InvalidOperationException as ex) -> ex.Message.StartsWith "Must write either events or unfolds." | x -> failwith $"%A{x}" @>
     }
 
-    let stringOfEncodedBody (x: Equinox.CosmosStore.Core.EncodedBody) = FsCodec.SystemTextJson.Compression.DecodeToJsonElement(x).GetRawText()
+    let stringOfEncodedBody (x: Equinox.CosmosStore.Core.EncodedBody) = FsCodec.SystemTextJson.EncodedBody.ToJsonElement(x).GetRawText()
     let jsonDiff (x: string) (y: string) =
         match JsonDiffPatchDotNet.JsonDiffPatch().Diff(JToken.Parse x, JToken.Parse y) with
         | null -> ""
