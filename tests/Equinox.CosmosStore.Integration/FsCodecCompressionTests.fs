@@ -38,14 +38,14 @@ type CoreBehaviors() =
 
     [<Fact>]
     let ``serializes, achieving expected compression`` () =
-        let encoded = eventCodec |> FsCodec.SystemTextJson.EncodedBody.EncodeTryCompress |> _.Encode((), A { embed = String('x',5000) })
+        let encoded = eventCodec |> FsCodec.SystemTextJson.Encoding.EncodeTryCompress |> _.Encode((), A { embed = String('x',5000) })
         let res = ser encoded
         test <@ res.Contains "\"d\":\"" && res.Length < 138 && res.Contains "\"D\":2" @>
 
     let codec compress =
         let forceCompression: FsCodec.SystemTextJson.CompressionOptions = { minSize = 0; minGain = -1000 }
-        if compress then FsCodec.SystemTextJson.EncodedBody.EncodeTryCompress(eventCodec, forceCompression)
-        else FsCodec.SystemTextJson.EncodedBody.EncodeUncompressed eventCodec
+        if compress then FsCodec.SystemTextJson.Encoding.EncodeTryCompress(eventCodec, options = forceCompression)
+        else FsCodec.SystemTextJson.Encoding.EncodeUncompressed eventCodec
 
     [<Property>]
     let roundtrips compress value =

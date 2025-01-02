@@ -28,7 +28,7 @@
 
   <ItemGroup>
     <PackageReference Include="MinVer" Version="5.0.0" PrivateAssets="All" />
-    <PackageReference Include="FsCodec.SystemTextJson" Version="3.0.4-alpha.0.5" />
+    <PackageReference Include="FsCodec.SystemTextJson" Version="3.0.4-alpha.0.9" />
     <PackageReference Include="Serilog.Sinks.Console" Version="5.0.1" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="7.0.0" />
   </ItemGroup>
