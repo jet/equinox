@@ -92,7 +92,7 @@ module EventCodec =
 
     /// For CosmosStore - we encode to JsonElement as that's what the store talks
     let genJsonElement<'t when 't :> TypeShape.UnionContract.IUnionContract> =
-        FsCodec.SystemTextJson.CodecJsonElement.Create<'t>() |> FsCodec.SystemTextJson.EncodedBody.EncodeUncompressed
+        FsCodec.SystemTextJson.CodecJsonElement.Create<'t>() |> FsCodec.SystemTextJson.Encoding.EncodeUncompressed
 
     /// For stores other than CosmosStore, we encode to UTF-8 and have the store do the right thing
     let gen<'t when 't :> TypeShape.UnionContract.IUnionContract> =

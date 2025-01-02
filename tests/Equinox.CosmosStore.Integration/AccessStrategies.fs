@@ -44,7 +44,7 @@ module SequenceCheck =
 #if STORE_DYNAMO
         let codec = FsCodec.SystemTextJson.Codec.Create<Event>() |> FsCodec.Compression.EncodeTryCompress
 #else
-        let codec = FsCodec.SystemTextJson.CodecJsonElement.Create<Event>() |> FsCodec.SystemTextJson.EncodedBody.EncodeTryCompress
+        let codec = FsCodec.SystemTextJson.CodecJsonElement.Create<Event>() |> FsCodec.SystemTextJson.Encoding.EncodeTryCompress
 #endif
 
     module Fold =
