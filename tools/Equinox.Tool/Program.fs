@@ -576,7 +576,7 @@ module CosmosTop =
             scratch.Position
         let inflatedUtf8Size x =
             scratch.Position <- 0L
-            FsCodec.SystemTextJson.EncodedBody.ExpandTo(scratch, x)
+            FsCodec.SystemTextJson.Encoding.ExpandTo(scratch, x)
             scratch.Position
         let infSize dataField formatField (x: JsonElement) =
             match x.TryProp dataField, x.TryProp formatField with
