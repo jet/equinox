@@ -6,7 +6,7 @@
     <PackageProjectUrl>https://github.com/jet/equinox</PackageProjectUrl>
     <PackageTags>eventsourcing eventstore fsharp fscodec cosmosdb dynamodb eventstoredb postgres sqlserver</PackageTags>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <Copyright>Copyright © 2016-24</Copyright>
+    <Copyright>Copyright © 2016-25</Copyright>
 
     <WarningLevel>5</WarningLevel>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
