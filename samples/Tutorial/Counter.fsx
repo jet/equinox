@@ -38,7 +38,7 @@ let [<Literal>] private CategoryName = "Counter"
 let private streamId = FsCodec.StreamId.gen id
 
 (* NOTE the State is never stored directly, so it can be as simple and direct as necessary
-   Typically it's immutable, which enables it to be cached and/or safely have concurrent readers and writers etc *)
+   Typically it's immutable, which enables it to be cached and/or safely have concurrent readers and writers etc. *)
 type State = int
 let initial: State = 0
 (* Evolve takes the present state and one event and figures out the next state
@@ -86,7 +86,7 @@ type Service internal (resolve: string -> Equinox.Decider<Event, State>) =
 (* Out of the box, logging is via Serilog (can be wired to anything imaginable).
    We wire up logging for demo purposes using MemoryStore.VolatileStore's Committed event
    MemoryStore itself, by design, has no intrinsic logging
-   (other store bindings have rich relevant logging about roundtrips to physical stores etc) *)
+   (other store bindings have rich relevant logging about roundtrips to physical stores etc.) *)
 
 open Serilog
 let log = LoggerConfiguration().WriteTo.Console().CreateLogger()

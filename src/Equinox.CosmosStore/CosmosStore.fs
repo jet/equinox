@@ -1124,7 +1124,7 @@ type internal StoreCategory<'event, 'state, 'req>
             return struct (token, fold initial events) }
         member _.Sync(log, _categoryName, _streamId, streamName, req, (Token.Unpack pos as streamToken), state, events, ct) = task {
             let state' = fold state events
-            let exp, events, eventsEncoded, projectionsEncoded =
+            let exp, events, eventsEncoded, unfoldsEncoded =
                 let encode e = codec.Encode(req, e)
                 let encodeU e = (if shouldCompress.Invoke e then JsonElement.undefinedToNull >> JsonElement.deflate else JsonElement.undefinedToNull), encode e
                 match mapUnfolds with
@@ -1133,8 +1133,7 @@ type internal StoreCategory<'event, 'state, 'req>
                 | Choice3Of3 transmute -> let events', unfolds = transmute events state'
                                           SyncExp.fromEtag (defaultArg pos.etag null), events', Array.map encode events', Seq.map encodeU unfolds
             let baseIndex = pos.index + int64 (Array.length events)
-            let projections = projectionsEncoded |> Seq.map (Sync.mkUnfold baseIndex) |> Array.ofSeq
-            let batch = Sync.mkBatch streamName eventsEncoded projections
+            let batch = Sync.mkBatch streamName eventsEncoded [| for x in unfoldsEncoded -> Sync.mkUnfold baseIndex x |]
             do! createStoredProcIfNotExistsExactlyOnce ct
             match! store.Sync(log, streamName, exp, batch, ct) with
             | InternalSyncResult.Written token' -> return SyncResult.Written (token', state')

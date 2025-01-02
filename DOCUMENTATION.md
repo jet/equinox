@@ -1858,8 +1858,7 @@ let gatewayLog =
 let connector: Equinox.CosmosStore.CosmosStoreConnector =
     CosmosStoreConnector(
         Equinox.CosmosStore.Discovery.ConnectionString connectionString,
-        requestTimeout = TimeSpan.FromSeconds 5.,
-        maxRetryAttemptsOnRateLimitedRequests = 1,
+        maxRetryAttemptsOnRateLimitedRequests = 2,
         maxRetryWaitTimeOnRateLimitedRequests = TimeSpan.FromSeconds 3.)
 
 let client = connector.Connect(databaseId, [| containerId |]) |> Async.RunSynchronously

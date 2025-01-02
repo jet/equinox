@@ -143,7 +143,7 @@ module EventStore =
 
     let snapshotWindow = 500
     // NOTE: use `docker compose up` to establish the standard 3 node config at ports 1113/2113
-    let connector = EventStoreConnector(reqTimeout = TimeSpan.FromSeconds 5.)
+    let connector = EventStoreConnector(reqTimeout = TimeSpan.FromSeconds 5L)
     let esc = connector.Connect(AppName, Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false")
     let connection = EventStoreConnection(esc)
     let context = EventStoreContext(connection, batchSize = snapshotWindow)
@@ -158,7 +158,7 @@ module Cosmos =
 
     let read key = Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
     let discovery = Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION")
-    let connector = CosmosStoreConnector(discovery, TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5., Microsoft.Azure.Cosmos.ConnectionMode.Gateway)
+    let connector = CosmosStoreConnector(discovery, 2, TimeSpan.FromSeconds 5L, Microsoft.Azure.Cosmos.ConnectionMode.Gateway)
     let databaseId, containerId = read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER"
     let client = connector.Connect(databaseId, [| containerId |]) |> Async.RunSynchronously
     let context = CosmosStoreContext(client, databaseId, containerId, tipMaxEvents = 10)

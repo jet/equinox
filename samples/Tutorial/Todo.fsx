@@ -124,7 +124,7 @@ module Store =
 
     let read key = Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
     let discovery = Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION")
-    let connector = CosmosStoreConnector(discovery, TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5.)
+    let connector = CosmosStoreConnector(discovery, 2, TimeSpan.FromSeconds 5L)
     let databaseId, containerId = read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER"
     let client = connector.Connect(databaseId, [| containerId |]) |> Async.RunSynchronously
     let context = CosmosStoreContext(client, databaseId, containerId, tipMaxEvents = 100)

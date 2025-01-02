@@ -20,7 +20,7 @@
 
 (* Define the events that will be saved in the stream *)
 
-// Note using strings and DateTimes etc as Event payloads is not supported for .CosmosStore or .EventStore using the
+// Note using strings and DateTimes etc. as Event payloads is not supported for .CosmosStore or .EventStore using the
 // TypeShape IUnionContract based Codec support
 // i.e. typically records are used for the Event Payloads even in cases where you feel you'll only ever have a single primitive value
 
