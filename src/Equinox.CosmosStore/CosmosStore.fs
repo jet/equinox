@@ -107,6 +107,8 @@ type Unfold =
         /// The encoding scheme used for `m`
         [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingDefault)>]
         M: int }
+    member x.ToTimelineEvent(): ITimelineEvent<EncodedBody> =
+        FsCodec.Core.TimelineEvent.Create(x.i, x.c, EncodedBody.parseUnfold (x.D, x.d), (x.M, x.m), Guid.Empty, null, null, x.t, isUnfold = true)
     // Arrays are not indexed by default. 1. enable filtering by `c`ase 2. index uncompressed fields within unfolds for filtering
     static member internal IndexedPaths = [| "/u/[]/c/?"; "/u/[]/d/*" |]
 
@@ -176,8 +178,8 @@ type internal Enum private () =
         Enum.Events(t.i, t.e, ?minIndex = minIndex, ?maxIndex = maxIndex)
     static member internal Events(b: Batch, ?minIndex, ?maxIndex) =
         Enum.Events(b.i, b.e, ?minIndex = minIndex, ?maxIndex = maxIndex)
-    static member Unfolds(xs: Unfold[]): ITimelineEvent<EncodedBody> seq = seq {
-        for x in xs -> FsCodec.Core.TimelineEvent.Create(x.i, x.c, EncodedBody.parseUnfold (x.D, x.d), (x.M, x.m), Guid.Empty, null, null, x.t, isUnfold = true) }
+    static member Unfolds(xs: Unfold[]): ITimelineEvent<EncodedBody> seq =
+        xs |> Seq.map _.ToTimelineEvent()
     static member EventsAndUnfolds(x: Tip, ?minIndex, ?maxIndex): ITimelineEvent<EncodedBody> seq =
         Enum.Events(x, ?minIndex = minIndex, ?maxIndex = maxIndex)
         |> Seq.append (Enum.Unfolds x.u)
