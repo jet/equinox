@@ -88,8 +88,7 @@ let discoverConnection () =
 
 let createConnector (log: Serilog.ILogger) =
     let name, discovery = discoverConnection ()
-    let connector = CosmosStoreConnector(discovery, requestTimeout = TimeSpan.FromSeconds 3.,
-                                         maxRetryAttemptsOnRateLimitedRequests = 2, maxRetryWaitTimeOnRateLimitedRequests = TimeSpan.FromMinutes 1.)
+    let connector = CosmosStoreConnector(discovery, 9, TimeSpan.FromMinutes 1.)
     log.Information("CosmosStore {name} {endpoint}", name, connector.Endpoint)
     connector
 
