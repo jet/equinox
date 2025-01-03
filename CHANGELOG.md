@@ -14,7 +14,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Fixed
 
 <a name="4.1.0"></a>
-## 4.1.0 - 2024/5
+## 4.1.0 - 2025
 
 ### Added
 
