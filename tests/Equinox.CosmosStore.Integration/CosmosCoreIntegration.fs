@@ -10,7 +10,7 @@ open System
 
 type TestEvents() =
     static member private Create(i, ?eventType, ?json) =
-        let enc = System.Text.Json.JsonSerializer.SerializeToElement >> FsCodec.SystemTextJson.Encoding.Uncompressed
+        let enc = System.Text.Json.JsonSerializer.SerializeToElement >> FsCodec.SystemTextJson.Encoding.FromJsonElement
         FsCodec.Core.EventData.Create
             (   sprintf "%s:%d" (defaultArg eventType "test_event") i,
                 enc (defaultArg json "{\"d\":\"d\"}"),
