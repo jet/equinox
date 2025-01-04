@@ -483,8 +483,6 @@ module CosmosQuery =
     open Equinox.CosmosStore.Linq.Internal
     open FSharp.Control
     let inline miB x = Equinox.CosmosStore.Linq.Internal.miB x
-    type System.Text.Json.JsonElement with
-        member x.Utf8ByteCount = if x.ValueKind = System.Text.Json.JsonValueKind.Null then 0 else x.GetRawText() |> System.Text.Encoding.UTF8.GetByteCount
     type System.Text.Json.JsonDocument with
         member x.Cast<'T>() = System.Text.Json.JsonSerializer.Deserialize<'T>(x.RootElement)
         member x.Timestamp =
@@ -498,9 +496,9 @@ module CosmosQuery =
         | _ -> ()
         let selectedFields =
             match a.Mode with
-            | Mode.Default ->               "c._etag, c.p, c.u[0].d"
-            | Mode.SnapOnly ->              "c.u[0].d"
-            | Mode.SnapWithStream ->        "c.p, c.u[0].d"
+            | Mode.Default ->               "c._etag, c.p, c.u[0].D, c.u[0].d"
+            | Mode.SnapOnly ->              "c.u[0].D, c.u[0].d"
+            | Mode.SnapWithStream ->        "c.p, c.u[0].D, c.u[0].d"
             | Mode.ReadOnly ->              "c.u" // TOCONSIDER remove; adjust TryLoad/TryHydrateTip
             | Mode.ReadWithStream ->        "c.p, c.u" // TOCONSIDER remove; adjust TryLoad/TryHydrateTip
             | Mode.Raw ->                   "*"
@@ -576,7 +574,7 @@ module CosmosTop =
             scratch.Position
         let inflatedUtf8Size x =
             scratch.Position <- 0L
-            FsCodec.SystemTextJson.Encoding.ExpandTo(scratch, x)
+            FsCodec.SystemTextJson.Encoding.ToStream(scratch, x)
             scratch.Position
         let infSize dataField formatField (x: JsonElement) =
             match x.TryProp dataField, x.TryProp formatField with

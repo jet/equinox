@@ -14,13 +14,14 @@ type EncodedBody = (struct (int * JsonElement))
 /// Interpretation of EncodedBody data is an external concern from the perspective of the Store
 /// The idiomatic implementation of the encoding logic is FsCodec.SystemTextJson.Compression, in versions 3.1.0 or later
 /// That implementation provides complete interop with encodings produced by Equinox.Cosmos/CosmosStore from V1 onwards, including integrated Deflate compression
-module internal EncodedBody =
+module EncodedBody =
     let internal jsonRawText: EncodedBody -> string = ValueTuple.snd >> _.GetRawText()
     let internal jsonUtf8Bytes = jsonRawText >> System.Text.Encoding.UTF8.GetByteCount
-    let [<Literal>] deflateEncoding = 1
-    // prior to the addition of the `D` field in 4.1.0, the integrated compression support
-    // was predicated entirely on a JSON String `d` value in the Unfold as implying it was UTF8->Deflate->Base64 encoded
-    let parseUnfold = function struct (0, e: JsonElement) when e.ValueKind = JsonValueKind.String -> struct (deflateEncoding, e) | x -> x
+    let [<Literal>] private deflateEncoding = 1
+    /// prior to the addition of the `D` field in 4.1.0, the integrated compression support
+    /// was predicated entirely on a JSON String `d` value in the Unfold as implying it was UTF8 -> Deflate -> Base64 encoded
+    let ofUnfoldBody struct (enc, data: JsonElement): EncodedBody =
+        if enc = 0 && data.ValueKind = JsonValueKind.String then (deflateEncoding, data) else (enc, data)
 
 /// A single Domain Event from the array held in a Batch
 [<NoEquality; NoComparison>]
@@ -108,7 +109,7 @@ type Unfold =
         [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingDefault)>]
         M: int }
     member x.ToTimelineEvent(): ITimelineEvent<EncodedBody> =
-        FsCodec.Core.TimelineEvent.Create(x.i, x.c, EncodedBody.parseUnfold (x.D, x.d), (x.M, x.m), Guid.Empty, null, null, x.t, isUnfold = true)
+        FsCodec.Core.TimelineEvent.Create(x.i, x.c, EncodedBody.ofUnfoldBody (x.D, x.d), (x.M, x.m), Guid.Empty, null, null, x.t, isUnfold = true)
     // Arrays are not indexed by default. 1. enable filtering by `c`ase 2. index uncompressed fields within unfolds for filtering
     static member internal IndexedPaths = [| "/u/[]/c/?"; "/u/[]/d/*" |]
 
@@ -255,7 +256,7 @@ module Log =
                 f log
             retryPolicy.Execute withLoggingContextWrapping
 
-    let internal eventLen (x: #IEventData<_>) = EncodedBody.jsonUtf8Bytes x.Data + EncodedBody.jsonUtf8Bytes x.Meta + 80
+    let internal eventLen (x: #IEventData<EncodedBody>) = EncodedBody.jsonUtf8Bytes x.Data + EncodedBody.jsonUtf8Bytes x.Meta + 80
     let internal batchLen = Seq.sumBy eventLen
     [<RequireQualifiedAccess>]
     type Operation = Tip | Tip404 | Tip304 | Query | Index | Write | Resync | Conflict | Prune | Delete | Trim
