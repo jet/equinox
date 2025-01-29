@@ -15,8 +15,12 @@ type EncodedBody = (struct (int * JsonElement))
 /// The idiomatic implementation of the encoding logic is FsCodec.SystemTextJson.Compression, in versions 3.1.0 or later
 /// That implementation provides complete interop with encodings produced by Equinox.Cosmos/CosmosStore from V1 onwards, including integrated Deflate compression
 module EncodedBody =
-    let internal jsonRawText: EncodedBody -> string = ValueTuple.snd >> _.GetRawText()
-    let internal jsonUtf8Bytes = jsonRawText >> System.Text.Encoding.UTF8.GetByteCount
+    let internal jsonRawText ((_, je): EncodedBody): string =
+        if je.ValueKind = JsonValueKind.Undefined then String.Empty
+        else je.GetRawText()
+    let internal jsonUtf8Bytes((_, je): EncodedBody): int =
+        if je.ValueKind = JsonValueKind.Undefined then 0
+        else je.GetRawText() |> System.Text.Encoding.UTF8.GetByteCount
     let [<Literal>] private deflateEncoding = 1
     /// prior to the addition of the `D` field in 4.1.0, the integrated compression support
     /// was predicated entirely on a JSON String `d` value in the Unfold as implying it was UTF8 -> Deflate -> Base64 encoded
