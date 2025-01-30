@@ -19,11 +19,12 @@ type [<AbstractClass; Sealed>] QueryExtensions =
                 else base.Visit node }
     [<Extension>]
     static member Replace(x: Expression, find, replace) = QueryExtensions.Replace(find, replace).Visit(x)
+    [<Extension>]
+    static member InlineParam(f: Expression<Func<'T, 'I>>, expr) = f.Body.Replace(f.Parameters[0], expr)
     [<Extension>] // https://stackoverflow.com/a/8829845/11635
     static member Compose(selector: Expression<Func<'T, 'I>>, projector: Expression<Func<'I, 'R>>): Expression<Func<'T, 'R>> =
         let param = Expression.Parameter(typeof<'T>, "x")
-        let prop = selector.Body.Replace(selector.Parameters[0], param)
-        let body = projector.Body.Replace(projector.Parameters[0], prop)
+        let body = projector.InlineParam(selector.InlineParam param)
         Expression.Lambda<Func<'T, 'R>>(body, param)
     [<Extension>]
     static member OrderBy(source: IQueryable<'T>, indexSelector: Expression<Func<'T, 'I>>, keySelector: Expression<Func<'I, 'U>>, descending) =
@@ -165,16 +166,14 @@ type SnAndSnap() =
             dataExpression: Expression<Func<'U, System.Text.Json.JsonElement>>) =
         let param = Expression.Parameter(typeof<'T>, "x")
         let targetType = typeof<SnAndSnap>
-        let snMember = targetType.GetMember(nameof Unchecked.defaultof<SnAndSnap>.sn)[0]
-        let formatMember = targetType.GetMember(nameof Unchecked.defaultof<SnAndSnap>.D)[0]
-        let dataMember = targetType.GetMember(nameof Unchecked.defaultof<SnAndSnap>.d)[0]
-        Expression.Lambda<Func<'T, SnAndSnap>>(
+        let bind (name, expr) = Expression.Bind(targetType.GetMember(name)[0], expr) :> MemberBinding
+        let body =
             Expression.MemberInit(
                 Expression.New(targetType.GetConstructor [||]),
-                [|  Expression.Bind(snMember, snExpression param) :> MemberBinding
-                    Expression.Bind(formatMember, QueryExtensions.Compose(uExpression, formatExpression).Body.Replace(uExpression.Parameters[0], param))
-                    Expression.Bind(dataMember, uExpression.Compose(dataExpression).Body.Replace(uExpression.Parameters[0], param)) |]),
-            [| param |])
+                [|  bind (nameof Unchecked.defaultof<SnAndSnap>.sn, snExpression param)
+                    bind (nameof Unchecked.defaultof<SnAndSnap>.D,  uExpression.Compose(formatExpression).InlineParam(param))
+                    bind (nameof Unchecked.defaultof<SnAndSnap>.d,  uExpression.Compose(dataExpression).InlineParam(param)) |])
+        Expression.Lambda<Func<'T, SnAndSnap>>(body, [| param |])
 
 /// Represents a query projecting information values from an Index and/or Snapshots with a view to rendering the items and/or a count
 type Query<'T, 'M>(inner: Internal.Projection<'T, 'M>) =
@@ -234,6 +233,7 @@ type IndexContext<'I>(container, categoryName, caseName, log, [<O; D null>]?quer
     member val Log = log
     member val Description = $"{categoryName}/{caseName}" with get, set
     member val Container = container
+    member val CategoryName = categoryName
 
     /// Helper to make F# consumption code more terse (the F# compiler generates Expression trees only when a function is passed to a `member`)
     /// Example: `i.Predicate(fun e -> e.name = name)`
