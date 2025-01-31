@@ -1,7 +1,7 @@
 ﻿// Prior to version v 4.1.0, CosmosStore owned:
 // - compression of snapshots (and APIs controlling conditionally of that)
 // - inflation of snapshots
-// This is now an external concern, fully implemented by APIs presented in FsCodec.SystemTextJson.Compression v 3.1.0 and later
+// This is now an external concern, fully implemented by APIs presented in FsCodec.SystemTextJson.Encod* v 3.1.0 and later
 // These tests are a sanity check pinning the basic mechanisms that are now externalized; any more thorough tests should be maintained in FsCodec
 // NOTE there is no strong dependency on FsCodec; CosmosStore is happy to roundtrip arbitrary pairs of D/d and M/m values
 // NOTE prior to v 4.1.0, CosmosStore provided a System.Text.Json integration for Microsoft.Azure.Cosmos
@@ -38,14 +38,14 @@ type CoreBehaviors() =
 
     [<Fact>]
     let ``serializes, achieving expected compression`` () =
-        let encoded = eventCodec |> FsCodec.SystemTextJson.Encoding.EncodeTryCompress |> _.Encode((), A { embed = String('x',5000) })
+        let encoded = eventCodec |> FsCodec.SystemTextJson.Encoder.Compressed |> _.Encode((), A { embed = String('x',5000) })
         let res = ser encoded
         test <@ res.Contains "\"d\":\"" && res.Length < 138 && res.Contains "\"D\":2" @>
 
     let codec compress =
-        let forceCompression: FsCodec.SystemTextJson.CompressionOptions = { minSize = 0; minGain = -1000 }
-        if compress then FsCodec.SystemTextJson.Encoding.EncodeTryCompress(eventCodec, options = forceCompression)
-        else FsCodec.SystemTextJson.Encoding.EncodeUncompressed eventCodec
+        let forceCompression: FsCodec.CompressionOptions = { minSize = 0; minGain = -1000 }
+        if compress then FsCodec.SystemTextJson.Encoder.Compressed(eventCodec, options = forceCompression)
+        else FsCodec.SystemTextJson.Encoder.Uncompressed eventCodec
 
     [<Property>]
     let roundtrips compress value =
