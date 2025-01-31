@@ -20,8 +20,8 @@ type Event =
         /// The Case (Event Type); used to drive deserialization (Required)
         c: string
 
-        /// Event body, as UTF-8 encoded json ready to be injected into the Json being rendered for CosmosDB
-        d: EventBody // Can be Json Null for Nullary cases
+        /// Event body, as UTF-8 encoded json ready to be injected into the JSON being rendered for CosmosDB
+        d: EventBody // Can be JSON Null for Nullary cases
 
         /// Optional metadata, as UTF-8 encoded json, ready to emit directly
         m: EventBody
@@ -84,7 +84,7 @@ type Unfold =
         /// The Case (Event Type) of this compaction/snapshot, used to drive deserialization
         c: string // required
 
-        /// Event body - Json -> Deflate -> Base64 -> JsonElement
+        /// Event body - JSON -> Deflate -> Base64 -> JsonElement
         [<Serialization.JsonConverter(typeof<JsonCompressedBase64Converter>)>]
         d: EventBody // required
 
