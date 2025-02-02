@@ -10,6 +10,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
+- `Equinox.CosmosStore`: Roundtrip `D` and `M` encoding values as per `DynamoStore`, enabling more extensive control of compression [#472](https://github.com/jet/equinox/pull/472)
 - `Equinox.CosmosStore`: Use `Microsoft.Azure.Cosmos` integrated `System.Text.Json` support; added ability to specify `serializerOptions` [#467](https://github.com/jet/equinox/pull/467)
 - `Equinox.CosmosStore`: Group metrics by Container Name [#449](https://github.com/jet/equinox/pull/449)
 - `Equinox.CosmosStore`: Group metrics by Category; split out `Tip` activity [#453](https://github.com/jet/equinox/pull/453)
@@ -29,8 +30,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 
 - `eqx stats`: `-A` (all stats) is now the default unless you specify >=1 of the individual stats via `ESDNO` flags [#459](https://github.com/jet/equinox/pull/459)
-
-### Fixed
+- `Equinox.CosmosStore.CosmosStoreCategory`: Removed `shouldCompress` mechanism as compression is now external [#472](https://github.com/jet/equinox/pull/472)
 
 <a name="4.0.4"></a>
 ## [4.0.4] - 2024-05-08
@@ -109,7 +109,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `CosmosStore`: Only log `bytes` when log level is `Debug` [#305](https://github.com/jet/equinox/pull/305)
 - `CosmosStore.AccessStrategy.MultiSnapshot`,`Custom`: Change `list` and `seq` types to `array` [#338](https://github.com/jet/equinox/pull/338)
 - `CosmosStore.CosmosStoreCategory`: Generalize `compressUnfolds` to `shouldCompress` predicate [#436](https://github.com/jet/equinox/pull/436)
-- `CosmosStore.CosmosStoreCategory.TryHydrateTip`: Generates a Stream State Momento based on externally loaded `u`nfold state [#434](https://github.com/jet/equinox/pull/434)
+- `CosmosStore.CosmosStoreCategory.TryHydrateTip`: Generates a Stream State Memento based on externally loaded `u`nfold state [#434](https://github.com/jet/equinox/pull/434)
 - `CosmosStore.CosmosStoreCategory.TryLoad`: Renders a `'state` based on an Unfold [#434](https://github.com/jet/equinox/pull/434)
 - `CosmosStore.Core.Initialization.initAux`: Replace hard-coded manual 400 RU with `mode` parameter [#328](https://github.com/jet/equinox/pull/328) :pray: [@brihadish](https://github.com/brihadish)
 - `CosmosStore.CosmosClientFactory`: Moved to Core [#430](https://github.com/jet/equinox/pull/430)

@@ -63,7 +63,7 @@ module Events =
         e, ValueNone, ValueNone
 
     // unlike most normal codecs, we have a mapping to supply as we want the Index to be added to each event so we can track it in the State as we fold
-    let codecJe = FsCodec.SystemTextJson.CodecJsonElement.Create(up, down)
+    let codecJe = FsCodec.SystemTextJson.CodecJsonElement.Create(up, down) |> FsCodec.SystemTextJson.Encoder.Uncompressed
     let codec = FsCodec.SystemTextJson.Codec.Create(up, down)
 
 module Fold =

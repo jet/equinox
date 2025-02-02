@@ -42,11 +42,10 @@ module SequenceCheck =
             | Add of {| value : int |}
             interface TypeShape.UnionContract.IUnionContract
 #if STORE_DYNAMO
-        let codec = FsCodec.SystemTextJson.Codec.Create<Event>() |> FsCodec.Compression.EncodeTryCompress
+        let codec = FsCodec.SystemTextJson.Codec.Create<Event>() |> FsCodec.Encoder.Compressed
 #else
-        let codec = FsCodec.SystemTextJson.CodecJsonElement.Create<Event>()
+        let codec = FsCodec.SystemTextJson.CodecJsonElement.Create<Event>() |> FsCodec.SystemTextJson.Encoder.Compressed
 #endif
-
     module Fold =
 
         type State = int[]

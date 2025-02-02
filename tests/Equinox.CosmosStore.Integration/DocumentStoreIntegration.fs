@@ -15,7 +15,7 @@ open Equinox.CosmosStore.Integration.CosmosFixtures
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
 #if STORE_DYNAMO
-    let codec = Cart.Events.codec |> FsCodec.Compression.EncodeTryCompress
+    let codec = Cart.Events.codec |> FsCodec.Encoder.Compressed
 #else
     let codec = Cart.Events.codecJe
 #endif
@@ -29,8 +29,9 @@ module Cart =
         StoreCategory(context, Cart.CategoryName, codec, fold, initial, AccessStrategy.MultiSnapshot unfArgs, Equinox.CachingStrategy.NoCaching)
         |> Equinox.Decider.forStream log
         |> Cart.create
+    let createCategorySnapshot context = StoreCategory(context, Cart.CategoryName, codec, fold, initial, AccessStrategy.Snapshot Cart.Fold.Snapshot.config, Equinox.CachingStrategy.NoCaching)
     let createServiceWithSnapshotStrategy log context =
-        StoreCategory(context, Cart.CategoryName, codec, fold, initial, AccessStrategy.Snapshot Cart.Fold.Snapshot.config, Equinox.CachingStrategy.NoCaching)
+        createCategorySnapshot context
         |> Equinox.Decider.forStream log
         |> Cart.create
     let createServiceWithSnapshotStrategyAndCaching log context cache =
@@ -48,7 +49,7 @@ module ContactPreferences =
     let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
     module ClientId = let gen (): ContactPreferences.ClientId = Guid.gen () |> Guid.toStringN |> ContactPreferences.ClientId
 #if STORE_DYNAMO
-    let codec = ContactPreferences.Events.codec |> FsCodec.Compression.EncodeTryCompress
+    let codec = ContactPreferences.Events.codec |> FsCodec.Encoder.Compressed
 #else
     let codec = ContactPreferences.Events.codecJe
 #endif
