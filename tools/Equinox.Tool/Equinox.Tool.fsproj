@@ -18,6 +18,7 @@
     <Compile Include="StoreClient.fs" />
     <Compile Include="TodoClient.fs" />
     <Compile Include="Tests.fs" />
+    <Compile Include="CosmosStoreLinq.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

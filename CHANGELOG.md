@@ -16,8 +16,14 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Equinox.CosmosStore`: Group metrics by Category; split out `Tip` activity [#453](https://github.com/jet/equinox/pull/453)
 - `Equinox.CosmosStore`: Support Ingesting unfolds [#460](https://github.com/jet/equinox/pull/460)
 - `Equinox.CosmosStore.EventsContext.Sync`: Support syncing of unfolds [#460](https://github.com/jet/equinox/pull/460)
+- `eqx`: `-Q` flag omits timestamps from console output logging [#473](https://github.com/jet/equinox/pull/473)
+- `eqx destroy`: Support for deleting the items (documents) underlying a category/stream/arbitrary `WHERE` clause [#473](https://github.com/jet/equinox/pull/473)
+- `eqx top`: Support for analyzing space usage for event and view containers by category and/or stream [#473](https://github.com/jet/equinox/pull/473)
+- `eqx dump`, `eqx query`: `-sl` Support for specifying streams to dump via a [CosmosDB `LIKE` expression](https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/query/keywords#like) [#473](https://github.com/jet/equinox/pull/473)
+- `eqx dump`: `-Q` strips intervals, regularizes snapshots, logs stream names [#473](https://github.com/jet/equinox/pull/473)
 - `eqx stats`: `-O`, `-N` flags extract oldest and newest `_ts` within a store [#459](https://github.com/jet/equinox/pull/459)
-- `eqx`: `-Q` flag omits timestamps from console output logging [#459](https://github.com/jet/equinox/pull/459)
+- `eqx stats`: `-U` flag to count streams with unfolds and total number thereof [#473](https://github.com/jet/equinox/pull/473)
+- `eqx stats`: `-I` flag; relabel Documents as Items, retaining existing `-D` flag [#473](https://github.com/jet/equinox/pull/473)
 
 ### Changed
 
