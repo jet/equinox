@@ -24,7 +24,7 @@ type TodosController(service: Service) =
 
     let toModel (value : TodoView) : Events.Todo = { id = value.id; order = value.order; title = value.title; completed = value.completed }
 
-    member private this.WithUri(x : Events.Todo) : TodoView =
+    member private this.WithUri(x: Events.Todo) : TodoView =
         let url = this.Url.RouteUrl("GetTodo", { id=x.id }, this.Request.Scheme) // Supplying scheme is secret sauce for making it absolute as required by client
         { id = x.id; url = url; order = x.order; title = x.title; completed = x.completed }
 

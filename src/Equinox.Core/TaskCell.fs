@@ -9,7 +9,7 @@ type
     // PUBLIC in Equinox.Core (it can also be used independent of Equinox)
     internal
 #endif
-    TaskCell<'T>(startWorkflow : System.Func<CancellationToken, Task<'T>>, [<O; D null>]?isExpired: System.Func<'T, bool>) =
+    TaskCell<'T>(startWorkflow: System.Func<CancellationToken, Task<'T>>, [<O; D null>]?isExpired: System.Func<'T, bool>) =
 
     let isValid = match isExpired with Some f -> not << f.Invoke | None -> fun _ -> true
     let mutable cell = LazyTask<'T>.Empty

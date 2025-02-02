@@ -51,9 +51,9 @@ type VolatileStore<'Format>() =
     member x.TrySync(streamName, _categoryName, _streamId, expectedCount, events): struct (bool * FsCodec.ITimelineEvent<'Format>[]) = x.TrySync(streamName, expectedCount, events)
 
 type private StoreCategory<'event, 'state, 'req, 'Format>(store: VolatileStore<'Format>, codec, fold, initial) =
-    let fold s xs = (fold : System.Func<'state, 'event[], 'state>).Invoke(s, xs)
+    let fold s xs = (fold: System.Func<'state, 'event[], 'state>).Invoke(s, xs)
     let res version state events = struct ({ value = null; version = version; streamBytes = -1 }, fold state events)
-    let decode events = Array.chooseV (codec : FsCodec.IEventCodec<'event, 'Format, 'req>).Decode events
+    let decode events = Array.chooseV (codec: FsCodec.IEventCodec<'event, 'Format, 'req>).Decode events
     interface ICategory<'event, 'state, 'req> with
         member _.Empty = res 0 initial Array.empty
         member _.Load(_log, _categoryName, _streamId, streamName, _maxAge, _requireLeader, _ct) = task {

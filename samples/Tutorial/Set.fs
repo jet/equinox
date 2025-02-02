@@ -6,7 +6,7 @@ let streamId = FsCodec.StreamId.gen SetId.toString
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
-    type Items = { items : string[] }
+    type Items = { items: string[] }
     type Event =
         | Added of Items
         | Deleted of Items
@@ -17,7 +17,7 @@ module Events =
 module Fold =
 
     type State = Set<string>
-    let initial : State = Set.empty
+    let initial: State = Set.empty
 
     module Snapshot =
 
@@ -33,7 +33,7 @@ module Fold =
             (state,xs) ||> Array.fold (fun state x -> Set.add x state)
     let fold = Array.fold evolve
 
-let interpret add remove (state : Fold.State) =
+let interpret add remove (state: Fold.State) =
     // no need to deduplicate adds as we'll be folding these into the state imminently in any case
     let fresh = [| for i in add do if not (state.Contains i) then yield i |]
     let dead = [| for i in remove do if state.Contains i then yield i |]
@@ -46,7 +46,7 @@ let interpret add remove (state : Fold.State) =
 
 type Service internal (decider: Equinox.Decider<Events.Event, Fold.State>) =
 
-    member _.Add(add : string seq, remove : string seq) : Async<int*int> =
+    member _.Add(add: string seq, remove: string seq) : Async<int*int> =
         decider.Transact(interpret add remove)
 
     member _.Read() : Async<Set<string>> =

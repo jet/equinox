@@ -10,7 +10,7 @@ let private streamId = FsCodec.StreamId.gen SequenceId.toString
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
-    type Reserved = { next : int64 }
+    type Reserved = { next: int64 }
     type Event =
         | Reserved of Reserved
         interface TypeShape.UnionContract.IUnionContract
@@ -18,15 +18,15 @@ module Events =
 
 module Fold =
 
-    type State = { next : int64 }
+    type State = { next: int64 }
     let initial = { next = 0L }
     let private evolve _ignoreState = function
         | Events.Reserved e -> { next = e.next }
     let fold (state: State) (events: seq<Events.Event>) : State =
         Seq.tryLast events |> Option.fold evolve state
-    let snapshot (state : State) = Events.Reserved { next = state.next }
+    let snapshot (state: State) = Events.Reserved { next = state.next }
 
-let decideReserve (count : int) (state : Fold.State) : int64 * Events.Event[] =
+let decideReserve (count: int) (state: Fold.State): int64 * Events.Event[] =
     state.next, [| Events.Reserved { next = state.next + int64 count } |]
 
 type Service internal (resolve: SequenceId -> Equinox.Decider<Events.Event, Fold.State>) =

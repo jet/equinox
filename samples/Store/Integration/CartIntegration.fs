@@ -67,7 +67,7 @@ type Tests(testOutputHelper) =
         do! act service args }
 
     let arrangeCosmos connect createCategory =
-        let context : CosmosStore.CosmosStoreContext = connect log defaultQueryMaxItems
+        let context: CosmosStore.CosmosStoreContext = connect log defaultQueryMaxItems
         Cart.create (createCategory context |> Decider.forStream log)
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]

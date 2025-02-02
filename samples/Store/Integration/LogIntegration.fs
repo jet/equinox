@@ -9,9 +9,9 @@ open System.Collections.Concurrent
 module EquinoxEsInterop =
     open Equinox.EventStoreDb
     [<NoEquality; NoComparison>]
-    type FlatMetric = { action: string; stream : string; interval: StopwatchInterval; bytes: int; count: int; batches: int option } with
+    type FlatMetric = { action: string; stream: string; interval: StopwatchInterval; bytes: int; count: int; batches: int option } with
         override x.ToString() = $"%s{x.action}-Stream=%s{x.stream} %s{x.action}-Elapsed={x.interval.Elapsed}"
-    let flatten (evt : Log.Metric) : FlatMetric =
+    let flatten (evt: Log.Metric) : FlatMetric =
         let action, metric, batches =
             match evt with
             | Log.WriteSuccess m -> "AppendToStreamAsync", m, None
@@ -26,9 +26,9 @@ module EquinoxEsInterop =
 module EquinoxCosmosInterop =
     open Equinox.CosmosStore.Core
     [<NoEquality; NoComparison>]
-    type FlatMetric = { action: string; stream : string; interval: StopwatchInterval; bytes: int; count: int; responses: int option; ru: float } with
+    type FlatMetric = { action: string; stream: string; interval: StopwatchInterval; bytes: int; count: int; responses: int option; ru: float } with
         override x.ToString() = $"%s{x.action}-Stream=%s{x.stream} %s{x.action}-Elapsed={x.interval.Elapsed} Ru={x.ru}"
-    let flatten (evt : Log.Metric) : FlatMetric =
+    let flatten (evt: Log.Metric) : FlatMetric =
         let action, metric, batches, ru =
             match evt with
             | Log.Metric.Tip m -> "CosmosTip", m, None, m.ru
@@ -48,15 +48,15 @@ module EquinoxCosmosInterop =
         {   action = action; stream = metric.stream; bytes = metric.bytes; count = metric.count; responses = batches
             interval = metric.interval; ru = ru }
 
-type SerilogMetricsExtractor(emit : string -> unit) =
+type SerilogMetricsExtractor(emit: string -> unit) =
     let renderSummary = TestOutputRenderer.render "{Message} {Properties}"
-    let emitEvent (logEvent : Serilog.Events.LogEvent) =
+    let emitEvent (logEvent: Serilog.Events.LogEvent) =
         logEvent |> TestOutputRenderer.full |> System.Diagnostics.Trace.Write
         logEvent |> renderSummary |> emit
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
         | :? Serilog.Events.ScalarValue as x -> Some x.Value
         | _ -> None
-    let (|EsMetric|CosmosMetric|GenericMessage|) (logEvent : Serilog.Events.LogEvent) =
+    let (|EsMetric|CosmosMetric|GenericMessage|) (logEvent: Serilog.Events.LogEvent) =
         logEvent.Properties
         |> Seq.tryPick (function
             | KeyValue (k, SerilogScalar (:? Equinox.EventStoreDb.Log.Metric as m)) -> Some <| Choice1Of3 (k,m)
@@ -95,7 +95,7 @@ type Tests(testOutputHelper) =
         test <@ itemCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
         // Because we're using Access Strategies that enable us to read our state in a single roundtrip...
         // (even though we've gone over a page), we only need a single read to read the state (plus the one from the execute)
-        let contains (s : string) (x : string) = x.Contains s
+        let contains (s: string) (x: string) = x.Contains s
         test <@ let reads = buffer |> Seq.filter (contains resultTag)
                 2 = Seq.length reads @> }
 

@@ -43,7 +43,7 @@ type App = class end
 // :shame: This should be a class used via UseStartup, but I couldn't figure out how to pass the parsed args in as MS have changed stuff around too much to make it googleable within my boredom threshold
 type Startup() =
     // This method gets called by the runtime. Use this method to add services to the container.
-    static member ConfigureServices(services: IServiceCollection, p : ParseResults<Arguments>) : unit =
+    static member ConfigureServices(services: IServiceCollection, p: ParseResults<Arguments>) : unit =
         services
             .AddMvc()
             .AddJsonOptions(fun o ->

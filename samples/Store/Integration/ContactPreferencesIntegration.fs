@@ -33,7 +33,7 @@ type Tests(testOutputHelper) =
     let testOutput = TestOutput testOutputHelper
     let log = testOutput.CreateLogger()
 
-    let act (service : ContactPreferences.Service) (id,value) = async {
+    let act (service: ContactPreferences.Service) (id,value) = async {
         do! service.Update(id, value)
 
         let! actual = service.Read id

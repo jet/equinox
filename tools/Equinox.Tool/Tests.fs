@@ -143,7 +143,7 @@ module LoadTest =
             member a.Usage = a |> function
                 | Endpoint _ ->                 "Target address. Default: https://localhost:5001"
     and Test = Favorite | SaveForLater | Todo
-    and TestArguments(p : ParseResults<LoadTestParameters>) =
+    and TestArguments(p: ParseResults<LoadTestParameters>) =
         member val Options =                    p.GetResults Cached @ p.GetResults Unfolds
         member x.Cache =                        x.Options |> List.exists (function Cached ->  true | _ -> false)
         member x.Unfolds =                      x.Options |> List.exists (function Unfolds -> true | _ -> false)
@@ -203,7 +203,7 @@ module LoadTest =
                 with e -> domainLog.Warning(e, "Test threw an exception"); e.Reraise () }
         execute
     let private createResultLog fileName = LoggerConfiguration().WriteTo.File(fileName).CreateLogger()
-    let run (log : ILogger) (createStoreLog, verbose, verboseConsole) (resetStats, dumpStats) reportFilename (p : ParseResults<LoadTestParameters>) =
+    let run (log : ILogger) (createStoreLog, verbose, verboseConsole) (resetStats, dumpStats) reportFilename (p: ParseResults<LoadTestParameters>) =
         let a = TestArguments p
         let storeLog, storeConfig, httpClient: ILogger * Store.Config option * HttpClient option =
             match p.GetSubCommand() with

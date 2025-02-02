@@ -60,7 +60,7 @@ and [<NoComparison; NoEquality; RequireSubcommand>] InitParameters =
             | IndexUnfolds ->               "Index `c` and `d` fields within the `u` field of Tip items. Default: Don't index"
             | Cosmos _ ->                   "Cosmos Connection parameters."
 and CosmosModeType = Container | Db | Serverless
-and CosmosInitArguments(p : ParseResults<InitParameters>) =
+and CosmosInitArguments(p: ParseResults<InitParameters>) =
     let rusOrDefault (value: int) = p.GetResult(Rus, value)
     let throughput auto = if auto then CosmosInit.Throughput.Autoscale (rusOrDefault 4000) else CosmosInit.Throughput.Manual (rusOrDefault 400)
     member val ProvisioningMode =
@@ -84,7 +84,7 @@ and [<NoComparison; NoEquality; RequireSubcommand>] TableParameters =
             | WriteCu _ ->                  "Specify Write Capacity Units to provision for the Table. (Not applicable in On-Demand mode)"
             | Streaming _ ->                "Specify Streaming Mode: New=NEW_IMAGE, NewAndOld=NEW_AND_OLD_IMAGES, Off=Disabled."
             | Dynamo _ ->                   "DynamoDB Connection parameters."
-and DynamoInitArguments(p : ParseResults<TableParameters>) =
+and DynamoInitArguments(p: ParseResults<TableParameters>) =
     let onDemand =                          p.Contains OnDemand
     member val StreamingMode =              p.GetResult Streaming
     member val Throughput =                 if not onDemand then Throughput.Provisioned (ProvisionedThroughput(p.GetResult ReadCu, p.GetResult WriteCu))
@@ -230,7 +230,7 @@ and DumpArguments(p: ParseResults<DumpParameters>) =
             let storeLog = createStoreLog false
             storeLog, Store.MessageDb.config log None p
         | x -> p.Raise $"unexpected subcommand %A{x}"
-let writeToStatsSinks (c : LoggerConfiguration) =
+let writeToStatsSinks (c: LoggerConfiguration) =
     c.WriteTo.Sink(Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink())
      .WriteTo.Sink(Equinox.DynamoStore.Core.Log.InternalMetrics.Stats.LogSink())
      .WriteTo.Sink(Equinox.EventStoreDb.Log.InternalMetrics.Stats.LogSink())
@@ -283,7 +283,7 @@ module Dynamo =
 
 module CosmosInit =
 
-    let connect log (p : ParseResults<Store.Cosmos.Parameters>) =
+    let connect log (p: ParseResults<Store.Cosmos.Parameters>) =
         Store.Cosmos.connect log (Store.Cosmos.Arguments p) |> fst
 
     let containerAndOrDb (log: ILogger) (p: ParseResults<InitParameters>) =
@@ -308,7 +308,7 @@ module CosmosStats =
         member container.QueryValue<'T>(sqlQuery : string) = task {
             let! (res: Microsoft.Azure.Cosmos.FeedResponse<'T>) = container.GetItemQueryIterator<'T>(sqlQuery).ReadNextAsync()
             return res |> Seq.exactlyOne }
-    let run (log : ILogger, _verboseConsole, _maybeSeq) (p : ParseResults<StatsParameters>) =
+    let run (log : ILogger, _verboseConsole, _maybeSeq) (p: ParseResults<StatsParameters>) =
         match p.GetSubCommand() with
         | StatsParameters.Cosmos sp ->
             let doS, doD, doE, doO, doN =
@@ -436,7 +436,7 @@ module DynamoInit =
 
     open Equinox.DynamoStore
 
-    let table (log : ILogger) (p : ParseResults<TableParameters>) = async {
+    let table (log : ILogger) (p: ParseResults<TableParameters>) = async {
         let a = DynamoInitArguments p
         match p.GetSubCommand() with
         | TableParameters.Dynamo sp ->
@@ -457,7 +457,7 @@ module DynamoInit =
 
 module SqlInit =
 
-    let databaseOrSchema (log: ILogger) (p : ParseResults<InitSqlParameters>) =
+    let databaseOrSchema (log: ILogger) (p: ParseResults<InitSqlParameters>) =
         match p.GetSubCommand() with
         | InitSqlParameters.MsSql p ->
             let a = Store.Sql.Ms.Arguments(p)
@@ -474,7 +474,7 @@ module Dump =
     let private prettifyJson (json: string) =
         use parsed = System.Text.Json.JsonDocument.Parse json
         prettySerdes.Value.Serialize parsed
-    let run (log : ILogger, verboseConsole, maybeSeq) (p : ParseResults<DumpParameters>) = async {
+    let run (log: ILogger, verboseConsole, maybeSeq) (p: ParseResults<DumpParameters>) = async {
         let a = DumpArguments p
         let createStoreLog storeVerbose = createStoreLog storeVerbose verboseConsole maybeSeq
         let storeLog, storeConfig = a.ConfigureStore(log, createStoreLog)

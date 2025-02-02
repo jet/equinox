@@ -34,12 +34,12 @@ module WiringHelpers =
 module SequenceCheck =
 
     let [<Literal>] private CategoryName = "_SequenceCheck"
-    let private streamId = FsCodec.StreamId.gen (fun (g : Guid) -> g.ToString "N")
+    let private streamId = FsCodec.StreamId.gen (fun (g: Guid) -> g.ToString "N")
 
     module Events =
 
         type Event =
-            | Add of {| value : int |}
+            | Add of {| value: int |}
             interface TypeShape.UnionContract.IUnionContract
 #if STORE_DYNAMO
         let codec = FsCodec.SystemTextJson.Codec.Create<Event>() |> FsCodec.Encoder.Compressed
@@ -85,8 +85,8 @@ module Props =
     type EventsInTip = EventsInTip of int
     type EventCount = EventCount of int
     type GapGen =
-        static member InTip : Arbitrary<EventsInTip> = Gen.constant 5 |> Gen.map EventsInTip |> Arb.fromGen
-        static member EventCount : Arbitrary<EventCount> = Gen.choose (0, 25) |> Gen.map EventCount |> Arb.fromGen
+        static member InTip: Arbitrary<EventsInTip> = Gen.constant 5 |> Gen.map EventsInTip |> Arb.fromGen
+        static member EventCount: Arbitrary<EventCount> = Gen.choose (0, 25) |> Gen.map EventCount |> Arb.fromGen
     #if DEBUG
     let [<Literal>] maxTest = 100
     #else

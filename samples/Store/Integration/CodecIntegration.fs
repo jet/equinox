@@ -13,7 +13,7 @@ type EventWithUnion = { value : Union }
  and [<Newtonsoft.Json.JsonConverter(typeof<FsCodec.NewtonsoftJson.UnionConverter>)>] Union =
     | I of Int
     | S of MaybeInt
- and Int = { i : int }
+ and Int = { i: int }
  and MaybeInt = { maybeI : int option }
 
 type SimpleDu =

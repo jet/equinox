@@ -17,7 +17,7 @@ let discoverConnection () =
     | Some connectionString -> "EQUINOX_DYNAMO_CONNECTION", connectionString // e.g "https://dynamodb.eu-west-1.amazonaws.com"
 let isSimulatorServiceUrl url = System.Uri(url).IsLoopback
 
-let createClient (log : Serilog.ILogger) name serviceUrl =
+let createClient (log: Serilog.ILogger) name serviceUrl =
     // See https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.DownloadingAndRunning.html#docker for details of how to deploy a simulator instance
     let clientConfig = AmazonDynamoDBConfig(ServiceURL = serviceUrl)
     log.Information("DynamoStore {name} {endpoint}", name, serviceUrl)

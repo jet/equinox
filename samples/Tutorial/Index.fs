@@ -6,8 +6,8 @@ let private streamId = FsCodec.StreamId.gen IndexId.toString
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
-    type ItemIds = { items : string[] }
-    type Items<'v> = { items : Map<string,'v> }
+    type ItemIds = { items: string[] }
+    type Items<'v> = { items: Map<string,'v> }
     type Event<'v> =
         | Added of Items<'v>
         | Deleted of ItemIds
@@ -28,7 +28,7 @@ module Fold =
     let fold state = Array.fold evolve state
     let snapshot state = Events.Snapshotted { items = state }
 
-let interpret add remove (state : Fold.State<'v>) =
+let interpret add remove (state: Fold.State<'v>) =
     let fresh = [| for k,v in add do if not (state |> Map.containsKey k) then yield k,v |]
     let dead = [| for k in remove do if state |> Map.containsKey k then yield k |]
     match fresh,dead with
@@ -38,9 +38,9 @@ let interpret add remove (state : Fold.State<'v>) =
         [|  if adds.Length <> 0 then Events.Added { items = Map.ofSeq adds }
             if removes.Length <> 0 then Events.Deleted { items = removes } |]
 
-type Service<'t> internal (decider : Equinox.Decider<Events.Event<'t>, Fold.State<'t>>) =
+type Service<'t> internal (decider: Equinox.Decider<Events.Event<'t>, Fold.State<'t>>) =
 
-    member _.Ingest(adds : seq<string*'t>, removes : string seq) : Async<int*int> =
+    member _.Ingest(adds: seq<string*'t>, removes: string seq) : Async<int*int> =
         decider.Transact(interpret adds removes)
     member _.Read() : Async<Map<string,'t>> =
         decider.Query id

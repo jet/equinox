@@ -25,7 +25,7 @@ type SpyCategory() =
     member _.Loads = loads
     member _.Reloads = reloads
     member _.State = state
-    member val Delay : TimeSpan = TimeSpan.Zero with get, set
+    member val Delay: TimeSpan = TimeSpan.Zero with get, set
 
     interface Equinox.Core.ICategory<Event, State, unit> with
         member _.Empty = NotImplementedException() |> raise

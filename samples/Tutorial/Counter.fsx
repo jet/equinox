@@ -23,7 +23,7 @@
    they always exist in the past, and should always be past tense verbs*)
 
 (* A counter going up might clear to 0, but a counter going down might clear to 100. *)
-type Cleared = { value : int }
+type Cleared = { value: int }
 type Event =
     | Incremented
     | Decremented
@@ -90,7 +90,7 @@ type Service internal (resolve: string -> Equinox.Decider<Event, State>) =
 
 open Serilog
 let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
-let logEvents sn (events : FsCodec.ITimelineEvent<_>[]) =
+let logEvents sn (events: FsCodec.ITimelineEvent<_>[]) =
     log.Information("Committed to {streamName}, events: {@events}", sn, seq { for x in events -> x.EventType })
 
 (* We can integration test using an in-memory store
