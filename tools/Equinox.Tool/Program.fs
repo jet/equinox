@@ -6,6 +6,7 @@
 
 open Argu
 open FSharp.AWS.DynamoDB // Throughput
+open FSharp.Control
 open Samples.Infrastructure
 open Serilog
 open Serilog.Events
@@ -13,6 +14,7 @@ open System
 open System.Threading
 
 module CosmosInit = Equinox.CosmosStore.Core.Initialization
+let inline miB x = Equinox.CosmosStore.Linq.Internal.miB x
 
 let [<Literal>] appName = "equinox-tool"
 
@@ -118,7 +120,7 @@ and [<NoComparison; NoEquality; RequireSubcommand>] StatsParameters =
             | Events ->                     "Count the number of Events in the store."
             | Unfolds ->                    "Count the number of Unfolds in the store."
             | Streams ->                    "Count the number of Streams in the store."
-            | Items ->                      "Count the number of Items(Documents) in the store."
+            | Items ->                      "Count the number of Items (documents) in the store."
             | Oldest ->                     "Oldest document, based on the _ts field"
             | Newest ->                     "Newest document, based on the _ts field"
             | Parallel ->                   "Run in Parallel (CAREFUL! can overwhelm RU allocations)."
@@ -144,17 +146,17 @@ and [<NoComparison; NoEquality; RequireSubcommand>] QueryParameters =
             | CategoryLike _ ->             "Specify category name to match against `p` as a Cosmos LIKE expression (with `%` as wildcard, e.g. `$UserServices-%`)."
             | UnfoldName _ ->               "Specify unfold Name to match against `u.c`, e.g. `Snapshotted`"
             | UnfoldCriteria _ ->           "Specify constraints on Unfold (reference unfold fields via `u.d.`, top level fields via `c.`), e.g. `u.d.name = \"TenantName1\"`."
-            | Mode _ ->                     "default: `_etag` plus snapwithStream (_etag, p, u[0].d). <- Default for normal queries\n" +
-                                            "snaponly: Only read `u[0].d`\n" +
-                                            "snapwithstream: Read `u[0].d` and `p` (stream name), but not `_etag`.\n" +
+            | Mode _ ->                     "snaponly: Only read `u[0].d+D`\n" +
+                                            "snapwithstream: As per `snaponly`, but add `p` (stream name)`.\n" +
+                                            "default: As per `snapwithstream`, but add `_etag`\n"+
                                             "readonly: Only read `u`nfolds, not `_etag`.\n" +
                                             "readwithstream: Read `u`nfolds and `p` (stream name), but not `_etag`.\n" +
-                                            "raw: Read all Items(documents) in full. <- Default when Output File specified\n"
+                                            "raw: Read Items (documents) in full. <- Default when Output File specified"
             | File _ ->                     "Export full retrieved JSON to file. NOTE this switches the default mode to `Raw`"
             | Pretty ->                     "Render the JSON indented over multiple lines"
             | Console ->                    "Also emit the JSON to the console. Default: Gather statistics (but only write to a File if specified)"
             | Cosmos _ ->                   "Parameters for CosmosDB."
-and [<RequireQualifiedAccess>] Mode = Default | SnapOnly | SnapWithStream | ReadOnly | ReadWithStream | Raw
+and [<RequireQualifiedAccess>] Mode = SnapOnly | SnapWithStream | Default | ReadOnly | ReadWithStream | Raw
 and [<RequireQualifiedAccess>] Criteria =
     | SingleStream of string | StreamLike of string | CatName of string | CatLike of string | Custom of sql: string | Unfiltered
     member x.Sql = x |> function
@@ -346,7 +348,8 @@ and DumpArguments(p: ParseResults<DumpParameters>) =
         | Some pattern ->
             let container = x.Connect()
             let q = Microsoft.Azure.Cosmos.QueryDefinition($"SELECT DISTINCT VALUE c.p from c where c.p LIKE \"{pattern}\"")
-            Equinox.CosmosStore.Linq.Internal.Query.exec Log.Logger container infoLogLevel q |> FSharp.Control.TaskSeq.toList
+            Equinox.CosmosStore.Linq.Internal.Query.exec Log.Logger container infoLogLevel q |> TaskSeq.toList
+
 let writeToStatsSinks (c: LoggerConfiguration) =
     c.WriteTo.Sink(Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink())
      .WriteTo.Sink(Equinox.DynamoStore.Core.Log.InternalMetrics.Stats.LogSink())
@@ -421,8 +424,6 @@ module CosmosInit =
 
 module CosmosStats =
 
-    open FSharp.Control
-
     let run (log : ILogger, _verboseConsole, _maybeSeq) (p : ParseResults<StatsParameters>) =
         match p.GetSubCommand() with
         | StatsParameters.Cosmos sp ->
@@ -479,8 +480,6 @@ module StreamName =
 
 module CosmosQuery =
 
-    open FSharp.Control
-    let inline miB x = Equinox.CosmosStore.Linq.Internal.miB x
     type System.Text.Json.JsonDocument with
         member x.Cast<'T>() = System.Text.Json.JsonSerializer.Deserialize<'T>(x.RootElement)
         member x.Timestamp =
@@ -494,11 +493,11 @@ module CosmosQuery =
         | _ -> ()
         let selectedFields =
             match a.Mode with
-            | Mode.Default ->               "c._etag, c.p, c.u[0].D, c.u[0].d"
             | Mode.SnapOnly ->              "c.u[0].D, c.u[0].d"
             | Mode.SnapWithStream ->        "c.p, c.u[0].D, c.u[0].d"
-            | Mode.ReadOnly ->              "c.u" // TOCONSIDER remove; adjust TryLoad/TryHydrateTip
-            | Mode.ReadWithStream ->        "c.p, c.u" // TOCONSIDER remove; adjust TryLoad/TryHydrateTip
+            | Mode.Default ->               "c.p, c.u[0].D, c.u[0].d, c._etag"
+            | Mode.ReadOnly ->              "c.u"
+            | Mode.ReadWithStream ->        "c.p, c.u"
             | Mode.Raw ->                   "*"
         let unfoldFilter =
             let exists cond = $"EXISTS (SELECT VALUE u FROM u IN c.u WHERE {cond})"
@@ -549,13 +548,9 @@ module CosmosQuery =
 
 module CosmosTop =
 
-    open Equinox.CosmosStore.Linq.Internal
-    open FSharp.Control
     open System.Text.Json
-
-    let _t = Unchecked.defaultof<Equinox.CosmosStore.Core.Tip>
     let inline tryEquinoxStreamName (x: JsonElement) =
-        match x.TryProp(nameof _t.p) with
+        match x.TryProp(nameof Unchecked.defaultof<Equinox.CosmosStore.Core.Tip>.p) with
         | ValueSome (je: JsonElement) when je.ValueKind = JsonValueKind.String ->
             je.GetString() |> FsCodec.StreamName.parse |> FsCodec.StreamName.toString |> ValueSome
         | _ -> ValueNone
@@ -611,7 +606,7 @@ module CosmosTop =
         let mutable accI, accE, accU, accRus, accRds, accOds, accBytes, accParse = 0L, 0L, 0L, 0., 0L, 0L, 0L, TimeSpan.Zero
         let s = System.Collections.Generic.HashSet()
         let group = if a.StreamLevel then id else StreamName.categoryName
-        try for rtt, rc, items, rdc, rds, ods in a.Execute(sql a) |> Query.enum__ do
+        try for rtt, rc, items, rdc, rds, ods in a.Execute(sql a) |> Equinox.CosmosStore.Linq.Internal.Query.enum__ do
                 let mutable pageI, pageE, pageU, pageB, pageCc, pageDm, newestTs, sw = 0, 0, 0, 0L, 0L, 0L, DateTime.MinValue, System.Diagnostics.Stopwatch.StartNew()
                 for x in items do
                     newestTs <- max newestTs x.Timestamp
@@ -662,9 +657,6 @@ module CosmosTop =
 
 module CosmosDestroy =
 
-    open Equinox.CosmosStore.Linq.Internal
-    open FSharp.Control
-
     type Sem(max) =
         let inner = new SemaphoreSlim(max)
         member _.IsEmpty = inner.CurrentCount = max
@@ -695,7 +687,7 @@ module CosmosDestroy =
         let mutable accI, accE, accU, accRus, accDelRu, accRds, accOds = 0L, 0L, 0L, 0., 0., 0L, 0L
         let deletionDop = Sem a.Dop
         let writeResult, readResults = let c = Channel.unboundedSr<struct (float * string)> in Channel.write c.Writer, Channel.readAll c.Reader
-        try for rtt, rc, items, rdc, rds, ods in query |> Query.enum__ do
+        try for rtt, rc, items, rdc, rds, ods in query |> Equinox.CosmosStore.Linq.Internal.Query.enum__ do
                 let mutable pageI, pageE, pageU, pRu, iRu = 0, 0, 0, 0., 0.
                 let pageSw, intervalSw = System.Diagnostics.Stopwatch.StartNew(), System.Diagnostics.Stopwatch.StartNew()
                 let drainResults () =
@@ -754,7 +746,6 @@ module CosmosDestroy =
 module DynamoInit =
 
     open Equinox.DynamoStore
-
     let table (log : ILogger) (p: ParseResults<TableParameters>) = async {
         let a = DynamoInitArguments p
         match p.GetSubCommand() with
