@@ -390,7 +390,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     
     # use a wild card (LIKE) for the stream name 
     eqx query -cl '$Us%' -un Snapshotted cosmos -d db -c $EQUINOX_COSMOS_VIEWS -b 100000
-    # > Querying Default: SELECT c.u, c.p, c._etag FROM c WHERE c.p LIKE "$Us%" AND EXISTS (SELECT VALUE u FROM u IN c.u WHERE u.c = "Snapshotted") {}
+    # > Querying Default: SELECT c.p, c._etag, c.u[0].d FROM c WHERE c.p LIKE "$Us%" AND EXISTS (SELECT VALUE u FROM u IN c.u WHERE u.c = "Snapshotted") {}
     # > Page 7166s, 7166u, 0e 320.58RU 3.9s {}
     # > Page 1608s, 1608u, 0e 68.59RU 0.9s {}
     # > TOTALS 1c, 8774s, 389.17RU 4.7s {}   
@@ -403,7 +403,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
    
     # add criteria filtering based on an Uncompressed Unfold
     eqx query -cn '$User' -un EmailIndex -uc 'u.d.email = "a@b.com"' cosmos -d db -c $EQUINOX_COSMOS_VIEWS -b 100000
-    # > Querying Default: SELECT c.u, c.p, c._etag FROM c WHERE c.p LIKE "$User-%" AND EXISTS (SELECT VALUE u FROM u IN c.u WHERE u.c = "EmailIndex" AND u.d.email = "a@b.com") {}
+    # > Querying Default: SELECT c.p, c._etag, c.u[0].d FROM c WHERE c.p LIKE "$User-%" AND EXISTS (SELECT VALUE u FROM u IN c.u WHERE u.c = "EmailIndex" AND u.d.email = "a@b.com") {}
     # > Page 0s, 0u, 0e 2.8RU 0.7s {}
     # > TOTALS 0c, 0s, 2.80RU 0.7s {} # 👈 only 2.8RU if nothing is returned
    
@@ -430,6 +430,78 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     # > Page 2903s, 601u, 3188e 107.53RU 3.1s 4.0MiB age 0004.05:24:51 {}
     # > Page 2638s, 316u, 3019e 93.09RU 2.5s 3.4MiB age 0000.05:08:38 {}
     # > TOTALS 11c, 206,356s, 7,886.75RU R/W 290.4/290.4MiB 225.3s {}
+   
+    # Prepare a breakdown of which categories are using the most capacity within the store
+    eqx -Q top cosmos -d db -c $EQUINOX_COSMOS_CONTAINER
+    # Page 3276>3276i 3276s    0e 3991u 4.00>4.00<4.22MiB 103.74RU  3.5s D+M 5.1 C+C 0.00 201ms age 0000.00:33:13 {}
+    # Page 3177>3177i 3177s    0e 4593u 4.00>4.01<4.20MiB 105.22RU  3.2s D+M 4.7 C+C 0.00 146ms age 0000.02:23:48 {}
+    # Page 2708>2708i 2708s    0e 5044u 4.00>4.00<4.19MiB 105.76RU  3.4s D+M 4.5 C+C 0.00  84ms age 0002.23:10:55 {}
+    ...
+    # Page 4334>4334i 4334s    0e 5038u 4.00>4.00<4.19MiB 112.59RU  2.9s D+M 4.2 C+C 0.00 109ms age 0000.00:00:59 {}
+    # Page 1637>1637i 1637s    0e 2939u 2.40>2.41<2.52MiB  64.12RU  1.7s D+M 2.5 C+C 0.00  39ms age 0000.00:18:03 {}
+    # TOTALS 47,200i 9c 47,200s 0e 79,262u read 0.1GiB output 0.1GiB JSON 0.1GiB D+M(inflated) 0.1GiB C+C 0.00MiB Parse 1.516s Total 1,750.73RU 54.2s {}
+    #    24064i   40.75MiB E       0     0.0 U   48128    33.6 D+M   35.0 C+C   0.0 $Friend {}
+    #     6372i   13.18MiB E       0     0.0 U   12744    11.4 D+M   23.9 C+C   0.0 $Tenant {}
+    #     6374i    5.41MiB E       0     0.0 U    6374     3.6 D+M    5.4 C+C   0.0 $Role0 {}
+    #     5992i    5.09MiB E       0     0.0 U    5992     3.4 D+M    5.1 C+C   0.0 $Role {}
+    #     1574i    1.95MiB E       0     0.0 U    1574     1.5 D+M    2.0 C+C   0.0 $Permission {}
+    #     1575i    1.79MiB E       0     0.0 U    3150     1.3 D+M    1.2 C+C   0.0 $User {}
+    #      445i    0.51MiB E       0     0.0 U     483     0.4 D+M    0.8 C+C   0.0 $Invoice3 {}
+    #      410i    0.46MiB E       0     0.0 U     423     0.3 D+M    0.8 C+C   0.0 $Invoice2 {}
+    #      394i    0.44MiB E       0     0.0 U     394     0.3 D+M    0.7 C+C   0.0 $Invoice {}
+   
+    # Drill into the Friend data (different test data to preceding article)
+    eqx top -cn '$Friend' cosmos -d db -c $EQUINOX_COSMOS_CONTAINER
+    # Page 4787>4787i 4787s    0e 4787u 4.00>4.00<4.19MiB 218.54RU  3.6s D+M 4.5 C+C 0.00 259ms age 0013.22:52:15 {}
+    # Page 4955>4955i 4955s    0e 4955u 4.00>4.00<4.19MiB 200.20RU  3.2s D+M 4.1 C+C 0.00 202ms age 0013.22:52:18 {}
+    # Page 4715>4715i 4715s    0e 4715u 4.00>4.00<4.21MiB 201.26RU  3.2s D+M 4.4 C+C 0.00 145ms age 0013.22:52:22 {}
+    # Page 4884>4884i 4884s    0e 4884u 4.00>4.00<4.20MiB 198.97RU  3.2s D+M 4.1 C+C 0.00  95ms age 0013.22:52:31 {}
+    # Page 4620>4620i 4620s    0e 4620u 4.00>4.00<4.20MiB 194.76RU  3.0s D+M 4.7 C+C 0.00 140ms age 0013.22:52:28 {}
+    # Page 4840>4840i 4840s    0e 4840u 4.00>4.00<4.19MiB 198.43RU  3.2s D+M 4.2 C+C 0.00 136ms age 0013.22:52:34 {}
+    # Page 4791>4791i 4791s    0e 4791u 4.00>4.00<4.21MiB 200.20RU  3.0s D+M 4.2 C+C 0.00 137ms age 0014.02:23:24 {}
+    # Page 3906>3906i 3906s    0e 3906u 3.01>3.02<3.15MiB 158.28RU  2.6s D+M 2.9 C+C 0.00 142ms age 0013.23:13:51 {}
+    # TOTALS 37,498i 1c 37,498s 0e 37,498u read 0.0GiB output 0.0GiB JSON 0.0GiB D+M(inflated) 0.0GiB C+C 0.00MiB Parse 1.264s Total 1,570.64RU 30.0s {}
+    #    37498i   32.55MiB E       0     0.1 U   37498    21.7 D+M   33.2 C+C   0.0 $Friend {}
+
+    # DRY RUN of deleting (note no `-f` supplied)
+    eqx destroy -cn '$Friend' cosmos -d db -c $EQUINOX_COSMOS_CONTAINER
+    # W Dry-run of deleting items based on SELECT c.p, c.id, ARRAYLENGTH(c.e) AS es, ARRAYLENGTH(c.u) AS us FROM c WHERE c.p LIKE "$Friend%" {}
+    # I Page  9999> 9999i    9999s      0e   9999u    8.21>0.76   415.07RRU   1.4s 0.00WRU/s   0.0s {}
+    # I Page  9999> 9999i    9999s      0e   9999u    8.48>0.76   404.70RRU   0.8s 0.00WRU/s   0.0s {}
+    # I Page  9999> 9999i    9999s      0e   9999u    8.32>0.76   395.36RRU   1.1s 0.00WRU/s   0.0s {}
+    # I Page  7501> 7501i    7501s      0e   7501u    6.01>0.57   299.60RRU   1.0s 0.00WRU/s   0.0s {}
+    # I TOTALS 37,498i 1c 37,498s 0e 37,498u read 31.0MiB output 2.9MiB 1,514.73RRU Avg 0.00WRU/s Delete 0.00WRU Total 7.8s {}
+   
+    # Whack them (note the `--force` supplied)
+    eqx destroy -cn '$Friend' --force cosmos -d db -c $EQUINOX_COSMOS_CONTAINER
+    # W DESTROYING all Items WHERE c.p LIKE "$ResourceRole%" {}
+    # I .. Deleted  6347i    6347s      0e   6347u 1,671.52WRU/s   30.0s {}
+    # I Page  9999> 9999i    9999s      0e   9999u    8.21>0.76   415.17RRU   1.2s 1,678.54WRU/s  47.2s {}
+    # I .. Deleted  6363i    6363s      0e   6363u 1,703.29WRU/s   30.0s {}
+    # I Page  9999> 9999i    9999s      0e   9999u    8.48>0.76   404.70RRU   1.1s 1,685.49WRU/s  47.8s {}
+    # I .. Deleted  6001i    6001s      0e   6001u 1,571.94WRU/s   30.0s {}
+    # I Page  9999> 9999i    9999s      0e   9999u    8.32>0.76   395.36RRU   1.0s 1,582.18WRU/s  50.1s {}
+    ^C           
+   
+    # Get impatient; up the concurrency (-w 192) from the default 32 (note the `--force` supplied)
+    eqx destroy -cn '$Friend' --force -w 192 cosmos -d db -c $EQUINOX_COSMOS_CONTAINER
+    # W DESTROYING all Items WHERE c.p LIKE "$ResourceRole%" {}
+    # I Page  3946> 3946i    3946s      0e   3946u    3.05>0.30   176.23RRU   0.8s 5,107.71WRU/s   6.1s {}
+    # I TOTALS 3,946i 1c 3,946s 0e 3,946u read 3.0MiB output 0.3MiB 176.23RRU Avg 3,058.48WRU/s Delete 31,360.10WRU Total 10.3s {}
+
+    # Analyze the largest streams in the '$Permission' category 
+    eqx top -S -cl '$Perm%' cosmos -d db -c $EQUINOX_COSMOS_CONTAINER
+    # I Page  254> 254i  254s    0e  254u 4.33>4.33<4.65MiB 349.76RU  3.9s D+M 8.2 C+C 0.00 105ms age 0013.23:34:02 {}
+    # I Page 1671>1671i 1671s    0e 1671u 2.39>2.40<2.54MiB  91.57RU  2.1s D+M 2.9 C+C 0.00  99ms age 0013.23:34:07 {}
+    # I TOTALS 1,925i 1,925c 1,925s 0e 1,925u read 0.0GiB output 0.0GiB JSON 0.0GiB D+M(inflated) 0.0GiB C+C 0.00MiB Parse 0.207s Total 441.33RU 9.4s {}
+    # I     1925i    7.19MiB E       0     0.0 U    1925     6.6 D+M   11.1 C+C   0.0 $Permission {}
+    # I        1i    1.75MiB E       0     0.0 U       1     1.8 D+M    3.1 C+C   0.0 $Permission-5292b7cd524d509bb969bd82abf39461 {}
+    # I        1i    1.38MiB E       0     0.0 U       1     1.4 D+M    2.5 C+C   0.0 $Permission-244b72fb0238595494b5cb3f9bd1abf7 {}
+    # I        1i    0.79MiB E       0     0.0 U       1     0.8 D+M    1.5 C+C   0.0 $Permission-68a13e8398b352c5b8e22ec18ab2bbb6 {}
+    # I        1i    0.57MiB E       0     0.0 U       1     0.6 D+M    1.1 C+C   0.0 $Permission-ea4d1f46014a5bf6bbd97d3ec5723266 {}
+    # I        1i    0.13MiB E       0     0.0 U       1     0.1 D+M    0.2 C+C   0.0 $Permission-65b58d132ff857bb81b08a5bb69732d2 {}
+    # I        1i    0.02MiB E       0     0.0 U       1     0.0 D+M    0.0 C+C   0.0 $Permission-a7bcc3370ad15ae68041745ca55166cf {}
+    # I        1i    0.02MiB E       0     0.0 U       1     0.0 D+M    0.0 C+C   0.0 $Permission-03032ccf597857d9aa9c64b10288af8c {}
     ```
 
 6. Use `propulsion sync` tool to run a CosmosDB ChangeFeedProcessor
