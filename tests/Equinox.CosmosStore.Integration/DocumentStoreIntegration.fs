@@ -15,7 +15,7 @@ open Equinox.CosmosStore.Integration.CosmosFixtures
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
 #if STORE_DYNAMO
-    let codec = Cart.Events.codec |> FsCodec.Encoder.Uncompressed
+    let codec = Cart.Events.codec |> FsCodec.Encoder.Compressed
 #else
     let codec = Cart.Events.codecJe
 #endif

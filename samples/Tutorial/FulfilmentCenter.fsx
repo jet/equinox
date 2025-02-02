@@ -63,7 +63,7 @@ module FulfilmentCenter =
             | FcDetailsChanged of FcData
             | FcRenamed of FcName
             interface TypeShape.UnionContract.IUnionContract
-        let codec = FsCodec.SystemTextJson.CodecJsonElement.Create<Event>()
+        let codec = FsCodec.SystemTextJson.CodecJsonElement.Create<Event>() |> FsCodec.SystemTextJson.Encoder.Uncompressed
 
     module Fold =
 

@@ -38,7 +38,7 @@ type Event =
     | Cleared
     | Snapshotted       of Snapshotted
     interface TypeShape.UnionContract.IUnionContract
-let codec = FsCodec.SystemTextJson.CodecJsonElement.Create<Event>()
+let codec = FsCodec.SystemTextJson.CodecJsonElement.Create<Event>() |> FsCodec.SystemTextJson.Encoder.Uncompressed
 
 type State = { items : Todo list; nextId : int }
 let initial = { items = []; nextId = 0 }

@@ -14,13 +14,18 @@ type EncodedBody = (struct (int * JsonElement))
 /// Interpretation of EncodedBody data is an external concern from the perspective of the Store
 /// The idiomatic implementation of the encoding logic is FsCodec.SystemTextJson.Compression, in versions 3.1.0 or later
 /// That implementation provides complete interop with encodings produced by Equinox.Cosmos/CosmosStore from V1 onwards, including integrated Deflate compression
-module internal EncodedBody =
-    let internal jsonRawText: EncodedBody -> string = ValueTuple.snd >> _.GetRawText()
-    let internal jsonUtf8Bytes = jsonRawText >> System.Text.Encoding.UTF8.GetByteCount
-    let [<Literal>] deflateEncoding = 1
-    // prior to the addition of the `D` field in 4.1.0, the integrated compression support
-    // was predicated entirely on a JSON String `d` value in the Unfold as implying it was UTF8->Deflate->Base64 encoded
-    let parseUnfold = function struct (0, e: JsonElement) when e.ValueKind = JsonValueKind.String -> struct (deflateEncoding, e) | x -> x
+module EncodedBody =
+    let internal jsonRawText ((_, je): EncodedBody): string =
+        if je.ValueKind = JsonValueKind.Undefined then String.Empty
+        else je.GetRawText()
+    let internal jsonUtf8Bytes((_, je): EncodedBody): int =
+        if je.ValueKind = JsonValueKind.Undefined then 0
+        else je.GetRawText() |> System.Text.Encoding.UTF8.GetByteCount
+    let [<Literal>] private deflateEncoding = 1
+    /// prior to the addition of the `D` field in 4.1.0, the integrated compression support
+    /// was predicated entirely on a JSON String `d` value in the Unfold as implying it was UTF8 -> Deflate -> Base64 encoded
+    let ofUnfoldBody struct (enc, data: JsonElement): EncodedBody =
+        if enc = 0 && data.ValueKind = JsonValueKind.String then (deflateEncoding, data) else (enc, data)
 
 /// A single Domain Event from the array held in a Batch
 [<NoEquality; NoComparison>]
@@ -28,20 +33,20 @@ type Event =
     {   /// Creation datetime (as opposed to system-defined _lastUpdated which is touched by triggers, replication etc.)
         t: DateTimeOffset // Will be saved ISO 8601 formatted
 
-        /// The Case (Event Type); used to drive deserialization (Required)
+       /// Event Type (`c`ase); used to drive deserialization (required)
         c: string
 
         /// Event body, as UTF-8 encoded JSON ready to be injected into the JSON being rendered for CosmosDB
         [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingDefault)>]
         d: JsonElement // Can be JSON Null for Nullary cases
-        /// The encoding scheme used for `d`
+        /// The encoding scheme used for `d`; absence implies `0`, i.e. encoded directly without a compression transformation
         [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingDefault)>]
         D: int
 
         /// Optional metadata
         [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingDefault)>]
         m: JsonElement
-        /// The encoding scheme used for `m`
+        /// The encoding scheme used for `m`; absence implies `0`, i.e. encoded directly without a compression transformation
         [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingDefault)>]
         M: int
 
@@ -86,30 +91,33 @@ type Batch =
 /// Compaction/Snapshot/Projection Event based on the state at a given point in time `i`
 [<NoEquality; NoComparison>]
 type Unfold =
-    {   /// Base: Stream Position (Version) of State from which this Unfold Event was generated. An unfold from State Version 1 is i=1 and includes event i=1
+    {   /// Base: Stream Position (Version) of State from which this Unfold Event was generated
+        /// An unfold based on State version 1 includes information from the event with i=1, and also has i=1
         i: int64
 
         /// Generation datetime
         t: DateTimeOffset // ISO 8601 // Not written by versions <= 2.0.0-rc9
 
-        /// The Case (Event Type) of this snapshot, used to drive deserialization
-        c: string // required
+        /// Event Type (`c`ase); used to drive deserialization of the snapshot (required)
+        c: string
 
-        /// Event body - JSON -> Deflate -> Base64 -> JsonElement
+        /// Event body bearing the relevant state (encoded per format as implied by `D`)
+        /// NOTE Prior to v 4.1, hardwired to be encoded JSON -> Deflate -> Base64 -> String JsonElement
         [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingDefault)>]
-        d: JsonElement // required
-        /// The encoding scheme used for `d`
+        d: JsonElement
+        /// Encoding scheme used for `d`; absence implies Deflate encoding, i.e. equivalent to value `1`
         [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingDefault)>]
         D: int
 
-        /// Optional metadata, same encoding as `d` (can be null; not written if missing)
+        /// Optional metadata; same encoding scheme as per `d` field, with `M` format specifier roundtripped alongside
         [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingDefault)>]
         m: JsonElement
-        /// The encoding scheme used for `m`
+        /// Encoding scheme used for `m`; absence implies Deflate encoding, i.e. equivalent to value `1`
         [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingDefault)>]
         M: int }
     member x.ToTimelineEvent(): ITimelineEvent<EncodedBody> =
-        FsCodec.Core.TimelineEvent.Create(x.i, x.c, EncodedBody.parseUnfold (x.D, x.d), (x.M, x.m), Guid.Empty, null, null, x.t, isUnfold = true)
+        FsCodec.Core.TimelineEvent.Create(x.i, x.c, EncodedBody.ofUnfoldBody (x.D, x.d), EncodedBody.ofUnfoldBody (x.M, x.m),
+                                          Guid.Empty, null, null, x.t, isUnfold = true)
     // Arrays are not indexed by default. 1. enable filtering by `c`ase 2. index uncompressed fields within unfolds for filtering
     static member internal IndexedPaths = [| "/u/[]/c/?"; "/u/[]/d/*" |]
 
@@ -122,7 +130,7 @@ type Tip =
         p: string // "{streamName}"
 
         /// Document id within partition, as per Batch
-        id: string // "{-1}" - Well known id Constant used for the tail document (the only one that get mutated)
+        id: string // "{-1}" - Well known id Constant used for the tail document (the only one that gets mutated)
 
         /// When we read, we need to capture the value so we can retain it for caching purposes
         /// NB this is not relevant to fill in when we pass it to the writing stored procedure
@@ -254,7 +262,7 @@ module Log =
                 f log
             retryPolicy.Execute withLoggingContextWrapping
 
-    let internal eventLen (x: #IEventData<_>) = EncodedBody.jsonUtf8Bytes x.Data + EncodedBody.jsonUtf8Bytes x.Meta + 80
+    let internal eventLen (x: #IEventData<EncodedBody>) = EncodedBody.jsonUtf8Bytes x.Data + EncodedBody.jsonUtf8Bytes x.Meta + 80
     let internal batchLen = Seq.sumBy eventLen
     [<RequireQualifiedAccess>]
     type Operation = Tip | Tip404 | Tip304 | Query | Write | Resync | Conflict | Prune | Delete | Trim

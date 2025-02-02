@@ -49,13 +49,13 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName 1L <| TestEvents.Create(1,5)
         test <@ AppendResult.Ok 6L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        // We didnt request small batches or splitting so it's not dramatically more expensive to write N events
+        // We didn't request small batches or splitting so it's not dramatically more expensive to write N events
         if eventsInTip then verifyRequestChargesMax 42 // 41.36
         else verifyRequestChargesMax 43 // 42.82
     }
 
     // It's conceivable that in the future we might allow zero-length batches as long as a sync mechanism leveraging the etags and unfolds update mechanisms
-    // As it stands with the NoTipEvents stored proc, permitting empty batches a) yields an invalid state b) provides no conceivable benefit
+    // As it stands with the NoTipEvents stored proc, permitting empty batches a. yields an invalid state b. provides no conceivable benefit
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``append Throws when passed an empty batch`` (TestStream streamName) = async {
         let ctx = createPrimaryEventsContext log defaultQueryMaxItems 10
@@ -65,13 +65,13 @@ type Tests(testOutputHelper) =
         test <@ match res with Choice2Of2 (:? InvalidOperationException as ex) -> ex.Message.StartsWith "Must write either events or unfolds." | x -> failwith $"%A{x}" @>
     }
 
-    let stringOfEncodedBody (x: Equinox.CosmosStore.Core.EncodedBody) = FsCodec.SystemTextJson.Encoding.ToJsonElement(x).GetRawText()
+    let stringOfEncodedBody (x: EncodedBody) = FsCodec.SystemTextJson.Encoding.ToJsonElement(x).GetRawText()
     let jsonDiff (x: string) (y: string) =
         match JsonDiffPatchDotNet.JsonDiffPatch().Diff(JToken.Parse x, JToken.Parse y) with
         | null -> ""
         | d -> string d
     let verifyUtf8JsonEquals i x y =
-        let sx,sy = stringOfEncodedBody x, stringOfEncodedBody y
+        let sx, sy = stringOfEncodedBody x, stringOfEncodedBody y
         test <@ ignore i; x = y || "" = jsonDiff sx sy @>
 
     let add6EventsIn2BatchesEx ctx streamName splitAt = async {
@@ -88,7 +88,7 @@ type Tests(testOutputHelper) =
 
     let add6EventsIn2Batches ctx streamName = add6EventsIn2BatchesEx ctx streamName 1
 
-    let verifyCorrectEventsEx direction baseIndex (expected: IEventData<Equinox.CosmosStore.Core.EncodedBody>[]) (xs: ITimelineEvent<Equinox.CosmosStore.Core.EncodedBody>[]) =
+    let verifyCorrectEventsEx direction baseIndex (expected: IEventData<EncodedBody>[]) (xs: ITimelineEvent<EncodedBody>[]) =
         let xs, baseIndex =
             if direction = Direction.Forward then xs, baseIndex
             else Array.rev xs, baseIndex - int64 (Array.length expected) + 1L
@@ -244,7 +244,7 @@ type Tests(testOutputHelper) =
         verifyCorrectEvents 0L expected res
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
         let queryRoundTripsAndItemCounts = function
-            | EqxEvent (Equinox.CosmosStore.Core.Log.Metric.Query (Direction.Forward, responses, { count = c })) -> Some (responses,c)
+            | EqxEvent (Log.Metric.Query (Direction.Forward, responses, { count = c })) -> Some (responses,c)
             | _ -> None
         // validate that, because we stopped after 1 item, we only needed one trip (which contained 4 events)
         [1,4] =! capture.ChooseCalls queryRoundTripsAndItemCounts
@@ -308,7 +308,7 @@ type Tests(testOutputHelper) =
         test <@ [yield! Seq.replicate pages EqxAct.ResponseBackward; EqxAct.QueryBackward] = capture.ExternalCalls @>
         // validate that, despite only requesting max 1 item, we only needed one trip, bearing 5 items (from which one item was omitted)
         let queryRoundTripsAndItemCounts = function
-            | EqxEvent (Equinox.CosmosStore.Core.Log.Metric.Query (Direction.Backward, responses, { count = c })) -> Some (responses,c)
+            | EqxEvent (Log.Metric.Query (Direction.Backward, responses, { count = c })) -> Some (responses,c)
             | _ -> None
         let expectedPagesAndEvents = [pages, 2]
         expectedPagesAndEvents =! capture.ChooseCalls queryRoundTripsAndItemCounts

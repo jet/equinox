@@ -32,10 +32,10 @@ type Event =
         /// The Event Type (Case) that defines the content of the Data (and Metadata) fields
         c: string
 
-        /// Main event body; required
+        /// Main event body; can be empty
         d: InternalBody
 
-        /// Optional metadata, encoded as per 'd'; can be Empty
+        /// Optional metadata
         m: InternalBody
 
         /// CorrelationId; stored as x (signifying transactionId), or null
@@ -70,13 +70,13 @@ type Unfold =
         /// Generation datetime
         t: DateTimeOffset
 
-        /// The Case (Event Type) of this snapshot, used to drive deserialization
-        c: string // required
+        /// Event Type (`c`ase); used to drive deserialization of the snapshot (required)
+        c: string
 
-        /// Event body
-        d: InternalBody // required
+        /// Event body encoding relevant state
+        d: InternalBody
 
-        /// Optional metadata, can be Empty
+        /// Optional metadata
         m: InternalBody }
     interface ITimelineEvent<InternalBody> with
         member x.Index = x.i
