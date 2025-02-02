@@ -31,7 +31,7 @@ type Event =
 //    interface TypeShape.UnionContract.IUnionContract
 
 type State = string list
-let initial : State = []
+let initial: State = []
 let evolve state = function
     | Added sku -> sku :: state
     | Removed sku -> state |> List.filter (fun x -> x <> sku)

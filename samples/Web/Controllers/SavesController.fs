@@ -7,7 +7,7 @@ type FromClientIdHeaderAttribute() = inherit FromHeaderAttribute(Name="COMPLETEL
 
 [<Route("api/[controller]")>]
 [<ApiController>]
-type SavesController(service : SavedForLater.Service) =
+type SavesController(service: SavedForLater.Service) =
     inherit ControllerBase()
 
     [<HttpGet>]

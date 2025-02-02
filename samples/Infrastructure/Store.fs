@@ -71,8 +71,8 @@ module Cosmos =
                 | ArchiveContainer _ -> "specify a container name for Archive store. Default: use same as Primary Container"
                 | TipMaxEvents _ ->     "specify maximum number of events to hold in Tip before calving off to a frozen Batch. Default: 256"
                 | TipMaxJsonLength _ -> "specify maximum length of JSON (as measured by JSON.stringify) to hold in Tip before calving off to a frozen Batch. Default: 30,000"
-                | QueryMaxItems _ ->    "specify maximum number of batches of events to retrieve in per query response. Default: 10"
-    type Arguments(p : ParseResults<Parameters>) =
+                | QueryMaxItems _ ->    "specify maximum number of batches of events to retrieve in per query response. Default: 10/9999"
+    type Arguments(p: ParseResults<Parameters>) =
         member val Verbose =            p.Contains StoreVerbose
         member val Mode =               p.TryGetResult ConnectionMode
         member val Connection =         p.GetResult(Connection, fun () -> envVarOrThrow "EQUINOX_COSMOS_CONNECTION" "Connection")
@@ -90,7 +90,8 @@ module Cosmos =
         member _.MaxRetryWaitTime =     p.GetResult(RetriesWaitTimeS, 5.) |> TimeSpan.FromSeconds
         member _.TipMaxEvents =         p.GetResult(TipMaxEvents, 256)
         member _.TipMaxJsonLength =     p.GetResult(TipMaxJsonLength, 30_000)
-        member x.QueryMaxItems =        p.GetResult(QueryMaxItems, 10)
+        member x.QueryMaxItemsOr (def: int) = p.GetResult(QueryMaxItems, def)
+        member x.QueryMaxItems =        x.QueryMaxItemsOr 10
 
     let logContainer (log: ILogger) role (mode, endpoint, db, container) =
         log.Information("CosmosDB {role:l} {mode} {connection} Database {database} Container {container}",
@@ -182,7 +183,7 @@ module Dynamo =
                 | TipMaxBytes _ ->      "specify maximum number of bytes to hold in Tip before calving off to a frozen Batch. Default: 32K"
                 | TipMaxEvents _ ->     "specify maximum number of events to hold in Tip before calving off to a frozen Batch. Default: limited by Max Bytes"
                 | QueryMaxItems _ ->    "specify maximum number of batches of events to retrieve in per query response. Default: 10"
-    type Arguments(p : ParseResults<Parameters>) =
+    type Arguments(p: ParseResults<Parameters>) =
         let conn =
                                         match p.TryGetResult RegionProfile |> Option.orElseWith (fun () -> envVarTryGet REGION) with
                                         | Some systemName ->
@@ -204,7 +205,7 @@ module Dynamo =
         member val TipMaxBytes =        p.GetResult(TipMaxBytes, 32 * 1024)
         member val QueryMaxItems =      p.GetResult(QueryMaxItems, 10)
 
-    let config (log : ILogger) (cache, unfolds) (a : Arguments) =
+    let config (log: ILogger) (cache, unfolds) (a: Arguments) =
         a.Connector.LogConfiguration(log)
         let client = a.Connector.CreateDynamoStoreClient()
         let context = DynamoStoreContext(client, a.Table, maxBytes = a.TipMaxBytes, queryMaxItems = a.QueryMaxItems,
@@ -234,20 +235,20 @@ module EventStore =
                 | ConnectionString _ -> "Portion of connection string that's safe to write to console or log. default: esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false"
                 | Credentials _ ->      "specify a sensitive portion of the connection string that should not be logged. Default: none"
                 | BatchSize _ ->        "Maximum number of Events to request per batch / RollingSnapshots frequency. Default 500."
-    type Arguments(a : ParseResults<Parameters>) =
-        member _.ConnectionString =     a.GetResult(ConnectionString, "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false")
-        member _.Credentials =          a.GetResult(Credentials, null)
+    type Arguments(p: ParseResults<Parameters>) =
+        member _.ConnectionString =     p.GetResult(ConnectionString, "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false")
+        member _.Credentials =          p.GetResult(Credentials, null)
 
-        member _.Timeout =              a.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
-        member _.Retries =              a.GetResult(Retries, 1)
-        member _.BatchSize =            a.GetResult(BatchSize, 500)
+        member _.Timeout =              p.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
+        member _.Retries =              p.GetResult(Retries, 1)
+        member _.BatchSize =            p.GetResult(BatchSize, 500)
 
     let private connect connectionString credentialsString operationTimeout =
         let cs = match credentialsString with null -> connectionString | x -> String.Join(";", connectionString, x)
         let tags = ["M", Environment.MachineName; "I", Guid.NewGuid() |> string]
         EventStoreConnector(reqTimeout = operationTimeout, tags = tags)
             .Establish(appName, Discovery.ConnectionString cs, ConnectionStrategy.ClusterTwinPreferSlaveReads)
-    let config (log : ILogger) (cache, unfolds) (p : ParseResults<Parameters>) =
+    let config (log: ILogger) (cache, unfolds) (p: ParseResults<Parameters>) =
         let a = Arguments(p)
         let timeout = a.Timeout
         log.Information("EventStoreDB {connectionString} {timeout}s", a.ConnectionString, timeout.TotalSeconds)
@@ -275,17 +276,17 @@ module Sql =
                     | Credentials _ ->      "Database credentials"
                     | AutoCreate ->         "AutoCreate schema"
                     | BatchSize _ ->        "Maximum number of Events to request per batch. Default 500."
-        type Arguments(p : ParseResults<Parameters>) =
+        type Arguments(p: ParseResults<Parameters>) =
             member _.ConnectionString =     p.GetResult ConnectionString
             member _.Schema =               p.GetResult(Schema,null)
             member _.Credentials =          p.GetResult(Credentials,null)
             member _.AutoCreate =           p.Contains AutoCreate
             member _.BatchSize =            p.GetResult(BatchSize, 500)
-        let connect (log : ILogger) (connectionString,schema,credentials,autoCreate) =
+        let connect (log: ILogger) (connectionString,schema,credentials,autoCreate) =
             let sssConnectionString = String.Join(";", connectionString, credentials)
             log.Information("SqlStreamStore MsSql Connection {connectionString} Schema {schema} AutoCreate {autoCreate}", connectionString, schema, autoCreate)
             Equinox.SqlStreamStore.MsSql.Connector(sssConnectionString,schema,autoCreate=autoCreate).Establish()
-        let config (log: ILogger) (cache, unfolds) (p : ParseResults<Parameters>) =
+        let config (log: ILogger) (cache, unfolds) (p: ParseResults<Parameters>) =
             let a = Arguments(p)
             let connection = connect log (a.ConnectionString, a.Schema, a.Credentials, a.AutoCreate) |> Async.RunSynchronously
             Config.Sql (SqlStreamStoreContext(connection, batchSize = a.BatchSize), cacheStrategy cache, unfolds)
@@ -301,16 +302,16 @@ module Sql =
                     | Credentials _ ->      "Database credentials"
                     | AutoCreate ->         "AutoCreate schema"
                     | BatchSize _ ->        "Maximum number of Events to request per batch. Default 500."
-        type Arguments(p : ParseResults<Parameters>) =
+        type Arguments(p: ParseResults<Parameters>) =
             member _.ConnectionString =     p.GetResult ConnectionString
             member _.Credentials =          p.GetResult(Credentials,null)
             member _.AutoCreate =           p.Contains AutoCreate
             member _.BatchSize =            p.GetResult(BatchSize, 500)
-        let connect (log : ILogger) (connectionString,credentials,autoCreate) =
+        let connect (log: ILogger) (connectionString,credentials,autoCreate) =
             let sssConnectionString = String.Join(";", connectionString, credentials)
             log.Information("SqlStreamStore MySql Connection {connectionString} AutoCreate {autoCreate}", connectionString, autoCreate)
             Equinox.SqlStreamStore.MySql.Connector(sssConnectionString,autoCreate=autoCreate).Establish()
-        let config (log: ILogger) (cache, unfolds) (p : ParseResults<Parameters>) =
+        let config (log: ILogger) (cache, unfolds) (p: ParseResults<Parameters>) =
             let a = Arguments(p)
             let connection = connect log (a.ConnectionString, a.Credentials, a.AutoCreate) |> Async.RunSynchronously
             Config.Sql (SqlStreamStoreContext(connection, batchSize = a.BatchSize), cacheStrategy cache, unfolds)
@@ -328,17 +329,17 @@ module Sql =
                     | Credentials _ ->      "Database credentials"
                     | AutoCreate ->         "AutoCreate schema"
                     | BatchSize _ ->        "Maximum number of Events to request per batch. Default 500."
-        type Arguments(p : ParseResults<Parameters>) =
+        type Arguments(p: ParseResults<Parameters>) =
             member _.ConnectionString =     p.GetResult ConnectionString
             member _.Schema =               p.GetResult(Schema,null)
             member _.Credentials =          p.GetResult(Credentials,null)
             member _.AutoCreate =           p.Contains AutoCreate
             member _.BatchSize =            p.GetResult(BatchSize, 500)
-        let connect (log : ILogger) (connectionString,schema,credentials,autoCreate) =
+        let connect (log: ILogger) (connectionString,schema,credentials,autoCreate) =
             let sssConnectionString = String.Join(";", connectionString, credentials)
             log.Information("SqlStreamStore Postgres Connection {connectionString} Schema {schema} AutoCreate {autoCreate}", connectionString, schema, autoCreate)
             Equinox.SqlStreamStore.Postgres.Connector(sssConnectionString,schema,autoCreate=autoCreate).Establish()
-        let config (log : ILogger) (cache, unfolds) (p : ParseResults<Parameters>) =
+        let config (log: ILogger) (cache, unfolds) (p: ParseResults<Parameters>) =
             let a = Arguments(p)
             let connection = connect log (a.ConnectionString, a.Schema, a.Credentials, a.AutoCreate) |> Async.RunSynchronously
             Config.Sql (SqlStreamStoreContext(connection, batchSize = a.BatchSize), cacheStrategy cache, unfolds)
@@ -351,13 +352,13 @@ module MessageDb =
             member a.Usage = a |> function
                 | ConnectionString _ -> "Database connection string"
                 | BatchSize _ ->        "Maximum number of Events to request per batch. Default 500."
-    type Arguments(p : ParseResults<Parameters>) =
+    type Arguments(p: ParseResults<Parameters>) =
          member _.ConnectionString = p.GetResult ConnectionString
          member _.BatchSize =        p.GetResult(BatchSize, 500)
-    let connect (log : ILogger) (connectionString: string) =
+    let connect (log: ILogger) (connectionString: string) =
         log.Information("MessageDB Connection {connectionString}", connectionString)
         MessageDbClient(connectionString)
-    let config (log : ILogger) cache (p : ParseResults<Parameters>) =
+    let config (log: ILogger) cache (p: ParseResults<Parameters>) =
         let a = Arguments(p)
         let connection = connect log a.ConnectionString
         let cache = match cache with Some c -> CachingStrategy.SlidingWindow(c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching

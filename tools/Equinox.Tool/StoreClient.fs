@@ -6,7 +6,7 @@ open System.Net.Http
 
 type Session(client: HttpClient, clientId: ClientId) =
 
-    member _.Send(req : HttpRequestMessage) : Async<HttpResponseMessage> =
+    member _.Send(req: HttpRequestMessage) : Async<HttpResponseMessage> =
         let req = req |> HttpReq.withHeader "COMPLETELY_INSECURE_CLIENT_ID" (ClientId.toString clientId)
         client.SendAsync2(req)
 
@@ -26,7 +26,7 @@ type FavoritesClient(session: Session) =
         return! response |> HttpRes.deserializeOkJsonNet<Favorited[]>
     }
 
-type Saved = { skuId : SkuId; dateSaved : DateTimeOffset }
+type Saved = { skuId: SkuId; dateSaved: DateTimeOffset }
 
 type SavesClient(session: Session) =
 

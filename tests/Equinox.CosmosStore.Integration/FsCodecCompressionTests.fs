@@ -14,7 +14,7 @@ open Swensen.Unquote
 open System
 open Xunit
 
-type Embedded = { embed : string }
+type Embedded = { embed: string }
 type Union =
     | A of Embedded
     | B of Embedded

@@ -40,7 +40,7 @@ type Event =
     interface TypeShape.UnionContract.IUnionContract
 let codec = FsCodec.SystemTextJson.CodecJsonElement.Create<Event>() |> FsCodec.SystemTextJson.Encoder.Uncompressed
 
-type State = { items : Todo list; nextId : int }
+type State = { items: Todo list; nextId: int }
 let initial = { items = []; nextId = 0 }
 
 module Snapshot =

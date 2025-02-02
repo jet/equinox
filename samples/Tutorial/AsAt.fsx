@@ -56,7 +56,7 @@ module Events =
     type Event = int64 * Contract
 
     // our upconversion function doesn't actually fit the term - it just tuples the underlying event
-    let up (evt: FsCodec.ITimelineEvent<_>) e : Event =
+    let up (evt: FsCodec.ITimelineEvent<_>) e: Event =
         evt.Index, e
     // as per the `up`, the downConverter needs to drop the index (which is only there for symmetry), add null metadata
     let down (_index, e) : struct (Contract * _ voption * DateTimeOffset voption) =
@@ -71,10 +71,10 @@ module Fold =
     type State = int[]
     module State =
         let balance (x: State) = x |> Array.tryLast |> Option.defaultValue 0
-    let initial : State = [||]
+    let initial: State = [||]
     // Rather than composing a `fold` from an `evolve` function as one normally does, it makes sense for us to do it as
     // a loop as we are appending each time but can't mutate the incoming state
-    let fold state (xs : Events.Event[]) =
+    let fold state (xs: Events.Event[]) =
         let mutable bal = state |> Array.tryLast |> Option.defaultValue 0
         let balances = ResizeArray(state)
         let record ver delta =
@@ -91,9 +91,9 @@ module Fold =
             | _ver, Events.Snapshot e -> balances.Clear(); balances.AddRange e.balanceLog
         balances.ToArray()
     // generate a snapshot when requested
-    let snapshot state : Events.Event = -1L, Events.Snapshot { balanceLog = state }
+    let snapshot state: Events.Event = -1L, Events.Snapshot { balanceLog = state }
     // Recognize a relevant snapshot when we meet one in the chain
-    let isValid : Events.Event -> bool = function _, Events.Snapshot _ -> true | _ -> false
+    let isValid: Events.Event -> bool = function _, Events.Snapshot _ -> true | _ -> false
 
 let decideAdd delta _state = [| -1L, Events.Added { count = delta } |]
 let decideRemove delta state = [|

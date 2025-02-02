@@ -10,8 +10,8 @@ let private streamId = FsCodec.StreamId.gen SequenceId.toString
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
-    type Item = { id : int64 }
-    type Snapshotted = { reservations : int64[];  nextId : int64 }
+    type Item = { id: int64 }
+    type Snapshotted = { reservations: int64[];  nextId: int64 }
     type Event =
         | Reserved of Item
         | Confirmed of Item
@@ -22,7 +22,7 @@ module Events =
 
 module Fold =
 
-    type State = { reserved : Set<int64>; next : int64 }
+    type State = { reserved: Set<int64>; next: int64 }
     let initial = { reserved = Set.empty; next = 0L }
 
     module Snapshot =
@@ -34,7 +34,7 @@ module Fold =
         let ofInternal (lowWatermark : int64) (reserved : int64 seq) (confirmed : int64 seq) (released : int64 seq) : State =
             failwith "TODO"
         type InternalState =
-            { reserved : Set<int64>; confirmed : Set<int64>; released : Set<int64>; next : int64 }
+            { reserved: Set<int64>; confirmed: Set<int64>; released : Set<int64>; next: int64 }
             member x.Evolve = function
                 | Events.Reserved e -> { x with reserved = x.reserved |> Set.add e.id }
                 | Events.Confirmed e -> { x with confirmed = x.confirmed |> Set.add e.id }

@@ -43,10 +43,10 @@ let createServiceCosmosUnoptimizedButCached log context =
     |> Favorites.create
 
 type Command =
-    | Favorite      of date : System.DateTimeOffset * skuIds : SkuId list
-    | Unfavorite    of skuId : SkuId
+    | Favorite      of date: System.DateTimeOffset * skuIds: SkuId list
+    | Unfavorite    of skuId: SkuId
 
-let execute (service : Favorites.Service) clientId = function
+let execute (service: Favorites.Service) clientId = function
     | Favorite (date, skus) ->  service.Favorite(clientId, skus, at = date)
     | Unfavorite sku ->         service.Unfavorite(clientId, sku)
 
@@ -54,7 +54,7 @@ type Tests(testOutputHelper) =
     let testOutput = TestOutput testOutputHelper
     let log = testOutput.CreateLogger()
 
-    let act (service : Favorites.Service) (clientId, command) = async {
+    let act (service: Favorites.Service) (clientId, command) = async {
         do! execute service clientId command
         let! version, items = service.ListWithVersion clientId
 
