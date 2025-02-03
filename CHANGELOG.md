@@ -22,21 +22,17 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `eqx dump`, `eqx query`: `-sl` Support for specifying streams to dump via a [CosmosDB `LIKE` expression](https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/query/keywords#like) [#473](https://github.com/jet/equinox/pull/473)
 - `eqx dump`: `-Q` strips intervals, regularizes snapshots, logs stream names [#473](https://github.com/jet/equinox/pull/473)
 - `eqx stats`: `-O`, `-N` flags extract oldest and newest `_ts` within a store [#459](https://github.com/jet/equinox/pull/459)
-- `eqx stats`: `-U` flag to count streams with unfolds and total number thereof; `-I` alias relabel Documents as Items [#464](https://github.com/jet/equinox/pull/464)
-- `eqx stats`: `-I` flag; relabel Documents as Items, retaining existing `-D` flag [#464](https://github.com/jet/equinox/pull/464)
-- `eqx`: `-Q` flag omits timestamps from console output logging [#459](https://github.com/jet/equinox/pull/459)
+- `eqx stats`: `-U` flag to count streams with unfolds and total number thereof [#473](https://github.com/jet/equinox/pull/473)
+- `eqx stats`: `-I` flag; relabel Documents as Items, retaining existing `-D` flag [#473](https://github.com/jet/equinox/pull/473)
 - `Equinox.CosmosStore.Linq`: Add LINQ querying support for Indexed `u`nfolds (`AccessStrategy.Custom`+`CosmosStoreCategory.shouldCompress`) [#450](https://github.com/jet/equinox/pull/450)
-- `eqx dump`, `eqx query`: `-sl` Support for specifying streams to dump via a [CosmosDB `LIKE` expression](https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/query/keywords#like) [#450](https://github.com/jet/equinox/pull/450)
-- `eqx dump`: `-Q` strips intervals, regularizes snapshots, logs stream names [#450](https://github.com/jet/equinox/pull/450)
-- `eqx top`: Support for analyzing space usage for event and view containers by category and/or stream [#450](https://github.com/jet/equinox/pull/450)
-- `eqx destroy`: Support for deleting the items(documents) underlying a category/stream/arbitrary `WHERE` clause [#450](https://github.com/jet/equinox/pull/450)
 
 ### Changed
 
-- `Equinox.*Store`,`Equinox.*Store.Prometheus`: Pin `Equinox` dependencies to `[4.0.3, 5.0.0)`] [#450](https://github.com/jet/equinox/pull/450)
+- `Equinox.*Store`,`Equinox.*Store.Prometheus`: Pin `Equinox` dependencies to `[4.0.3, 5.0.0)`] [#448](https://github.com/jet/equinox/pull/448)
 - `Equinox.CosmosStore`: Update `System.Text.Json` dep to `6.0.10` per [CVE-2024-43485](https://github.com/advisories/GHSA-8g4q-xg66-9fp4) [#470](https://github.com/jet/equinox/pull/470)
 - `Equinox.CosmosStore`: Minimum `Microsoft.Azure.Cosmos` requirement updated to `3.43.1` to avail of integrated `System.Text.Json` support [#467](https://github.com/jet/equinox/pull/467)
 - `Equinox.CosmosStore.CosmosStoreConnector`: Removed mandatory `requestTimeout` argument [#467](https://github.com/jet/equinox/pull/467)
+- `Equinox.DynamoStore`: Up min `FSharp.AWS.DynamoDB` to v `0.12.3-beta` to handle breaking change [#474](https://github.com/jet/equinox/pull/474)
 - `Equinox.MessageDb`: Up min `Npgsql` to v `7.0.7` as `7.0.0` is on CVE blacklist
 - `Equinox.MemoryStore`: Remove unused TrySync args [#466](https://github.com/jet/equinox/pull/466)
 
