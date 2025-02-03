@@ -1,7 +1,7 @@
 namespace Equinox.CosmosStore.Linq
 
 open Equinox.Core
-open Equinox.CosmosStore.Core // Log, JsonCompressedBase64Converter
+open Equinox.CosmosStore.Core // Log
 open FSharp.Control // taskSeq
 open Serilog
 open System
