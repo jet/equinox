@@ -8,6 +8,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ## [Unreleased]
 
+<a name="4.1.0"></a>
+## [4.1.0] rc.1 - 2025-02-03
+
 ### Added
 
 - `Equinox.CosmosStore`: Roundtrip `D` and `M` encoding values as per `DynamoStore`, enabling more extensive control of compression [#472](https://github.com/jet/equinox/pull/472)
@@ -798,7 +801,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/4.0.4...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/4.1.0...HEAD
+[4.1.0]: https://github.com/jet/equinox/compare/4.0.4...4.1.0
 [4.0.4]: https://github.com/jet/equinox/compare/4.0.3...4.0.4
 [4.0.3]: https://github.com/jet/equinox/compare/4.0.2...4.0.3
 [4.0.2]: https://github.com/jet/equinox/compare/4.0.0...4.0.2
