@@ -31,6 +31,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Equinox.CosmosStore`: Update `System.Text.Json` dep to `6.0.10` per [CVE-2024-43485](https://github.com/advisories/GHSA-8g4q-xg66-9fp4) [#470](https://github.com/jet/equinox/pull/470)
 - `Equinox.CosmosStore`: Minimum `Microsoft.Azure.Cosmos` requirement updated to `3.43.1` to avail of integrated `System.Text.Json` support [#467](https://github.com/jet/equinox/pull/467)
 - `Equinox.CosmosStore.CosmosStoreConnector`: Removed mandatory `requestTimeout` argument [#467](https://github.com/jet/equinox/pull/467)
+- `Equinox.DynamoStore`: Up min `FSharp.AWS.DynamoDB` to v `0.12.3-beta` to handle breaking change [#474](https://github.com/jet/equinox/pull/474)
 - `Equinox.MessageDb`: Up min `Npgsql` to v `7.0.7` as `7.0.0` is on CVE blacklist
 - `Equinox.MemoryStore`: Remove unused TrySync args [#466](https://github.com/jet/equinox/pull/466)
 
