@@ -99,7 +99,7 @@ module Unfold =
 /// NOTE names are intended to generally align with CosmosStore naming. Key Diffs:
 /// - no mandatory `id` and/or requirement for it to be a `string` -> replaced with `i` as an int64
 ///   (also Tip magic value is tipMagicI: Int32.MaxValue, not "-1")
-/// - etag is managed explicitly (on Cosmos DB, its managed by the service and named "_etag")
+/// - etag is managed explicitly (on Cosmos DB, it's managed by the service and named "_etag")
 [<NoEquality; NoComparison>]
 type Batch =
     {   p: string // "{streamName}"
@@ -180,7 +180,7 @@ module Batch =
         // If we're loading from a nominated position, we need to discard items in the batch before/after the start on the start page
         x.e |> Seq.filter (fun e -> let i = int64 e.i in i >= indexMin && int64 i < indexMax)
 
-    /// Computes base Index for the Item (`i` can bear the the magic value TipI when the Item is the Tip)
+    /// Computes base Index for the Item (`i` can bear the magic value TipI when the Item is the Tip)
     let baseIndex (x: Batch) = x.n - x.e.LongLength
     let bytesUnfolds (x: Batch) = Unfold.arrayBytes x.u
     let bytesBase (x: Batch) = 80 + x.p.Length + String.length x.etag + Event.arrayBytes x.e
@@ -493,7 +493,7 @@ type Position =
     override x.ToString() = sprintf "{ n=%d; etag=%s; e=%d; b=%d+%d }" x.index x.etag x.events.Length x.baseBytes x.unfoldsBytes
 module internal Position =
 
-    // NOTE a write of Some 0 to x.b round-trips as None
+    // NOTE writing Some 0 to x.b round-trips as None
     let fromTip (x: Batch) = { index = x.n; etag = x.etag; events = x.e; calvedBytes = defaultArg x.b 0; baseBytes = Batch.bytesBase x; unfoldsBytes = Batch.bytesUnfolds x }
     let fromElements (p, b, n, e, u, etag) = fromTip { p = p; b = Some b; i = Unchecked.defaultof<_>; n = n; e = e; u = u; etag = etag }
     let tryFromBatch (x: Batch) = if Batch.isTip x.i then fromTip x |> Some else None
@@ -508,9 +508,11 @@ module internal Sync =
 
     let private (|DynamoDbConflict|_|): exn -> _ = function
         | Precondition.CheckFailed
-        | TransactWriteItemsRequest.TransactionCanceledConditionalCheckFailed -> Some ()
+        | Transaction.TransactionCanceledConditionalCheckFailed -> Some ()
         | _ -> None
-
+    type [<NoEquality; NoComparison>] TransactWrite<'T> =
+        | Put of item: Batch.Schema * ConditionExpression<'T> option
+        | Update of TableKey * ConditionExpression<'T> option * UpdateExpression<Batch.Schema>
     let private cce: Quotations.Expr<Batch.Schema -> bool> -> ConditionExpression<Batch.Schema> = template.PrecomputeConditionalExpr
     let private cue (ue: Quotations.Expr<Batch.Schema -> Batch.Schema>) = template.PrecomputeUpdateExpr ue
 
@@ -567,11 +569,17 @@ module internal Sync =
         let etag' = let g = Guid.NewGuid() in g.ToString "N"
         let actions = generateRequests stream requestArgs etag'
         let rm = Metrics()
-        try do! let context = table.CreateContext(rm.Add)
-                match actions with
+        try let context = table.CreateContext(rm.Add)
+            do! match actions with
                 | [ TransactWrite.Put (item, Some cond) ] -> context.PutItemAsync(item, cond) |> Async.Ignore
                 | [ TransactWrite.Update (key, Some cond, updateExpr) ] -> context.UpdateItemAsync(key, updateExpr, cond) |> Async.Ignore
-                | actions -> context.TransactWriteItems actions |> Async.Ignore
+                | actions ->
+                    let req = context.CreateTransaction()
+                    for x in actions do
+                        match x with
+                        | TransactWrite.Put (item, cond) -> req.Put(context, item, ?precondition = cond)
+                        | TransactWrite.Update (key, cond, updateExpr) -> req.Update(context, key, updateExpr, ?precondition = cond)
+                    req.TransactWriteItems()
                 |> Async.executeAsTask ct
             return struct (rm.Consumed, Res.Written etag')
         with DynamoDbConflict ->
@@ -867,7 +875,7 @@ module internal Query =
 
         match primary, fallback with
         | Some { found = true }, _ -> return toPosition res, events // origin found in primary, no need to look in fallback
-        | Some { minIndex = i }, _ when i <= minI -> return toPosition res, events // primary had required earliest event Index, no need to look at fallback
+        | Some { minIndex = i }, _ when i <= minI -> return toPosition res, events // primary had required min event Index, no need to look at fallback
         | None, _ when Option.isNone tip -> return toPosition res, events // initial load where no documents present in stream
         | _, Choice1Of2 allowMissing ->
             logMissing (minIndex, i) "Origin event not found; no Archive Table supplied"
@@ -875,7 +883,7 @@ module internal Query =
             else return failwith "Origin event not found; no Archive Table supplied"
         | _, Choice2Of2 fallback ->
 
-        let maxIndex = match primary with Some p -> Some p.minIndex | None -> maxIndex // if no batches in primary, high water mark from tip is max
+        let maxIndex = match primary with Some p -> Some p.minIndex | None -> maxIndex // if no batches in primary, high-water mark from tip is max
         let! fallback = fallback (minIndex, maxIndex, ct)
         let events =
             match fallback with
@@ -935,7 +943,7 @@ module internal Prune =
                 for x in batches |> Seq.takeWhile (fun x -> isRelevant x || Option.isNone lwm) do
                     let batchSize = x.n - x.index |> int
                     let eligibleEvents = max 0 (min batchSize (int (indexInclusive + 1L - x.index)))
-                    if x.isTip then // Even if we remove the last event from the Tip, we need to retain a) unfolds b) position (n)
+                    if x.isTip then // Even if we remove the last event from the Tip, we need to retain a. unfolds b. position (n)
                         if eligibleEvents <> 0 then
                             let! charge = trimTip x.n eligibleEvents
                             trimCharges <- trimCharges + charge.total
@@ -1017,7 +1025,7 @@ module Internal =
     //   - TransactWriteItems is more than twice the cost in Write RU vs a normal UpdateItem, with associated latency impacts
     //   - various other considerations, e.g. we need to re-read the Tip next time around see https://stackoverflow.com/a/71706015/11635
     let defaultTipMaxBytes = 32 * 1024
-    // In general we want to minimize round-trips, but we'll get better diagnostic feedback under load if we constrain our
+    // In general, we want to minimize round-trips, but we'll get better diagnostic feedback under load if we constrain our
     // queries to shorter pages. The effect of this is of course highly dependent on the max Item size, which is
     // dictated by the TipOptions - in the default configuration that's controlled by defaultTipMaxBytes
     let defaultMaxItems = 32
@@ -1178,7 +1186,7 @@ type DynamoStoreConnector(clientConfig: Amazon.DynamoDBv2.AmazonDynamoDBConfig, 
         let clientConfig = Amazon.DynamoDBv2.AmazonDynamoDBConfig(ServiceURL = serviceUrl, RetryMode = m, MaxErrorRetry = retries, Timeout = timeout)
         DynamoStoreConnector(clientConfig, Amazon.Runtime.BasicAWSCredentials(accessKey, secretKey))
 
-    /// Connect to a nominated SystemName with endpoints and credentials gathered implicitly from well-known environment variables and/or configuration etc
+    /// Connect to a nominated SystemName with endpoints and credentials gathered implicitly from well-known environment variables and/or configuration etc.
     /// systemName: Amazon SystemName, e.g. "us-west-1"
     /// timeout: Required; AWS SDK Default: 100s
     /// maxRetries: Required; AWS SDK Default: 10
@@ -1270,7 +1278,7 @@ type AccessStrategy<'event, 'state> =
     /// enable efficient reading without having to query the Event documents.
     | Snapshot of isOrigin: ('event -> bool) * toSnapshot: ('state -> 'event)
     /// Allow any events that pass the `isOrigin` test to be used in lieu of folding all the events from the start of the stream
-    /// When writing, uses `toSnapshots` to 'unfold' the <c>'state</c>, representing it as one or more Event records to be stored in
+    /// When writing, uses `toSnapshots` to 'unfold' the <c>&apos;state</c>, representing it as one or more Event records to be stored in
     /// the Tip with efficient read cost.
     | MultiSnapshot of isOrigin: ('event -> bool) * toSnapshots: ('state -> 'event[])
     /// Instead of actually storing the events representing the decisions, only ever update a snapshot stored in the Tip document
