@@ -10,7 +10,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
-- `Equinox.CosmosStore.Linq`: Add LINQ querying support for Indexed `u`nfolds (`AccessStrategy.Custom`+`CosmosStoreCategory.shouldCompress`) [#450](https://github.com/jet/equinox/pull/450)
+- `Equinox.CosmosStore.Linq`: Add LINQ querying support for Indexed `u`nfolds [#450](https://github.com/jet/equinox/pull/450)
 
 ### Changed
 ### Removed
