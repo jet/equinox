@@ -38,6 +38,7 @@ module EquinoxCosmosInterop =
             | Log.Metric.Query (Direction.Backward,c,m) -> "CosmosQueryB", m, Some c, m.ru
             | Log.Metric.QueryResponse (Direction.Forward,m) -> "CosmosResponseF", m, None, m.ru
             | Log.Metric.QueryResponse (Direction.Backward,m) -> "CosmosResponseB", m, None, m.ru
+            | Log.Metric.Index m -> "CosmosLinq", m, None, m.ru
             | Log.Metric.SyncSuccess m -> "CosmosSync200", m, None, m.ru
             | Log.Metric.SyncConflict m -> "CosmosSync409", m, None, m.ru
             | Log.Metric.SyncResync m -> "CosmosSyncResync", m, None, m.ru
