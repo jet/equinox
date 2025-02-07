@@ -97,8 +97,8 @@ module Internal =
                 let log = if cat = null then log else
                           let evt = Log.Metric.Index { database = container.Database.Id; container = container.Id; stream = cat + FsCodec.StreamName.Category.SeparatorStr
                                                        interval = interval; bytes = totalOds; count = items; ru = totalRu } in log |> Log.event evt
-                log.Write(logLevel, "EqxCosmos {action:l} {count} ({trips}r {totalRtt:f0}ms; {rdc}i {rds:f2}>{ods:f2} MiB) {rc:f2} RU {lat:f0} ms",
-                                action, items, responses, totalRtt.TotalMilliseconds, totalRdc, miB totalRds, miB totalOds, totalRu, interval.ElapsedMilliseconds) }
+                log.Write(logLevel, "EqxCosmos {action:l} {count} {cat} ({trips}r {totalRtt:f0}ms; {rdc}i {rds:f2}>{ods:f2} MiB) {rc:f2} RU {lat:f0} ms",
+                                action, items, cat, responses, totalRtt.TotalMilliseconds, totalRdc, miB totalRds, miB totalOds, totalRu, interval.ElapsedMilliseconds) }
         /// Runs a query that can be hydrated directly as the projected type
         let enum log container cat = enum_ log container "Index" cat Events.LogEventLevel.Information
         let exec__<'R> (log: ILogger) (container: Container) cat logLevel (queryDefinition: QueryDefinition): TaskSeq<'R> =
@@ -123,13 +123,13 @@ module Internal =
             let totalOds, totalRu = m.OutputDocumentSize, rsp.RequestCharge
             let log = let evt = Log.Metric.Index { database = container.Database.Id; container = container.Id; stream = cat + FsCodec.StreamName.Category.SeparatorStr
                                                    interval = interval; bytes = int totalOds; count = -1; ru = totalRu } in log |> Log.event evt
-            log.Information("EqxCosmos {action:l} {cat} {count} ({rdc}i {rds:f2}>{ods:f2} MiB) {rc} RU {lat:f0} ms",
-                            op, cat, summary, m.RetrievedDocumentCount, miB m.RetrievedDocumentSize, miB totalOds, totalRu, interval.ElapsedMilliseconds)
+            log.Information("EqxCosmos {action:l} {count} {cat} ({rdc}i {rds:f2}>{ods:f2} MiB) {rc} RU {lat:f0} ms",
+                            op, summary, cat, m.RetrievedDocumentCount, miB m.RetrievedDocumentSize, miB totalOds, totalRu, interval.ElapsedMilliseconds)
             return res }
         /// Runs query.CountAsync, with instrumentation equivalent to what query provides
         let countAsync (log: ILogger) container cat logLevel (query: IQueryable<'T>) ct =
             if log.IsEnabled logLevel then log.Write(logLevel, "CosmosStoreQuery.count {cat} {query}", cat, query.ToQueryDefinition().QueryText)
-            exec log container "count" cat query (_.CountAsync(ct)) id<int>
+            exec log container "Count" cat query (_.CountAsync(ct)) id<int>
     module Scalar =
         /// Generates a TOP 1 SQL query
         let top1 (query: IQueryable<'T>) =
@@ -192,6 +192,7 @@ type SnAndSnap() =
     member val sn: FsCodec.StreamName = Unchecked.defaultof<_> with get, set
     member val D: Nullable<int> = Unchecked.defaultof<_> with get, set
     member val d: System.Text.Json.JsonElement = Unchecked.defaultof<_> with get, set
+    member x.EncodedBody = EncodedBody.ofUnfoldBody (x.D.GetValueOrDefault 0, x.d)
     static member CreateItemQueryLambda<'T, 'U>(
             snExpression: Expression -> MemberExpression,
             uExpression: Expression<Func<'T, 'U>>,
