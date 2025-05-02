@@ -1,4 +1,4 @@
-namespace Equinox.CosmosStore.Core
+namespace Equinox.CosmosStore.Core2n
 
 open Equinox.Core
 open FSharp.Control
@@ -378,7 +378,7 @@ module Log =
                 elif prevCat = cat then ()
                 else
                     let reqs = catR + catW
-                    log.Information("{bucket}        {count,6}r                       @ {rps,5:f0} r/s {rups,5:f0} RU/s ({rrups:f0}{r:l}/{wrups:f0}{w:l})",
+                    log.Information("{bucket}         {count,6}r                       @ {rps,5:f0} r/s {rups,5:f0} RU/s ({rrups:f0}{r:l}/{wrups:f0}{w:l})",
                                     prevCat.PadRight maxBucketLen, reqs, rps reqs, ups (catRRu + catWRu), ups catRRu, "R", ups catWRu, "W")
                     catR <- 0; catRRu <- 0; catW <- 0; catWRu <- 0; prevCat <- cat
             for bucket in buckets do
