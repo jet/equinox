@@ -62,6 +62,18 @@ type [<AbstractClass; Sealed>] Predicate =
     static member Where(source: IQueryable<'T>, indexSelector: Expression<Func<'T, 'I>>, indexPredicate: Expression<Func<'I, bool>>): IQueryable<'T> =
         source.Where(indexSelector.Compose indexPredicate)
 
+type [<NoComparison; NoEquality>] IProjection<'T> =
+    abstract ToAsyncEnumerable: unit -> TaskSeq<'T>
+    abstract Page: skip: int * take: int -> TaskSeq<'T>
+    abstract CountAsync: ct: CancellationToken -> Task<int>
+
+type [<AbstractClass; Sealed>] ProjectionExtensions =
+    [<Extension>] static member Count(x: IProjection<'M>): Async<int> = x.CountAsync |> Async.call
+    [<Extension>] static member TryHead(x: TaskSeq<'T>) = TaskSeq.tryHead x |> Async.AwaitTask
+    [<Extension>] static member TryHead(x: IProjection<'T>) = x.ToAsyncEnumerable().TryHead()
+    [<Extension>] static member All(x: TaskSeq<'T>) = TaskSeq.toArrayAsync x |> Async.AwaitTask
+    [<Extension>] static member All(x: IProjection<'T>) = x.ToAsyncEnumerable().All()
+
 module Internal =
     open Microsoft.Azure.Cosmos
     open Microsoft.Azure.Cosmos.Linq
@@ -142,22 +154,13 @@ module Internal =
     type Projection<'T, 'M>(query, category, container, enum: IQueryable<'T> -> TaskSeq<'M>, count: IQueryable<'T> -> CancellationToken -> Task<int>) =
         static member Create<'P>(q, cat, c, log, hydrate: 'P -> 'M, logLevel) =
              Projection<'T, 'M>(q, cat, c, Query.enumAs<'T, 'P> log c cat logLevel >> TaskSeq.map hydrate, AggregateOp.countAsync log c cat logLevel)
-        member _.ToAsyncEnumerable(): TaskSeq<'M> = query |> enum
-        member _.Page(skip, take): TaskSeq<'M> = query |> Query.offsetLimit (skip, take) |> enum
-        member _.CountAsync: CancellationToken -> Task<int> = query |> count
+        interface IProjection<'M> with
+            member _.ToAsyncEnumerable(): TaskSeq<'M> = query |> enum
+            member _.Page(skip, take): TaskSeq<'M> = query |> Query.offsetLimit (skip, take) |> enum
+            member _.CountAsync cancellationToken: Task<int> = count query cancellationToken
         [<EditorBrowsable(EditorBrowsableState.Never)>] member val Query: IQueryable<'T> = query
         [<EditorBrowsable(EditorBrowsableState.Never)>] member val Category: string = category
         [<EditorBrowsable(EditorBrowsableState.Never)>] member val Container: Container = container
-
-/// Represents a query projecting information values from an Index and/or Snapshots with a view to rendering the items and/or a count
-type Query<'T, 'M>(inner: Internal.Projection<'T, 'M>) =
-    member _.ToAsyncEnumerable(): TaskSeq<'M> = inner.ToAsyncEnumerable()
-    member _.Page(skip, take): TaskSeq<'M> = inner.Page(skip, take)
-    member _.CountAsync(ct: CancellationToken): Task<int> = inner.CountAsync ct
-    member _.Count(): Async<int> = inner.CountAsync |> Async.call
-    member x.TryHead() = x.ToAsyncEnumerable() |> TaskSeq.tryHead |> Async.AwaitTaskCorrect
-    member x.All() = x.ToAsyncEnumerable() |> TaskSeq.toArrayAsync |> Async.AwaitTaskCorrect
-    [<EditorBrowsable(EditorBrowsableState.Never)>] member val Inner = inner
 
 /// Helpers for Querying Indices and Projecting Snapshot data based on well-known aspects of Equinox.CosmosStore's storage schema
 module Index =
@@ -210,7 +213,7 @@ type SnAndSnap() =
                     bind (nameof Unchecked.defaultof<SnAndSnap>.d,  uExpression.Compose(dataExpression).InlineParam(param)) |])
         Expression.Lambda<Func<'T, SnAndSnap>>(body, [| param |])
     // a very ugly workaround for not being able to write query.Select<Item<'I>, SnAndSnap>(fun x -> { p = x.p; D = x.u[0].D; d = x.u[0].d })
-    static member ProjectStreamNameAndRawSnapshot(snapshotUnfoldExpression): Expression<Func<Index.Item<'I>, SnAndSnap>> =
+    static member Project snapshotUnfoldExpression: Expression<Func<Index.Item<'I>, SnAndSnap>> =
         let pExpression item = Expression.PropertyOrField(item, nameof Unchecked.defaultof<Index.Item<'I>>.p)
         SnAndSnap.CreateItemQueryLambda<Index.Item<'I>, Index.Unfold<'I>>(pExpression, snapshotUnfoldExpression, (fun x -> x.format), (fun x -> x.data))
 
@@ -234,26 +237,24 @@ type IndexContext<'I>(container, categoryName, log, [<O; D null>]?queryLogLevel)
 
     /// Runs the query; yields the StreamName from the TOP 1 result
     member x.TryGetStreamNameAsync(query: IQueryable<Index.Item<'I>>, ct, [<O; D null>] ?logLevel): Task<FsCodec.StreamName option> =
-        x.TryScalarAsync<string, FsCodec.StreamName>(query.Select _.p, ct, ?logLevel = logLevel)
+        x.TryScalarAsync<string, FsCodec.StreamName>(query.Select(fun x -> x.p), ct, ?logLevel = logLevel)
 
     /// Runs the query; yields the StreamName from the TOP 1 result
     member x.TryGetStreamName(query: IQueryable<Index.Item<'I>>): Async<FsCodec.StreamName option> =
         (fun ct -> x.TryGetStreamNameAsync(query, ct)) |> Async.call
 
-    /// Query the items, grabbing the Stream name, snapshot and encoding from the snapshot identified by `selectSnapshotUnfold`, mapping to a result via `hydrate`
-    member x.Hydrate<'T>(query: IQueryable<Index.Item<'I>>, selectSnapshotUnfold: Expression<Func<Index.Item<'I>, Index.Unfold<'I>>>, render: SnAndSnap -> 'T, [<O; D null>] ?logLevel) =
+    /// Query the items, projecting as T1, which gets bound to T2, which is then rendered as T
+    member x.Project<'T1, 'T2, 'T>(query: IQueryable<'T1>, render: 'T2 -> 'T, [<O; D null>] ?logLevel) =
         let logLevel = defaultArg logLevel x.QueryLogLevel
-        let projection = query.Select(SnAndSnap.ProjectStreamNameAndRawSnapshot<'I> selectSnapshotUnfold)
-        Internal.Projection.Create(projection, categoryName, container, log, render, logLevel) |> Query<SnAndSnap, 'T>
+        Internal.Projection.Create<'T2>(query, categoryName, container, log, render, logLevel) :> IProjection<'T>
+    /// Query the items, projecting as T1, which gets bound to T2, which is then rendered as T
+    member x.Project<'T1, 'T2, 'T>(query: IQueryable<Index.Item<'I>>, projection: Expression<Func<Index.Item<'I>, 'T1>>, render: 'T2 -> 'T, [<O; D null>] ?logLevel) =
+        x.Project<'T1, 'T2, 'T>(query.Select projection, render, ?logLevel = logLevel)
+
+    /// Query the items, grabbing the Stream name, snapshot and encoding from the snapshot identified by `selectSnapshotUnfold`, mapping to a result via `hydrate`
+    member x.ProjectStreamNameAndSnapshot<'T>(query: IQueryable<Index.Item<'I>>, selectSnapshotUnfold: Expression<Func<Index.Item<'I>, Index.Unfold<'I>>>, render: SnAndSnap -> 'T, [<O; D null>] ?logLevel) =
+        x.Project<SnAndSnap, SnAndSnap, 'T>(query, SnAndSnap.Project<'I> selectSnapshotUnfold, render, ?logLevel = logLevel)
 
     /// Runs the query, rendering from the StreamName of each result
-    member x.HydrateStreamName<'T>(query: IQueryable<Index.Item<'I>>, render: FsCodec.StreamName -> 'T, [<O; D null>] ?logLevel) =
-        let logLevel = defaultArg logLevel x.QueryLogLevel
-        Internal.Projection.Create(query.Select _.p, categoryName, container, log, render, logLevel) |> Query<string, 'T>
-
-type Query<'I> =
-
-    /// Helper to make F# consumption code more terse (the F# compiler generates Expression trees only when a function is passed to a `member`)
-    /// Example: `Query&lt;Events.Index&gt;.Predicate(fun e -> e.name = name)`
-    /// See https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/query/linq-to-sql for the list of supported constructs
-    static member Predicate expr: Expression<Func<'I, bool>> = expr
+    member x.ProjectStreamName<'T>(query: IQueryable<Index.Item<'I>>, render: FsCodec.StreamName -> 'T, [<O; D null>] ?logLevel) =
+        x.Project<string, FsCodec.StreamName, 'T>(query, (fun x -> x.p), render, ?logLevel = logLevel)
