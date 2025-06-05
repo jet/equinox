@@ -186,75 +186,75 @@ module Index =
         let prefix = prefix categoryName
         container.GetItemLinqQueryable<Item<'I>>().Where(fun d -> d.p.StartsWith(prefix))
 
-// We want to generate a projection statement of the shape: VALUE {"sn": root["p"], "d": root["u"][0].["d"], "D": root["u"][0].["D"]}
-// However the Cosmos SDK does not support F# (or C#) records yet https://github.com/Azure/azure-cosmos-dotnet-v3/issues/3728
-// F#'s LINQ support cannot translate parameterless constructor invocations in a Lambda well;
-//  the best native workaround without Expression Manipulation is/was https://stackoverflow.com/a/78206722/11635
-// In C#, you can generate an Expression that works with the Cosmos SDK via `.Select(x => new { sn = x.p, d = x.u[0].d, D = x.u[0].D })`
-// This hack is based on https://stackoverflow.com/a/73506241/11635
-type SnAndSnap() =
-    member val sn: FsCodec.StreamName = Unchecked.defaultof<_> with get, set
-    member val D: Nullable<int> = Unchecked.defaultof<_> with get, set
-    member val d: System.Text.Json.JsonElement = Unchecked.defaultof<_> with get, set
-    member x.EncodedBody = EncodedBody.ofUnfoldBody (x.D.GetValueOrDefault 0, x.d)
-    static member CreateItemQueryLambda<'T, 'U>(
-            snExpression: Expression -> MemberExpression,
-            uExpression: Expression<Func<'T, 'U>>,
-            formatExpression: Expression<Func<'U, Nullable<int>>>,
-            dataExpression: Expression<Func<'U, System.Text.Json.JsonElement>>) =
-        let param = Expression.Parameter(typeof<'T>, "x")
-        let targetType = typeof<SnAndSnap>
-        let bind (name, expr) = Expression.Bind(targetType.GetMember(name)[0], expr) :> MemberBinding
-        let body =
-            Expression.MemberInit(
-                Expression.New(targetType.GetConstructor [||]),
-                [|  bind (nameof Unchecked.defaultof<SnAndSnap>.sn, snExpression param)
-                    bind (nameof Unchecked.defaultof<SnAndSnap>.D,  uExpression.Compose(formatExpression).InlineParam(param))
-                    bind (nameof Unchecked.defaultof<SnAndSnap>.d,  uExpression.Compose(dataExpression).InlineParam(param)) |])
-        Expression.Lambda<Func<'T, SnAndSnap>>(body, [| param |])
-    // a very ugly workaround for not being able to write query.Select<Item<'I>, SnAndSnap>(fun x -> { p = x.p; D = x.u[0].D; d = x.u[0].d })
-    static member Project snapshotUnfoldExpression: Expression<Func<Index.Item<'I>, SnAndSnap>> =
-        let pExpression item = Expression.PropertyOrField(item, nameof Unchecked.defaultof<Index.Item<'I>>.p)
-        SnAndSnap.CreateItemQueryLambda<Index.Item<'I>, Index.Unfold<'I>>(pExpression, snapshotUnfoldExpression, (fun x -> x.format), (fun x -> x.data))
+    // We want to generate a projection statement of the shape: VALUE {"sn": root["p"], "d": root["u"][0].["d"], "D": root["u"][0].["D"]}
+    // However the Cosmos SDK does not support F# (or C#) records yet https://github.com/Azure/azure-cosmos-dotnet-v3/issues/3728
+    // F#'s LINQ support cannot translate parameterless constructor invocations in a Lambda well;
+    //  the best native workaround without Expression Manipulation is/was https://stackoverflow.com/a/78206722/11635
+    // In C#, you can generate an Expression that works with the Cosmos SDK via `.Select(x => new { sn = x.p, d = x.u[0].d, D = x.u[0].D })`
+    // This hack is based on https://stackoverflow.com/a/73506241/11635
+    type SnAndSnap() =
+        member val sn: FsCodec.StreamName = Unchecked.defaultof<_> with get, set
+        member val D: Nullable<int> = Unchecked.defaultof<_> with get, set
+        member val d: System.Text.Json.JsonElement = Unchecked.defaultof<_> with get, set
+        member x.EncodedBody = EncodedBody.ofUnfoldBody (x.D.GetValueOrDefault 0, x.d)
+        static member CreateItemQueryLambda<'T, 'U>(
+                snExpression: Expression -> MemberExpression,
+                uExpression: Expression<Func<'T, 'U>>,
+                formatExpression: Expression<Func<'U, Nullable<int>>>,
+                dataExpression: Expression<Func<'U, System.Text.Json.JsonElement>>) =
+            let param = Expression.Parameter(typeof<'T>, "x")
+            let targetType = typeof<SnAndSnap>
+            let bind (name, expr) = Expression.Bind(targetType.GetMember(name)[0], expr) :> MemberBinding
+            let body =
+                Expression.MemberInit(
+                    Expression.New(targetType.GetConstructor [||]),
+                    [|  bind (nameof Unchecked.defaultof<SnAndSnap>.sn, snExpression param)
+                        bind (nameof Unchecked.defaultof<SnAndSnap>.D,  uExpression.Compose(formatExpression).InlineParam(param))
+                        bind (nameof Unchecked.defaultof<SnAndSnap>.d,  uExpression.Compose(dataExpression).InlineParam(param)) |])
+            Expression.Lambda<Func<'T, SnAndSnap>>(body, [| param |])
+        // a very ugly workaround for not being able to write query.Select<Item<'I>, SnAndSnap>(fun x -> { p = x.p; D = x.u[0].D; d = x.u[0].d })
+        static member Project snapshotUnfoldExpression: Expression<Func<Item<'I>, SnAndSnap>> =
+            let pExpression item = Expression.PropertyOrField(item, nameof Unchecked.defaultof<Item<'I>>.p)
+            SnAndSnap.CreateItemQueryLambda<Item<'I>, Unfold<'I>>(pExpression, snapshotUnfoldExpression, (fun x -> x.format), (fun x -> x.data))
 
-/// Enables querying based on uncompressed Indexed values stored as secondary unfolds alongside the snapshot
-[<NoComparison; NoEquality>]
-type IndexContext<'I>(container, categoryName, log, [<O; D null>]?queryLogLevel) =
+    /// Enables querying based on uncompressed Indexed values stored as secondary unfolds alongside the snapshot
+    [<NoComparison; NoEquality>]
+    type Context<'I>(container, categoryName, log, [<O; D null>]?queryLogLevel) =
 
-    member val Container = container
-    member val CategoryName = categoryName
-    member val Log = log
-    member val QueryLogLevel = defaultArg queryLogLevel Serilog.Events.LogEventLevel.Debug
+        member val Container = container
+        member val CategoryName = categoryName
+        member val Log = log
+        member val QueryLogLevel = defaultArg queryLogLevel Serilog.Events.LogEventLevel.Debug
 
-    /// Fetches a base Queryable that's filtered only on the <c>categoryName</c>
-    member _.Query(): IQueryable<Index.Item<'I>> =
-        Index.queryCategory<'I> container categoryName
+        /// Fetches a base Queryable that's filtered only on the <c>categoryName</c>
+        member _.Query(): IQueryable<Item<'I>> =
+            queryCategory<'I> container categoryName
 
-    /// Runs the query; yields the TOP 1 result, deserialized as the specified Model type
-    member x.TryScalarAsync<'T, 'M>(query: IQueryable<'T>, ct, [<O; D null>] ?logLevel): Task<'M option> =
-        let logLevel = defaultArg logLevel x.QueryLogLevel
-        Internal.Scalar.tryHeadAsync<'T, 'M> log container categoryName logLevel query ct
+        /// Runs the query; yields the TOP 1 result, deserialized as the specified Model type
+        member x.TryScalarAsync<'T, 'M>(query: IQueryable<'T>, ct, [<O; D null>] ?logLevel): Task<'M option> =
+            let logLevel = defaultArg logLevel x.QueryLogLevel
+            Internal.Scalar.tryHeadAsync<'T, 'M> log container categoryName logLevel query ct
 
-    /// Runs the query; yields the StreamName from the TOP 1 result
-    member x.TryGetStreamNameAsync(query: IQueryable<Index.Item<'I>>, ct, [<O; D null>] ?logLevel): Task<FsCodec.StreamName option> =
-        x.TryScalarAsync<string, FsCodec.StreamName>(query.Select(fun x -> x.p), ct, ?logLevel = logLevel)
+        /// Runs the query; yields the StreamName from the TOP 1 result
+        member x.TryGetStreamNameAsync(query: IQueryable<Item<'I>>, ct, [<O; D null>] ?logLevel): Task<FsCodec.StreamName option> =
+            x.TryScalarAsync<string, FsCodec.StreamName>(query.Select(fun x -> x.p), ct, ?logLevel = logLevel)
 
-    /// Runs the query; yields the StreamName from the TOP 1 result
-    member x.TryGetStreamName(query: IQueryable<Index.Item<'I>>): Async<FsCodec.StreamName option> =
-        (fun ct -> x.TryGetStreamNameAsync(query, ct)) |> Async.call
+        /// Runs the query; yields the StreamName from the TOP 1 result
+        member x.TryGetStreamName(query: IQueryable<Item<'I>>): Async<FsCodec.StreamName option> =
+            (fun ct -> x.TryGetStreamNameAsync(query, ct)) |> Async.call
 
-    /// Query the items, projecting as T1, which gets bound to T2, which is then rendered as T
-    member x.Project<'T1, 'T2, 'T>(query: IQueryable<'T1>, render: 'T2 -> 'T, [<O; D null>] ?logLevel) =
-        let logLevel = defaultArg logLevel x.QueryLogLevel
-        Internal.Projection.Create<'T2>(query, categoryName, container, log, render, logLevel) :> IProjection<'T>
-    /// Query the items, projecting as T1, which gets bound to T2, which is then rendered as T
-    member x.Project<'T1, 'T2, 'T>(query: IQueryable<Index.Item<'I>>, projection: Expression<Func<Index.Item<'I>, 'T1>>, render: 'T2 -> 'T, [<O; D null>] ?logLevel) =
-        x.Project<'T1, 'T2, 'T>(query.Select projection, render, ?logLevel = logLevel)
+        /// Query the items, projecting as T1, which gets bound to T2, which is then rendered as T
+        member x.Project<'T1, 'T2, 'T>(query: IQueryable<'T1>, render: 'T2 -> 'T, [<O; D null>] ?logLevel) =
+            let logLevel = defaultArg logLevel x.QueryLogLevel
+            Internal.Projection.Create<'T2>(query, categoryName, container, log, render, logLevel) :> IProjection<'T>
+        /// Query the items, projecting as T1, which gets bound to T2, which is then rendered as T
+        member x.Project<'T1, 'T2, 'T>(query: IQueryable<Item<'I>>, projection: Expression<Func<Item<'I>, 'T1>>, render: 'T2 -> 'T, [<O; D null>] ?logLevel) =
+            x.Project<'T1, 'T2, 'T>(query.Select projection, render, ?logLevel = logLevel)
 
-    /// Query the items, grabbing the Stream name, snapshot and encoding from the snapshot identified by `selectSnapshotUnfold`, mapping to a result via `hydrate`
-    member x.ProjectStreamNameAndSnapshot<'T>(query: IQueryable<Index.Item<'I>>, selectSnapshotUnfold: Expression<Func<Index.Item<'I>, Index.Unfold<'I>>>, render: SnAndSnap -> 'T, [<O; D null>] ?logLevel) =
-        x.Project<SnAndSnap, SnAndSnap, 'T>(query, SnAndSnap.Project<'I> selectSnapshotUnfold, render, ?logLevel = logLevel)
+        /// Query the items, grabbing the Stream name, snapshot and encoding from the snapshot identified by `selectSnapshotUnfold`, mapping to a result via `hydrate`
+        member x.ProjectStreamNameAndSnapshot<'T>(query: IQueryable<Item<'I>>, selectSnapshotUnfold: Expression<Func<Item<'I>, Unfold<'I>>>, render: SnAndSnap -> 'T, [<O; D null>] ?logLevel) =
+            x.Project<SnAndSnap, SnAndSnap, 'T>(query, SnAndSnap.Project<'I> selectSnapshotUnfold, render, ?logLevel = logLevel)
 
-    /// Runs the query, rendering from the StreamName of each result
-    member x.ProjectStreamName<'T>(query: IQueryable<Index.Item<'I>>, render: FsCodec.StreamName -> 'T, [<O; D null>] ?logLevel) =
-        x.Project<string, FsCodec.StreamName, 'T>(query, (fun x -> x.p), render, ?logLevel = logLevel)
+        /// Runs the query, rendering from the StreamName of each result
+        member x.ProjectStreamName<'T>(query: IQueryable<Item<'I>>, render: FsCodec.StreamName -> 'T, [<O; D null>] ?logLevel) =
+            x.Project<string, FsCodec.StreamName, 'T>(query, (fun x -> x.p), render, ?logLevel = logLevel)
