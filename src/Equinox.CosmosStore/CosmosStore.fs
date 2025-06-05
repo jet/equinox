@@ -1,4 +1,4 @@
-namespace Equinox.CosmosStore.Core2n
+namespace Equinox.CosmosStore.Core
 
 open Equinox.Core
 open FSharp.Control
