@@ -177,29 +177,31 @@ module private Read =
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "Esdb{action:l} stream={stream} count={count}/{batches} version={version}",
             action, streamName, count, batches, version)
-    let private loadBackwardsUntilOrigin (log: ILogger) (conn: EventStoreClient) batchSize streamName (tryDecode, isOrigin) ct
-        : Task<int64 * struct (ResolvedEvent * 'event voption)[]> = task {
+    let private loadBackwardsInternal (conn: EventStoreClient) batchSize streamName ct
+        : Task<int64 * ResolvedEvent[]> = task {
         let res = conn.ReadStreamAsync(Direction.Backwards, streamName, StreamPosition.End, int64 batchSize, resolveLinkTos = false, cancellationToken = ct)
         match! res.ReadState with
         | ReadState.StreamNotFound -> return (-1L, [||])
         | _ ->
 
-        let! events =
-            res
-            |> TaskSeq.map (fun x -> struct (x, tryDecode x))
-            |> TaskSeq.takeWhileInclusive (function
+        let! events = res |> TaskSeq.toArrayAsync
+        let v = match Seq.tryHead events with Some r -> let en = r.Event.EventNumber in en.ToInt64() | None -> -1
+        return v, events }
+    let loadBackwards (log: ILogger) (conn: EventStoreClient) retryPolicy batchSize streamName (tryDecode, isOrigin) ct
+        : Task<int64 * struct (ResolvedEvent * 'event voption)[]> = task {
+        let call _log ct = loadBackwardsInternal conn batchSize streamName ct
+        let! t, (version, events) = Log.withLoggedRetries retryPolicy "readAttempt" call log |> Stopwatch.time ct
+
+        let events =
+            events
+            |> Array.map (fun x -> struct (x, tryDecode x))
+            |> Array.takeWhileInclusive (function
                 | x, ValueSome e when isOrigin e ->
                     log.Information("EsdbStop stream={stream} at={eventNumber}", streamName, let en = x.Event.EventNumber in en.ToInt64())
                     false
                 | _ -> true)
-            |> TaskSeq.toArrayAsync
-        let v = match Seq.tryHead events with Some (r, _) -> let en = r.Event.EventNumber in en.ToInt64() | None -> -1
-        Array.Reverse events
-        return v, events }
 
-    let loadBackwards (log: ILogger) (conn: EventStoreClient) batchSize streamName (tryDecode, isOrigin) ct
-        : Task<int64 * struct (ResolvedEvent * 'event voption)[]> = task {
-        let! t, (version, events) = loadBackwardsUntilOrigin log conn batchSize streamName (tryDecode, isOrigin) |> Stopwatch.time ct
+        Array.Reverse events
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
         log |> logBatchRead Direction.Backward streamName t (Array.map ValueTuple.fst events) (Some batchSize) version
         return version, events }
@@ -214,9 +216,10 @@ module private Read =
         let v = match Seq.tryLast events with Some r -> let en = r.Event.EventNumber in en.ToInt64() | None -> startPosition.ToInt64() - 1L
         return v, events }
 
-    let loadForwards log conn streamName startPosition ct: Task<int64 * ResolvedEvent[]> = task {
+    let loadForwards log conn retryPolicy streamName startPosition ct: Task<int64 * ResolvedEvent[]> = task {
         let direction = Direction.Forward
-        let! t, (version, events) = loadForward conn streamName startPosition |> Stopwatch.time ct
+        let call _log ct = loadForward conn streamName startPosition ct
+        let! t, (version, events) = Log.withLoggedRetries retryPolicy "readAttempt" call log |> Stopwatch.time ct
         let log = log |> Log.prop "startPos" startPosition |> Log.prop "direction" direction |> Log.prop "stream" streamName
         log |> logBatchRead direction streamName t events None version
         return version, events }
@@ -313,7 +316,7 @@ type EventStoreContext(connection: EventStoreConnection, batchOptions: BatchOpti
 
     member internal _.TokenEmpty = Token.ofUncompactedVersion batchOptions.BatchSize -1L
     member internal _.LoadBatched(log, streamName, requireLeader, tryDecode, isCompactionEventType, ct): Task<struct (StreamToken * 'event[])> = task {
-        let! version, events = Read.loadForwards log (conn requireLeader) streamName StreamPosition.Start ct
+        let! version, events = Read.loadForwards log (conn requireLeader) connection.ReadRetryPolicy streamName StreamPosition.Start ct
         match tryIsResolvedEventEventType isCompactionEventType with
         | None -> return struct (Token.ofNonCompacting version, Array.chooseV tryDecode events)
         | Some isCompactionEvent ->
@@ -321,14 +324,14 @@ type EventStoreContext(connection: EventStoreConnection, batchOptions: BatchOpti
             | None -> return Token.ofUncompactedVersion batchOptions.BatchSize version, Array.chooseV tryDecode events
             | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batchOptions.BatchSize version, Array.chooseV tryDecode events }
     member internal _.LoadBackwardsStoppingAtCompactionEvent(log, streamName, requireLeader, limit, tryDecode, isOrigin, ct): Task<struct (StreamToken * 'event [])> = task {
-        let! version, events = Read.loadBackwards log (conn requireLeader) (defaultArg limit Int32.MaxValue) streamName (tryDecode, isOrigin) ct
+        let! version, events = Read.loadBackwards log (conn requireLeader) connection.ReadRetryPolicy (defaultArg limit Int32.MaxValue) streamName (tryDecode, isOrigin) ct
         match Array.tryHead events |> Option.filter (function _, ValueSome e -> isOrigin e | _ -> false) with
         | None -> return struct (Token.ofUncompactedVersion batchOptions.BatchSize version, Array.chooseV ValueTuple.snd events)
         | Some (resolvedEvent, _) -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batchOptions.BatchSize version, Array.chooseV ValueTuple.snd events }
     member internal _.Reload(log, streamName, requireLeader, (Token.Unpack token as streamToken), tryDecode, isCompactionEventType, ct)
         : Task<struct (StreamToken * 'event[])> = task {
         let streamPosition = StreamPosition.FromInt64(token.streamVersion + 1L)
-        let! version, events = Read.loadForwards log (conn requireLeader) streamName streamPosition ct
+        let! version, events = Read.loadForwards log (conn requireLeader) connection.ReadRetryPolicy streamName streamPosition ct
         match isCompactionEventType with
         | None -> return struct (Token.ofNonCompacting version, Array.chooseV tryDecode events)
         | Some isCompactionEvent ->

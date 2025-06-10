@@ -70,3 +70,15 @@ module Array =
 
     let inline chooseV f xs = [| for item in xs do match f item with ValueSome v -> yield v | ValueNone -> () |]
     let inline tryFirstV (xs: _[]) = if xs.Length = 0 then ValueNone else ValueSome xs[0]
+    let takeWhileInclusive (predicate: 'T -> bool) (array: 'T[]) : 'T[] =
+        let result = ResizeArray<'T>()
+        let mutable i, continue' = 0, true
+
+        while i < array.Length && continue' do
+            let current = array[i]
+            result.Add(current)
+            if not (predicate current) then
+                continue' <- false
+            i <- i + 1
+
+        result.ToArray()
