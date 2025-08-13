@@ -31,3 +31,14 @@ type
             let _ = Interlocked.CompareExchange(&cell, newInstance, current)
             return! cell.Await() }
     member x.Await() = Async.call x.Await
+
+/// <summary>Thread-safe collection of <c>TaskCell</c>s guaranteeing max one read invocation per item</summary>
+type TaskCellDictionary<'Key, 'Value>(read: System.Func<'Key, CancellationToken, Task<'Value>>) =
+
+    let cells = System.Collections.Concurrent.ConcurrentDictionary<'Key, TaskCell<'Value>>()
+    let create id = TaskCell(fun ct -> read.Invoke(id, ct))
+
+    new (read: 'Key -> Async<'Value>) = TaskCellDictionary(fun id ct -> Async.StartImmediateAsTask(read id, ct))
+
+    /// <summary>Retrieves the data for the cell identified by <c>id</c>. Concurrent calls coalesce to a single read attempt.</summary>
+    member _.Read id = cells.GetOrAdd(id, create).Await()
