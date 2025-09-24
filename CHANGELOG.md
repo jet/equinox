@@ -8,6 +8,14 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ## [Unreleased]
 
+### Added
+
+- `Equinox.CosmosStore.Linq`: Add LINQ querying support for Indexed `u`nfolds [#450](https://github.com/jet/equinox/pull/450)
+
+### Changed
+### Removed
+### Fixed
+
 <a name="4.1.0"></a>
 ## [4.1.0] - 2025-06-12
 
