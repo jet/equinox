@@ -344,12 +344,13 @@ and DumpArguments(p: ParseResults<DumpParameters>) =
     member x.Streams(infoLogLevel) =
         let streams = p.GetResults DumpParameters.Stream
         match p.TryGetResult DumpParameters.StreamLike with
-        | None -> streams
+        | None -> List.toArray streams
         | Some pattern ->
             let container = x.Connect()
-            let q = Microsoft.Azure.Cosmos.QueryDefinition($"SELECT DISTINCT VALUE c.p from c where c.p LIKE \"{pattern}\"")
-            Equinox.CosmosStore.Linq.Internal.Query.exec Log.Logger container infoLogLevel q |> TaskSeq.toList
-
+            // NB as of Cosmos SDK 3.53, DISTINCT triggers NullReferenceException
+            let q = Microsoft.Azure.Cosmos.QueryDefinition($"SELECT VALUE c.p from c where c.p LIKE \"{pattern}\"")
+            Equinox.CosmosStore.Linq.Internal.Query.exec Log.Logger container infoLogLevel q
+            |> TaskSeq.toSeq |> Seq.distinct |> Seq.toArray
 let writeToStatsSinks (c: LoggerConfiguration) =
     c.WriteTo.Sink(Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink())
      .WriteTo.Sink(Equinox.DynamoStore.Core.Log.InternalMetrics.Stats.LogSink())
