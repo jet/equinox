@@ -16,8 +16,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
-- <a name="4.1.0"></a>
-## [4.1.0] rc.1 - 2025-02-03
+<a name="4.1.0"></a>
+## [4.1.0] - 2025-06-12
 
 ### Added
 
