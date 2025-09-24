@@ -8,6 +8,13 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ## [Unreleased]
 
+### Added 
+
+- `Equinox.CosmosStore.Linq`: Add LINQ querying support for Indexed `u`nfolds [#450](https://github.com/jet/equinox/pull/450)
+
+<a name="4.1.1"></a>
+## [4.1.1] - 2025-09-24
+
 ### Added
 
 - `Equinox.Core.TaskCellDictionary`: Helper to manage concurrent reads in View processing [#477](https://github.com/jet/equinox/pull/477)
