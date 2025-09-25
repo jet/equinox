@@ -704,17 +704,20 @@ module internal Query =
             yield map i t res
             i <- i + 1 }
     let private mkQuery (log: ILogger) (container: Container, stream: string) includeTip (maxItems: int) (direction: Direction, minIndex, maxIndex): FeedIterator<Batch> =
-        let order = if direction = Direction.Forward then "ASC" else "DESC"
+        let asc, orderString = if direction = Direction.Forward then true, "ASC" else false, "DESC"
         let query =
+            let orderByField = if minIndex |> Option.isSome then 'n' else 'i'
             let args = [
                  match minIndex with None -> () | Some x -> yield "c.n > @minPos", fun (q: QueryDefinition) -> q.WithParameter("@minPos", x)
                  match maxIndex with None -> () | Some x -> yield "c.i < @maxPos", fun (q: QueryDefinition) -> q.WithParameter("@maxPos", x) ]
             let whereClause =
-                let notTip = sprintf "c.id!=\"%s\"" Tip.WellKnownDocumentId
+                let notTip = $"c.id!=\"%s{Tip.WellKnownDocumentId}\""
                 let conditions = Seq.map fst args
                 if List.isEmpty args && includeTip then null
                 else "WHERE " + String.Join(" AND ", if includeTip then conditions else Seq.append conditions (Seq.singleton notTip))
-            let queryString = $"SELECT c.id, c.i, c._etag, c.n, c.e FROM c %s{whereClause} ORDER BY c.i %s{order}"
+            let queryString =
+                if asc then $"SELECT c.id, c.i, c._etag, c.n, c.e FROM c %s{whereClause}"
+                else $"SELECT c.id, c.i, c._etag, c.n, c.e FROM c %s{whereClause} ORDER BY c.{orderByField} %s{orderString}"
             let prams = Seq.map snd args
             (QueryDefinition queryString, prams) ||> Seq.fold (fun q wp -> q |> wp)
         log.Debug("EqxCosmos Query {stream} {query}; n>{minIndex} i<{maxIndex}", stream, query.QueryText, Option.toNullable minIndex, Option.toNullable maxIndex)
