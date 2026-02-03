@@ -201,7 +201,7 @@ module EncodedBody =
 [<Struct>]
 type RequestConsumption = { total: float }
 
-[<Struct; RequireQualifiedAccess>]
+[<Struct>]
 type Direction = Forward | Backward override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
 
 module Log =
