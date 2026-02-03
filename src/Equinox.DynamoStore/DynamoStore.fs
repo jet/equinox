@@ -408,14 +408,14 @@ module Initialization =
     /// Yields the <c>StreamsARN</c> if (but only if) it streaming is presently active
     let tryGetActiveStreamsArn (x: Model.TableDescription) =
         match x.StreamSpecification with
-        | ss when ss <> null && ss.StreamEnabled -> x.LatestStreamArn
+        | ss when ss <> null && ss.StreamEnabled.GetValueOrDefault(false) -> x.LatestStreamArn
         | _ -> null
 
 type private Metrics() =
     let mutable t = 0.
     member _.Add(x: RequestMetrics) =
         for x in x.ConsumedCapacity do
-            t <- t + x.CapacityUnits
+            t <- t + x.CapacityUnits.GetValueOrDefault(0.0)
     member _.Consumed: RequestConsumption = { total = t }
 
 module private Async =
