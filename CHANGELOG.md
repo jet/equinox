@@ -16,6 +16,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 - `Equinox.CosmosStore.Linq`: Add LINQ querying support for Indexed `u`nfolds [#450](https://github.com/jet/equinox/pull/450)
 
+<a name="4.1.2"></a>
+## [4.1.2] - 2026-02-04
+
 ### Fixed
 
 - `Tool`: `eqx dump` fails for non-Cosmos targets (`missing argument 'cosmos'` message) [#480](https://github.com/jet/equinox/pull/481)
@@ -824,7 +827,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/4.1.0...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/4.1.2...HEAD
+[4.1.2]: https://github.com/jet/equinox/compare/4.1.1...4.1.2
 [4.1.1]: https://github.com/jet/equinox/compare/4.1.0...4.1.1
 [4.1.0]: https://github.com/jet/equinox/compare/4.0.4...4.1.0
 [4.0.4]: https://github.com/jet/equinox/compare/4.0.3...4.0.4
