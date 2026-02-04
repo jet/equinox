@@ -282,8 +282,8 @@ and [<NoComparison; NoEquality; RequireSubcommand>] DumpParameters =
     | [<AltCommandLine "-N"; Unique>]       Names
     | [<AltCommandLine "-U"; Unique>]       UnfoldsOnly
     | [<AltCommandLine "-E"; Unique >]      EventsOnly
-    | [<CliPrefix(CliPrefix.None)>]                            Cosmos   of ParseResults<Store.Cosmos.Parameters>
-    | [<CliPrefix(CliPrefix.None)>]                            Dynamo   of ParseResults<Store.Dynamo.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last>]                      Cosmos   of ParseResults<Store.Cosmos.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last>]                      Dynamo   of ParseResults<Store.Dynamo.Parameters>
     | [<CliPrefix(CliPrefix.None); Last>]                      Es       of ParseResults<Store.EventStore.Parameters>
     | [<CliPrefix(CliPrefix.None); Last>]                      Mdb      of ParseResults<Store.MessageDb.Parameters>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Store.Sql.Ms.Parameters>
@@ -336,9 +336,9 @@ and DumpArguments(p: ParseResults<DumpParameters>) =
             let storeLog = createStoreLog false
             storeLog, Store.MessageDb.config log None p
         | x -> p.Raise $"unexpected subcommand %A{x}"
-    member val CosmosArgs = p.GetResult DumpParameters.Cosmos |> Store.Cosmos.Arguments
-    member x.Connect() =
-        match Store.Cosmos.config Log.Logger (None, true) x.CosmosArgs with
+    member _.Connect() =
+        let cosmosArgs = p.GetResult(DumpParameters.Cosmos, Store.Cosmos.Arguments)
+        match Store.Cosmos.config Log.Logger (None, true) cosmosArgs with
         | Store.Config.Cosmos (cc, _, _) -> cc.Container
         | _ -> p.Raise "Dump StreamLike option requires Cosmos"
     member x.Streams(infoLogLevel) =
