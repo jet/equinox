@@ -405,7 +405,7 @@ module Initialization =
         let context = TableContext<Batch.Schema>(client, tableName)
         context.UpdateTableIfRequiredAsync()
 
-    /// Yields the <c>StreamsARN</c> if (but only if) it streaming is presently active
+    /// Yields the <c>StreamsARN</c> if (but only if) streaming is presently active
     let tryGetActiveStreamsArn (x: Model.TableDescription) =
         match x.StreamSpecification with
         | ss when ss <> null && ss.StreamEnabled.GetValueOrDefault(false) -> x.LatestStreamArn
