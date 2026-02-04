@@ -34,7 +34,7 @@
     <PackageReference Include="MinVer" Version="5.0.0" PrivateAssets="All" />
 
     <!-- Required or there'll be an exception at runtime re missing support DLLs when using RBAC -->
-    <PackageReference Include="AWSSDK.SecurityToken" Version="3.7.1.177" />
+    <PackageReference Include="AWSSDK.SecurityToken" Version="4.*" />
     <PackageReference Include="Serilog.Sinks.Console" Version="5.0.1" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="7.0.0" />
   </ItemGroup>
@@ -45,5 +45,5 @@
       <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths -> WithMetadataValue('ReferenceSourceTarget', 'ProjectReference'))" />
     </ItemGroup>
   </Target>
-  
+
 </Project>

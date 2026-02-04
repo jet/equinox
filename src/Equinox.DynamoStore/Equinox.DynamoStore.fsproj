@@ -23,7 +23,7 @@
 
     <PackageReference Include="FSharp.Core" Version="6.0.7" ExcludeAssets="contentfiles" />
 
-    <PackageReference Include="FSharp.AWS.DynamoDB" Version="0.12.3-beta" />
+    <PackageReference Include="FSharp.AWS.DynamoDB" Version="0.13.0-beta" />
     <PackageReference Include="FSharp.Control.TaskSeq" Version="0.4.0" />
   </ItemGroup>
 

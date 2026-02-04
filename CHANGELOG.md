@@ -8,7 +8,11 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ## [Unreleased]
 
-### Added 
+### Changed
+
+- `Equinox.DynamoStore`: Update `AWSSDK` dependencies to 4.x (knock-on effect of updating `FSharp.AWS.DynamoDB` dependency to `0.13.0-beta`) [#480](https://github.com/jet/equinox/pull/480) :pray: [njlr](https://github.com/njlr)
+
+### Added
 
 - `Equinox.CosmosStore.Linq`: Add LINQ querying support for Indexed `u`nfolds [#450](https://github.com/jet/equinox/pull/450)
 
@@ -283,7 +287,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [3.0.0-beta.1] - 2021-02-24
 
 ### Added
- 
+
  - `Equinox.CosmosStore`: Forked from `Equinox.Cosmos` to add significant new features (see Removed section for deprecation policy info).
    - Added support for accumulating events in Tip, i.e. being able to operate with a single document per stream until the events (if any) overflow a defined size threshold [#251](https://github.com/jet/equinox/pull/251) see also [#110](https://github.com/jet/equinox/pull/110)
    - Added Archive store Fallback for Event loading, enabling streams to be hot-migrated (archived to a secondary/clone, then pruned from the primary/active) between Primary and Archival stores [#247](https://github.com/jet/equinox/pull/247), [#259](https://github.com/jet/equinox/pull/259)
@@ -295,7 +299,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
    - Remove exceptions from 304/404 paths when reading Tip [#257](https://github.com/jet/equinox/pull/257)
    - Removed [warmup call](https://github.com/Azure/azure-cosmos-dotnet-v3/issues/1436)
    - Rename `Equinox.Cosmos` DLL and namespace to `Equinox.CosmosStore` [#243](https://github.com/jet/equinox/pull/243)
-        - Rename `Equinox.Cosmos.Store` -> `Equinox.CosmosStore.Core` 
+        - Rename `Equinox.Cosmos.Store` -> `Equinox.CosmosStore.Core`
         - `Core` sub-namespace
             - Rename `Equinox.Cosmos.Core.Context` -> `Equinox.CosmosStore.Core.EventsContext`
             - Change `Equinox.Cosmos.Core.Connection` -> `Equinox.CosmosStore.Core.RetryPolicy`
@@ -511,17 +515,17 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 
 - `SqlStreamStore`: Full support for Microsoft Sql Server, MySQL and Postgres using [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore) [#168](https://github.com/jet/equinox/pull/168) :pray: [@rajivhost](https://github.com/rajivhost)
-- `Cosmos`: Exposed a `Connector.CreateClient` for interop with V2 ChangeFeedProcessor and `Propulsion.Cosmos` [#171](https://github.com/jet/equinox/pull/171) 
+- `Cosmos`: Exposed a `Connector.CreateClient` for interop with V2 ChangeFeedProcessor and `Propulsion.Cosmos` [#171](https://github.com/jet/equinox/pull/171)
 - `Cosmos`: Codified `AccessStrategy.RollingState` [#178](https://github.com/jet/equinox/pull/178) :pray: [@jgardella](https://github.com/jgardella)
-- `Cosmos`: Added `eqx stats` command to count streams/docs/events in a CosmosDb Container re [#127](https://github.com/jet/equinox/issues/127) [#176](https://github.com/jet/equinox/pull/176) 
-- `MemoryStore`: Supports custom Codec logic (can use `FsCodec.Box.Codec` as default) [#173](https://github.com/jet/equinox/pull/173) 
+- `Cosmos`: Added `eqx stats` command to count streams/docs/events in a CosmosDb Container re [#127](https://github.com/jet/equinox/issues/127) [#176](https://github.com/jet/equinox/pull/176)
+- `MemoryStore`: Supports custom Codec logic (can use `FsCodec.Box.Codec` as default) [#173](https://github.com/jet/equinox/pull/173)
 - `eqx dump [store]`: Show event data from store [#177](https://github.com/jet/equinox/pull/177)
 
 ### Changed
 
 - Targeted `Destructurama.FSharp` v `1.1.1-dev-00033` [dotnet-templates#36](https://github.com/jet/dotnet-templates/issues/36)
 - Targeted `FsCodec` v `1.2.1`
-- `Cosmos`: renamed `Connector`'s `maxRetryAttemptsOnThrottledRequests` and `maxRetryWaitTimeInSeconds` to maxRetryAttemptsOnRateLimitedRequests` and `maxRetryWaitTimeOnRateLimitedRequests` and changed latter to `TimeSpan` to match V3 SDK [#171](https://github.com/jet/equinox/pull/171) 
+- `Cosmos`: renamed `Connector`'s `maxRetryAttemptsOnThrottledRequests` and `maxRetryWaitTimeInSeconds` to maxRetryAttemptsOnRateLimitedRequests` and `maxRetryWaitTimeOnRateLimitedRequests` and changed latter to `TimeSpan` to match V3 SDK [#171](https://github.com/jet/equinox/pull/171)
 - `AccessStrategy`: consistent naming for Union cases and arguments; rewrote xmldoc [#178](https://github.com/jet/equinox/pull/178) :pray: [@jgardella](https://github.com/jgardella)
 
 ### Removed
