@@ -10,7 +10,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Changed
 
-- `Equinox.DynamoStore`: Update `AWSSDK` dependencies to 4.x (knock-on effect of updating `FSharp.AWS.DynamoDB` dependency to `0.13.0-beta`) [#480](https://github.com/jet/equinox/pull/480) :pray: [njlr](https://github.com/njlr)
+- `Equinox.DynamoStore`: Update `AWSSDK` dependencies to 4.x (knock-on effect of updating `FSharp.AWS.DynamoDB` dependency to `0.13.0-beta`) [#480](https://github.com/jet/equinox/pull/480) :pray: [@njlr](https://github.com/njlr)
 
 ### Added
 
@@ -821,6 +821,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
 [Unreleased]: https://github.com/jet/equinox/compare/4.1.0...HEAD
+[4.1.1]: https://github.com/jet/equinox/compare/4.1.0...4.1.1
 [4.1.0]: https://github.com/jet/equinox/compare/4.0.4...4.1.0
 [4.0.4]: https://github.com/jet/equinox/compare/4.0.3...4.0.4
 [4.0.3]: https://github.com/jet/equinox/compare/4.0.2...4.0.3
