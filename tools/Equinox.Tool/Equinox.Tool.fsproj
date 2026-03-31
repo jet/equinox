@@ -1,7 +1,9 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
+    <!-- Inhibit complaints about net6.0 not being supported -->
+    <NoWarn>NETSDK1138;$(NoWarn)</NoWarn>
     <OutputType>Exe</OutputType>
 
     <PackageId>Equinox.Tool</PackageId>

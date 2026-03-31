@@ -100,8 +100,8 @@ type Startup() =
         Services.register(services, storeConfig, storeLog)
 
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-    static member Configure(app: IApplicationBuilder, env: IHostEnvironment) : unit =
-        if env.IsDevelopment() then app.UseDeveloperExceptionPage() |> ignore
+    static member Configure(app: WebApplication) : unit =
+        if app.Environment.IsDevelopment() then app.UseDeveloperExceptionPage() |> ignore
         else app.UseHsts().UseHttpsRedirection() |> ignore
 
         app

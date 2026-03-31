@@ -1,5 +1,5 @@
 #if LOCAL
-#I "bin/Debug/net6.0/"
+#I "bin/Debug/net10.0/"
 #r "System.Net.Http"
 #r "System.Runtime.Caching.dll"
 #r "Serilog.dll"

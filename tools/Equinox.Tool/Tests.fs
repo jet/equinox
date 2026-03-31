@@ -23,10 +23,11 @@ let rlipsum rlen =
     lipsum actualSize
 type TodoClient.Todo with
     static member Create(size) : TodoClient.Todo =
-        { id = 0; url = null; order = 0; title = rlipsum size; completed =  false }
-type TodoBackend.Events.Todo with
-    static member Create(size) : TodoBackend.Events.Todo =
-        { id = 0; order = 0; title = rlipsum size; completed =  false }
+        { id = 0; url = null; order = 0; title = rlipsum size; completed = false }
+module [<AutoOpen>] private TodoBackendExtensions = // different module to avoid 2x Todo extension types clashing
+    type TodoBackend.Events.Todo with
+        static member Create(size) : TodoBackend.Events.Todo =
+            { id = 0; order = 0; title = rlipsum size; completed = false }
 
 let mkSkuId () = Guid.NewGuid() |> SkuId
 

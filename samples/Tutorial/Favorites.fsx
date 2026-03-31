@@ -1,7 +1,7 @@
 #if LOCAL
 // Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
-#I "bin/Debug/net6.0/"
+#I "bin/Debug/net10.0/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Equinox.dll"

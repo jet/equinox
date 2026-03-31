@@ -1,9 +1,7 @@
 module Web.Program
 
 open Argu
-open Microsoft.AspNetCore
-open Microsoft.AspNetCore.Hosting
-open Microsoft.Extensions.DependencyInjection
+open Microsoft.AspNetCore.Builder
 open Microsoft.Extensions.Hosting
 open Serilog
 
@@ -13,12 +11,13 @@ let writeToStatsSinks (c: LoggerConfiguration) =
      .WriteTo.Sink(Equinox.EventStoreDb.Log.InternalMetrics.Stats.LogSink())
      .WriteTo.Sink(Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink())
 
-let createWebHostBuilder (args, parsed) : IWebHostBuilder =
-    WebHost
-        .CreateDefaultBuilder(args)
-        .ConfigureServices(fun services -> Startup.ConfigureServices(services, parsed))
-        .Configure(fun app -> Startup.Configure(app, app.ApplicationServices.GetService<IHostEnvironment>()))
-        .UseSerilog()
+let createWebHost (args: string[], parsed) : IHost =
+    let wab = WebApplication.CreateBuilder(args)
+    Startup.ConfigureServices(wab.Services, parsed)
+    wab.Host.UseSerilog() |> ignore
+    let wa = wab.Build()
+    Startup.Configure(wa)
+    wa
 
 [<EntryPoint>]
 let main argv =
@@ -36,7 +35,7 @@ let main argv =
             let maybeSeq = if p.Contains LocalSeq then Some "http://localhost:5341" else None
             match maybeSeq with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
         try Log.Logger <- c.CreateLogger()
-            createWebHostBuilder(argv, p).Build().Run()
+            createWebHost(argv, p).Run()
             0
         finally Log.CloseAndFlush()
     with :? ArguParseException as e -> eprintfn $"%s{e.Message}"; 1

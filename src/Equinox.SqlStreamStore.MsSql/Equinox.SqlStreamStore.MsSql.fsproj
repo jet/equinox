@@ -23,6 +23,7 @@
     <PackageReference Include="FSharp.Core" Version="6.0.7" ExcludeAssets="contentfiles" />
 
     <PackageReference Include="SqlStreamStore.MsSql" Version="1.2.0-beta.8" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="2.1.7" />
   </ItemGroup>
 
 </Project>

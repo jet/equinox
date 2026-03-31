@@ -1,4 +1,4 @@
-﻿// Example of using the FsCodec up/down conversion mechanism to access the underlying `Index` of the event in the stream
+// Example of using the FsCodec up/down conversion mechanism to access the underlying `Index` of the event in the stream
 //   in order to be able to query to obtain an as-at balance
 // For a more realistic and detailed example, see https://andrewcmeier.com/bi-temporal-event-sourcing
 
@@ -14,7 +14,7 @@
 #if LOCAL
 // Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
-#I "bin/Debug/net6.0/"
+#I "bin/Debug/net10.0/"
 #r "System.Runtime.Caching.dll"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
