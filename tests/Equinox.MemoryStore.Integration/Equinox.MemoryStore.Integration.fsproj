@@ -18,7 +18,7 @@
   <ItemGroup>
     <PackageReference Include="FsCheck.Xunit.v3" Version="3.3.2" />
     <PackageReference Include="unquote" Version="7.0.0" />
-    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.v3.mtp-v2" Version="3.2.2" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="7.0.0" />
   </ItemGroup>
 

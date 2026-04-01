@@ -28,8 +28,7 @@
   </Target>
 
   <Target Name="VSTest">
-    <!-- MTP exit code 8 = 'no tests executed' (all skipped); expected for integration tests when stores are unavailable -->
-    <Exec Command="dotnet test Equinox.sln $(Cfg) -- --ignore-exit-code 8" />
+    <Exec Command="dotnet test --solution Equinox.sln $(Cfg)" />
   </Target>
 
   <Target Name="Build" DependsOnTargets="VSTest;Pack">
