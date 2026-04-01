@@ -22,7 +22,7 @@ type LogCaptureBuffer() =
     member _.Clear () = captured.Clear()
     member _.ChooseCalls chooser = captured |> Seq.choose chooser |> List.ofSeq
 
-type TestOutput(testOutput: Xunit.Abstractions.ITestOutputHelper) =
+type TestOutput(testOutput: Xunit.ITestOutputHelper) =
 
     let write (m: string) =
         m.TrimEnd '\n' |> testOutput.WriteLine

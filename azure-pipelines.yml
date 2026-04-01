@@ -7,6 +7,7 @@ jobs:
   - script: dotnet test build.proj -v n
     displayName: dotnet test build.proj
     env:
+      CI: true
       EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
       EQUINOX_INTEGRATION_SKIP_COSMOS: true
   - task: PublishTestResults@2
@@ -30,6 +31,7 @@ jobs:
   - script: dotnet test build.proj -v n
     displayName: dotnet test build.proj
     env:
+      CI: true
       EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
       EQUINOX_INTEGRATION_SKIP_COSMOS: true
   - task: PublishTestResults@2
@@ -49,6 +51,7 @@ jobs:
   - script: dotnet test build.proj -v n
     displayName: dotnet test build.proj
     env:
+      CI: true
       EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
       EQUINOX_INTEGRATION_SKIP_COSMOS: true
   - task: PublishTestResults@2

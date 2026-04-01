@@ -1,37 +1,40 @@
 <Project>
 
   <PropertyGroup>
-    <Cfg>--configuration Release</Cfg>
+    <!-- CI sets CI=true; local builds default to Debug without trx logging -->
+    <Cfg Condition="'$(CI)' == 'true'">--configuration Release</Cfg>
+    <Cfg Condition="'$(CI)' != 'true'">--configuration Debug</Cfg>
 
     <PackOptions>/p:BUILD_ID=$(BUILD_ID) -o $(MSBuildThisFileDirectory)bin</PackOptions>
 
-    <TestOptions>--logger:trx</TestOptions>
+    <TestOptions Condition="'$(CI)' == 'true'">--logger:trx</TestOptions>
+    <TestOptions Condition="'$(CI)' != 'true'"></TestOptions>
   </PropertyGroup>
 
   <Target Name="Pack">
-    <Exec Command="dotnet pack src/Equinox $(Cfg) $(PackOptions)" />
-    <Exec Command="dotnet pack src/Equinox.Core $(Cfg) $(PackOptions)" />
-    <Exec Command="dotnet pack src/Equinox.CosmosStore $(Cfg) $(PackOptions)" />
-    <Exec Command="dotnet pack src/Equinox.CosmosStore.Prometheus $(Cfg) $(PackOptions)" />
-    <Exec Command="dotnet pack src/Equinox.DynamoStore $(Cfg) $(PackOptions)" />
-    <Exec Command="dotnet pack src/Equinox.DynamoStore.Prometheus $(Cfg) $(PackOptions)" />
-    <Exec Command="dotnet pack src/Equinox.EventStore $(Cfg) $(PackOptions)" />
-    <Exec Command="dotnet pack src/Equinox.EventStoreDb $(Cfg) $(PackOptions)" />
-    <Exec Command="dotnet pack src/Equinox.MessageDb $(Cfg) $(PackOptions)" />
-    <Exec Command="dotnet pack src/Equinox.MemoryStore $(Cfg) $(PackOptions)" />
-    <Exec Command="dotnet pack src/Equinox.SqlStreamStore $(Cfg) $(PackOptions)" />
-    <Exec Command="dotnet pack src/Equinox.SqlStreamStore.MsSql $(Cfg) $(PackOptions)" />
-    <Exec Command="dotnet pack src/Equinox.SqlStreamStore.MySql $(Cfg) $(PackOptions)" />
-    <Exec Command="dotnet pack src/Equinox.SqlStreamStore.Postgres $(Cfg) $(PackOptions)" />
-    <Exec Command="dotnet pack tools/Equinox.Tools.TestHarness $(Cfg) $(PackOptions)" />
-    <Exec Command="dotnet pack tools/Equinox.Tool $(Cfg) $(PackOptions) /p:PackAsTool=true" />
+    <Exec Command="dotnet pack src/Equinox --configuration Release $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.Core --configuration Release $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.CosmosStore --configuration Release $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.CosmosStore.Prometheus --configuration Release $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.DynamoStore --configuration Release $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.DynamoStore.Prometheus --configuration Release $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.EventStore --configuration Release $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.EventStoreDb --configuration Release $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.MessageDb --configuration Release $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.MemoryStore --configuration Release $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.SqlStreamStore --configuration Release $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.SqlStreamStore.MsSql --configuration Release $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.SqlStreamStore.MySql --configuration Release $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.SqlStreamStore.Postgres --configuration Release $(PackOptions)" />
+    <Exec Command="dotnet pack tools/Equinox.Tools.TestHarness --configuration Release $(PackOptions)" />
+    <Exec Command="dotnet pack tools/Equinox.Tool --configuration Release $(PackOptions) /p:PackAsTool=true" />
   </Target>
 
-  <Target Name="VSTest">
+  <Target Name="Test">
     <Exec Command="dotnet test Equinox.sln $(Cfg) $(TestOptions)" />
   </Target>
 
-  <Target Name="Build" DependsOnTargets="VSTest;Pack">
+  <Target Name="Build" DependsOnTargets="Test;Pack">
     <Exec Command="dotnet build samples/Tutorial $(Cfg)" />
   </Target>
 

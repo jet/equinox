@@ -733,7 +733,11 @@ A key facility of this repo is being able to run load tests, either in process a
 
 Please note the [QuickStart](#quickstart) is probably the best way to gain an overview - these instructions are intended to illustrated various facilities of the build script for people making changes.
 
-### build and run
+### build and run tests locally
+
+Run tests in Debug configuration (default for local builds):
+
+    dotnet test build.proj
 
 Run, including running the tests that assume you've got a local EventStore and pointers to a CosmosDB database and container prepared (see [PROVISIONING](#provisioning)):
 
