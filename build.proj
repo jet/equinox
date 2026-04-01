@@ -28,7 +28,7 @@
   </Target>
 
   <Target Name="VSTest">
-    <Exec Command="dotnet test --solution Equinox.sln $(Cfg)" />
+    <Exec Command="dotnet test --solution Equinox.sln $(Cfg) -- --report-trx" />
   </Target>
 
   <Target Name="Build" DependsOnTargets="VSTest;Pack">
