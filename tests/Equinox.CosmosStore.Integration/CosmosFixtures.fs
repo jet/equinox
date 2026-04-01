@@ -46,8 +46,8 @@ type DynamoTablesFixture() =
             DynamoStoreContext.Establish(client, tableName, archiveTableName = archiveTableName, mode = CreateIfNotExists throughput)
             |> Async.Ignore<DynamoStoreContext>
             |> Async.StartImmediateAsTask
-            |> FSharp.Control.Task.ignore
-        member _.DisposeAsync() = task { () }
+            |> System.Threading.Tasks.ValueTask
+        member _.DisposeAsync() = System.Threading.Tasks.ValueTask()
 
 [<Xunit.CollectionDefinition "DocStore">]
 type DocStoreCollection() =

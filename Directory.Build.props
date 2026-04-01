@@ -16,6 +16,8 @@
          Tools and Tests flip this to false in order to ensure we validate with the recent one embdedded in the SDK-->
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Enable dotnet test to discover and run xunit v3 MTP-based test projects -->
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
   </PropertyGroup>
   <ItemGroup>
     <!-- SourceLink etc -->

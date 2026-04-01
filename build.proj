@@ -1,14 +1,11 @@
 <Project>
 
   <PropertyGroup>
-    <!-- CI sets CI=true; local builds default to Debug without trx logging -->
+    <!-- CI sets CI=true; local builds default to Debug -->
     <Cfg Condition="'$(CI)' == 'true'">--configuration Release</Cfg>
     <Cfg Condition="'$(CI)' != 'true'">--configuration Debug</Cfg>
 
     <PackOptions>/p:BUILD_ID=$(BUILD_ID) -o $(MSBuildThisFileDirectory)bin</PackOptions>
-
-    <TestOptions Condition="'$(CI)' == 'true'">--logger:trx</TestOptions>
-    <TestOptions Condition="'$(CI)' != 'true'"></TestOptions>
   </PropertyGroup>
 
   <Target Name="Pack">
@@ -30,11 +27,11 @@
     <Exec Command="dotnet pack tools/Equinox.Tool --configuration Release $(PackOptions) /p:PackAsTool=true" />
   </Target>
 
-  <Target Name="Test">
-    <Exec Command="dotnet test Equinox.sln $(Cfg) $(TestOptions)" />
+  <Target Name="VSTest">
+    <Exec Command="dotnet test Equinox.sln $(Cfg) -- --ignore-exit-code 8" />
   </Target>
 
-  <Target Name="Build" DependsOnTargets="Test;Pack">
+  <Target Name="Build" DependsOnTargets="VSTest;Pack">
     <Exec Command="dotnet build samples/Tutorial $(Cfg)" />
   </Target>
 

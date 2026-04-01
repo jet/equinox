@@ -10,11 +10,6 @@ jobs:
       CI: true
       EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
       EQUINOX_INTEGRATION_SKIP_COSMOS: true
-  - task: PublishTestResults@2
-    inputs:
-      testResultsFormat: 'VSTest'
-      testResultsFiles: 'tests/**/*.trx'
-    condition: always()
   - script: dotnet pack build.proj
     displayName: dotnet pack build.proj
     env:
@@ -34,11 +29,6 @@ jobs:
       CI: true
       EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
       EQUINOX_INTEGRATION_SKIP_COSMOS: true
-  - task: PublishTestResults@2
-    inputs:
-      testResultsFormat: 'VSTest'
-      testResultsFiles: 'tests/**/*.trx'
-    condition: always()
   - script: dotnet pack build.proj
     displayName: dotnet pack
     env:
@@ -54,11 +44,6 @@ jobs:
       CI: true
       EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
       EQUINOX_INTEGRATION_SKIP_COSMOS: true
-  - task: PublishTestResults@2
-    inputs:
-      testResultsFormat: 'VSTest'
-      testResultsFiles: 'tests/**/*.trx'
-    condition: always()
   - script: dotnet pack build.proj
     displayName: dotnet pack
     env:
