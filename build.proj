@@ -28,7 +28,11 @@
   </Target>
 
   <Target Name="Test">
-    <Exec Command="dotnet test --solution ./Equinox.sln $(Cfg) $(TestOptions)" />
+    <!-- Exit code 8 = all tests skipped in an assembly; expected when integration skip env vars are set -->
+    <Exec Command="dotnet test --solution ./Equinox.sln $(Cfg) $(TestOptions)" IgnoreExitCode="true">
+      <Output TaskParameter="ExitCode" PropertyName="TestExitCode" />
+    </Exec>
+    <Error Condition="'$(TestExitCode)' != '0' AND '$(TestExitCode)' != '8'" Text="dotnet test failed with exit code $(TestExitCode)" />
   </Target>
 
   <Target Name="Build" DependsOnTargets="Test;Pack">
