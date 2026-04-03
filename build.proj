@@ -5,7 +5,8 @@
 
     <PackOptions>/p:BUILD_ID=$(BUILD_ID) -o $(MSBuildThisFileDirectory)bin</PackOptions>
 
-    <TestOptions>-- --report-trx</TestOptions>
+    <TestResultsDirectory Condition="'$(CI)' == 'true'">--results-directory tests/TestResults</TestResultsDirectory>
+    <TestOptions>$(TestResultsDirectory) --report-xunit-trx</TestOptions>
   </PropertyGroup>
 
   <Target Name="Pack">
