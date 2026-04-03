@@ -1,11 +1,19 @@
 name: $(Rev:r)
 jobs:
-- job: Windows
+- job: Build
+  strategy:
+    matrix:
+      Windows:
+        vmImage: 'windows-latest'
+      Linux:
+        vmImage: 'ubuntu-latest'
+      MacOS:
+        vmImage: 'macOS-latest'
   pool:
-    vmImage: 'windows-latest'
+    vmImage: $(vmImage)
   steps:
-  - script: dotnet test build.proj -v n
-    displayName: dotnet test build.proj
+  - script: dotnet test --solution ./Equinox.sln --configuration Release --report-xunit-trx -v n
+    displayName: dotnet test --solution ./Equinox.sln
     env:
       CI: true
       EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
@@ -23,43 +31,4 @@ jobs:
     inputs:
       pathtoPublish: 'bin'
       artifactName: 'nupkgs'
-
-- job: Linux
-  pool:
-    vmImage: 'ubuntu-latest'
-  steps:
-  - script: dotnet test build.proj -v n
-    displayName: dotnet test build.proj
-    env:
-      CI: true
-      EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
-      EQUINOX_INTEGRATION_SKIP_COSMOS: true
-  - task: PublishTestResults@2
-    inputs:
-      testResultsFormat: 'VSTest'
-      testResultsFiles: 'tests/**/*.trx'
-    condition: always()
-  - script: dotnet pack build.proj
-    displayName: dotnet pack
-    env:
-      BUILD_ID: $(BUILD.BUILDNUMBER)
-
-- job: MacOS
-  pool:
-    vmImage: 'macOS-latest'
-  steps:
-  - script: dotnet test build.proj -v n
-    displayName: dotnet test build.proj
-    env:
-      CI: true
-      EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
-      EQUINOX_INTEGRATION_SKIP_COSMOS: true
-  - task: PublishTestResults@2
-    inputs:
-      testResultsFormat: 'VSTest'
-      testResultsFiles: 'tests/**/*.trx'
-    condition: always()
-  - script: dotnet pack build.proj
-    displayName: dotnet pack
-    env:
-      BUILD_ID: $(BUILD.BUILDNUMBER)
+    condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'))

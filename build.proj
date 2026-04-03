@@ -28,7 +28,7 @@
   </Target>
 
   <Target Name="Test">
-    <Exec Command="dotnet test --solution Equinox.sln $(Cfg) $(TestOptions)" />
+    <Exec Command="dotnet test --solution ./Equinox.sln $(Cfg) $(TestOptions)" />
   </Target>
 
   <Target Name="Build" DependsOnTargets="Test;Pack">

@@ -735,6 +735,10 @@ Please note the [QuickStart](#quickstart) is probably the best way to gain an ov
 
 ### build and run tests locally
 
+Verify the integrity of the repo with respect to testing and packing:
+
+    dotnet build build.proj
+
 Run tests in Debug configuration (default for local builds):
 
     dotnet test --solution ./Equinox.sln
