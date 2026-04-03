@@ -4,8 +4,8 @@ jobs:
   pool:
     vmImage: 'windows-latest'
   steps:
-  - script: dotnet msbuild build.proj -t:VSTest -v:n
-    displayName: dotnet msbuild build.proj -t:VSTest
+  - script: dotnet test build.proj -v n
+    displayName: dotnet test build.proj
     env:
       CI: true
       EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
@@ -28,8 +28,8 @@ jobs:
   pool:
     vmImage: 'ubuntu-latest'
   steps:
-  - script: dotnet msbuild build.proj -t:VSTest -v:n
-    displayName: dotnet msbuild build.proj -t:VSTest
+  - script: dotnet test build.proj -v n
+    displayName: dotnet test build.proj
     env:
       CI: true
       EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
@@ -48,8 +48,8 @@ jobs:
   pool:
     vmImage: 'macOS-latest'
   steps:
-  - script: dotnet msbuild build.proj -t:VSTest -v:n
-    displayName: dotnet msbuild build.proj -t:VSTest
+  - script: dotnet test build.proj -v n
+    displayName: dotnet test build.proj
     env:
       CI: true
       EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
