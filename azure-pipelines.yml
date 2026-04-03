@@ -13,7 +13,7 @@ jobs:
   - task: PublishTestResults@2
     inputs:
       testResultsFormat: 'VSTest'
-      testResultsFiles: '**/TestResults/**/*.trx'
+      testResultsFiles: 'tests/**/*.trx'
     condition: always()
   - script: dotnet pack build.proj
     displayName: dotnet pack build.proj
@@ -37,7 +37,7 @@ jobs:
   - task: PublishTestResults@2
     inputs:
       testResultsFormat: 'VSTest'
-      testResultsFiles: '**/TestResults/**/*.trx'
+      testResultsFiles: 'tests/**/*.trx'
     condition: always()
   - script: dotnet pack build.proj
     displayName: dotnet pack
@@ -57,7 +57,7 @@ jobs:
   - task: PublishTestResults@2
     inputs:
       testResultsFormat: 'VSTest'
-      testResultsFiles: '**/TestResults/**/*.trx'
+      testResultsFiles: 'tests/**/*.trx'
     condition: always()
   - script: dotnet pack build.proj
     displayName: dotnet pack
