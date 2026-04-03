@@ -737,7 +737,7 @@ Please note the [QuickStart](#quickstart) is probably the best way to gain an ov
 
 Run tests in Debug configuration (default for local builds):
 
-    dotnet msbuild build.proj -t:VSTest
+    dotnet test --solution ./Equinox.sln
 
 Run, including running the tests that assume you've got a local EventStore and pointers to a CosmosDB database and container prepared (see [PROVISIONING](#provisioning)):
 

@@ -1,12 +1,11 @@
 <Project>
 
   <PropertyGroup>
-    <Cfg Condition="'$(CI)' == 'true'">--configuration Release</Cfg>
+    <Cfg Condition=" '$(CI)' == 'true' ">--configuration Release</Cfg>
 
     <PackOptions>/p:BUILD_ID=$(BUILD_ID) -o $(MSBuildThisFileDirectory)bin</PackOptions>
 
-    <TestResultsDirectory Condition="'$(CI)' == 'true'">--results-directory tests/TestResults</TestResultsDirectory>
-    <TestOptions>$(TestResultsDirectory) --report-xunit-trx</TestOptions>
+    <TestOptions Condition=" '$(CI)' == 'true' ">--report-xunit-trx</TestOptions>
   </PropertyGroup>
 
   <Target Name="Pack">
@@ -28,11 +27,11 @@
     <Exec Command="dotnet pack tools/Equinox.Tool $(Cfg) $(PackOptions) /p:PackAsTool=true" />
   </Target>
 
-  <Target Name="VSTest">
+  <Target Name="Test">
     <Exec Command="dotnet test --solution Equinox.sln $(Cfg) $(TestOptions)" />
   </Target>
 
-  <Target Name="Build" DependsOnTargets="VSTest;Pack">
+  <Target Name="Build" DependsOnTargets="Test;Pack">
     <Exec Command="dotnet build samples/Tutorial $(Cfg)" />
   </Target>
 
