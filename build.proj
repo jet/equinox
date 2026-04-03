@@ -1,9 +1,7 @@
 <Project>
 
   <PropertyGroup>
-    <!-- CI sets CI=true; local builds default to Debug -->
     <Cfg Condition="'$(CI)' == 'true'">--configuration Release</Cfg>
-    <Cfg Condition="'$(CI)' != 'true'">--configuration Debug</Cfg>
 
     <PackOptions>/p:BUILD_ID=$(BUILD_ID) -o $(MSBuildThisFileDirectory)bin</PackOptions>
 
