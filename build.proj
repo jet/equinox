@@ -6,6 +6,8 @@
     <Cfg Condition="'$(CI)' != 'true'">--configuration Debug</Cfg>
 
     <PackOptions>/p:BUILD_ID=$(BUILD_ID) -o $(MSBuildThisFileDirectory)bin</PackOptions>
+
+    <TestOptions>-- --report-trx</TestOptions>
   </PropertyGroup>
 
   <Target Name="Pack">
@@ -28,7 +30,7 @@
   </Target>
 
   <Target Name="VSTest">
-    <Exec Command="dotnet test --solution Equinox.sln $(Cfg) -- --report-trx" />
+    <Exec Command="dotnet test --solution Equinox.sln $(Cfg) $(TestOptions)" />
   </Target>
 
   <Target Name="Build" DependsOnTargets="VSTest;Pack">
