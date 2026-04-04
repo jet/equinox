@@ -5,7 +5,8 @@
 
     <PackOptions>/p:BUILD_ID=$(BUILD_ID) -o $(MSBuildThisFileDirectory)bin</PackOptions>
 
-    <TestOptions Condition=" '$(CI)' == 'true' ">--report-xunit-trx</TestOptions>
+    <!-- exit code 8 signifies one or more assemblies did not have any non-skipped tests -->
+    <TestOptions Condition=" '$(CI)' == 'true' ">--report-xunit-trx --ignore-exit-code 8</TestOptions>
   </PropertyGroup>
 
   <Target Name="Pack">
