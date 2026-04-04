@@ -23,19 +23,23 @@ let [<Fact>] ``LazyTask.Empty is a true singleton, does not allocate`` () =
 [<Theory; InlineData false; InlineData true>]
 let ``LazyTask TryAwaitValid fault handling`` immediately = async {
     let expected = if immediately then "bad beginning" else "bad ending"
+    let pause = System.Threading.Tasks.TaskCompletionSource()
     let cell = LazyTask(fun () -> task {  if immediately then failwith "bad beginning"
-                                          do! Task.Delay 10
+                                          do! pause.Task
                                           failwith "bad ending" })
     let res = cell.TryAwaitValid()
-    // We've not awaited it yet, so nothing bad yet
+    // We've either kicked off the work and triggered a 'bad beginning' (return ValueNone)
+    // Or we're looking at a task that cannot yet have reached the 'bad ending'
     test <@ not res.IsFaulted @>
+    // For a 'bad ending', unpause the execution and let it throw
+    pause.SetResult()
     let! res = res |> Async.AwaitTaskCorrect |> Async.Catch
     // Depending on whether there's a continuation in the task, we'll see different outcomes
     if immediately then Choice1Of2 ValueNone =! res
     else test <@ match res with Choice2Of2 e -> e.Message = expected | _ -> false @>
 
     let! res2 = cell.TryAwaitValid() |> Async.AwaitTaskCorrect
-    // next attempt does not propagate the fault
+    // next attempt does not propagate the fault, even for the 'bad ending'
     res2 =! ValueOption.None }
 
 [<Theory; InlineData false; InlineData true>]

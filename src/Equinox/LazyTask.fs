@@ -19,11 +19,11 @@ type
         if t.Status <> System.Threading.Tasks.TaskStatus.RanToCompletion then ValueNone
         else ValueSome t.Result
 
-    /// Used to rule out values where the computation yielded an exception or the result has now expired
+    /// Used to rule out values where the computation yielded an exception
     member _.TryAwaitValid() = task {
         let t = workflow.Value
 
-        // Determines if the last attempt completed, but failed, or was cancelled (e.g. due to timeout); For TMI see https://stackoverflow.com/a/33946166/11635
+        // Determines if the last attempt completed, but failed, or was canceled (e.g. due to timeout); For TMI see https://stackoverflow.com/a/33946166/11635
         if t.IsFaulted || t.IsCanceled then return ValueNone
         else
             let! res = t
