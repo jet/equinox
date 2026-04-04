@@ -1,4 +1,4 @@
-<Project>
+<Project DefaultTargets="Build">
 
   <PropertyGroup>
     <Cfg Condition=" '$(CI)' == 'true' ">--configuration Release</Cfg>
