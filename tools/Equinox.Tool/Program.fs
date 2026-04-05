@@ -1,6 +1,6 @@
 ﻿module Equinox.Tool.Program
 
-#if DEBUG // as of V8, compiling in Debug fails but release succeeds
+#if DEBUG // as of V10, compiling in Debug fails but release succeeds
 #nowarn "3511"
 #endif
 

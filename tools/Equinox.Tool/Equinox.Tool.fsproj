@@ -2,7 +2,9 @@
 
   <PropertyGroup>
     <!-- TargetFramework*S* is workaround for https://github.com/dotnet/sdk/issues/2114#issuecomment-380640781-->
-    <TargetFrameworks>net8.0</TargetFrameworks>
+    <TargetFrameworks>net6.0</TargetFrameworks>
+    <!-- Suppress .NET 6 out of support warning -->
+    <NoWarn>NETSDK1138;$(NoWarn)</NoWarn>
     <!-- Allow to run on newer SDKs -->
     <RollForward>Major</RollForward>
     <OutputType>Exe</OutputType>
