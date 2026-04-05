@@ -10,7 +10,6 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".project", ".project", "{7E3A7020-AE75-4513-B81A-57FD3E0D0D84}"
 	ProjectSection(SolutionItems) = preProject
 		azure-pipelines.yml = azure-pipelines.yml
-		build.proj = build.proj
 		build.ps1 = build.ps1
 		CHANGELOG.md = CHANGELOG.md
 		CONTRIBUTING.md = CONTRIBUTING.md
@@ -108,7 +107,7 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.MessageDb.Integrati
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.Core.Tests", "tests\Equinox.Core.Tests\Equinox.Core.Tests.fsproj", "{FB376808-7B32-4724-98BE-D9458EB0F68B}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.Tests", "src\Equinox.Tests\Equinox.Tests.fsproj", "{D8677ABB-1D7C-4FC3-ABF9-5A49AF377372}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.Tests", "tests\Equinox.Tests\Equinox.Tests.fsproj", "{D8677ABB-1D7C-4FC3-ABF9-5A49AF377372}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

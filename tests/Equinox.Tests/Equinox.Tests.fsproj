@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <OutputType>Exe</OutputType>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Compile Include="..\..\src\Equinox\Infrastructure.fs" />
+        <Compile Include="CachingTests.fs" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="unquote" Version="6.1.0" />
+        <PackageReference Include="xunit.v3.mtp-v2" Version="3.2.2" />
+    </ItemGroup>
+</Project>

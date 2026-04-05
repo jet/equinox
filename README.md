@@ -733,7 +733,15 @@ A key facility of this repo is being able to run load tests, either in process a
 
 Please note the [QuickStart](#quickstart) is probably the best way to gain an overview - these instructions are intended to illustrated various facilities of the build script for people making changes.
 
-### build and run
+### build and run tests locally
+
+Verify the integrity of the repo with respect to testing and packing:
+
+    dotnet build
+
+Run tests in Debug configuration (default for local builds):
+
+    dotnet test
 
 Run, including running the tests that assume you've got a local EventStore and pointers to a CosmosDB database and container prepared (see [PROVISIONING](#provisioning)):
 
@@ -742,10 +750,6 @@ Run, including running the tests that assume you've got a local EventStore and p
 ### build, skipping tests that require a Store instance
 
     ./build -s
-
-### build, skipping all tests
-
-    dotnet pack build.proj
 
 ### build, skip EventStore tests
 
@@ -756,8 +760,6 @@ Run, including running the tests that assume you've got a local EventStore and p
     ./build -se -scp
 
 ### Run EventStore benchmark on .NET Core (when provisioned)
-
-At present, .NET Core seems to show comparable perf under normal load, but becomes very unpredictable under load. The following benchmark should produce pretty consistent levels of reads and writes, and can be used as a baseline for investigation:
 
     & dotnet run -c Release --project tools/Equinox.Tool -- loadtest -t saveforlater -f 1000 -d 5 -C -U es
 

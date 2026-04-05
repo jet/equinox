@@ -1,8 +1,13 @@
 <Project>
-  <Target Name="ComputeFileVersion" AfterTargets="MinVer">
-    <PropertyGroup>
-      <BUILD_ID Condition="'$(BUILD_ID)' == ''">0</BUILD_ID>
-      <FileVersion>$(MinVerMajor).$(MinVerMinor).$(MinVerPatch).$(BUILD_ID)</FileVersion>
-    </PropertyGroup>
-  </Target>
+    <Target Name="ComputeFileVersion" AfterTargets="MinVer">
+        <PropertyGroup>
+            <BUILD_ID Condition="'$(BUILD_ID)' == ''">0</BUILD_ID>
+            <FileVersion>$(MinVerMajor).$(MinVerMinor).$(MinVerPatch).$(BUILD_ID)</FileVersion>
+        </PropertyGroup>
+    </Target>
+    <Target Name="ComputeFileVersion" BeforeTargets="Build">
+        <PropertyGroup>
+            <GeneratePackageOnBuild Condition=" '$(CI)' == 'true' and '$(IsPackable)' == 'true' ">true</GeneratePackageOnBuild>
+        </PropertyGroup>
+    </Target>
 </Project>

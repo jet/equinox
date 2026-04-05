@@ -61,7 +61,7 @@ let [<Fact>] ``NoCaching strategy does no wrapping`` () =
 type Tests() =
 
     let cache = Equinox.Cache("tests", 1)
-    let strategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 10)
+    let strategy = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 10L)
     let cat = SpyCategory()
     let sut = Equinox.Core.Caching.apply isStale strategy cat
     let sn = Guid.NewGuid() |> string
@@ -112,7 +112,7 @@ type Tests() =
         test <@ (6, 1, 5) = (state, cat.Loads, cat.Reloads) @> }
 
     let [<Fact>] ``requireLoad does not unify loads``  () = task {
-        cat.Delay <- TimeSpan.FromMilliseconds 20
+        cat.Delay <- TimeSpan.FromMilliseconds 20L
         let t1 = requireLoad ()
         do! Task.Delay 10
         test <@ (1, 0) = (cat.Loads, cat.Reloads) @>
@@ -122,7 +122,7 @@ type Tests() =
         let! struct (_token, state) = t1
         test <@ 1 = state && (1, 1) = (cat.Loads, cat.Reloads) @> }
 
-    let allowStale toleranceMs = load sn (TimeSpan.FromMilliseconds toleranceMs) sut
+    let allowStale (toleranceMs: int64) = load sn (TimeSpan.FromMilliseconds toleranceMs) sut
 
     // TODO: the tests below that involve triggering of expiration and/or ensuring overlapping requests are in flight are very naive.
     // 1. TimeProvider APIs can be used ot shift time deterministically
@@ -130,7 +130,7 @@ type Tests() =
     // see also https://github.com/jet/equinox/pull/452#issuecomment-2048647249
 
     let [<Fact>] ``allowStale unifies compatible concurrent loads`` () = task {
-        cat.Delay <- TimeSpan.FromMilliseconds 80 // Ensure it's still in progress when our Delay is over
+        cat.Delay <- TimeSpan.FromMilliseconds 80L // Ensure it's still in progress when our Delay is over
         let t1 = allowStale 1
         do! Task.Delay 50 // Allow it time to definitely have started
         test <@ (1, 0) = (cat.Loads, cat.Reloads) @>
@@ -140,7 +140,7 @@ type Tests() =
         test <@ (1, 1, 0) = (state, cat.Loads, cat.Reloads) @> }
 
     let [<Fact>] ``allowStale handles concurrent incompatible loads correctly`` () = task {
-        cat.Delay <- TimeSpan.FromMilliseconds 50
+        cat.Delay <- TimeSpan.FromMilliseconds 50L
         let t1 = allowStale 1
         do! Task.Delay 20 // Give the load a chance to start
         let t2 = allowStale 1 // any cached value should be at least 50 old (and the overlapping call should not have started 45 late)
@@ -150,7 +150,7 @@ type Tests() =
         test <@ (1, 2) = (state, cat.Loads + cat.Reloads) @> }
 
     let [<Fact>] ``allowStale handles overlapped incompatible loads correctly`` () = task {
-        cat.Delay <- TimeSpan.FromMilliseconds 50
+        cat.Delay <- TimeSpan.FromMilliseconds 50L
         let t1 = allowStale 1
         do! Task.Delay 40 // Wait till it should definitely have kicked off
         test <@ (1, 0) = (cat.Loads, cat.Reloads) @>
@@ -172,10 +172,10 @@ type Tests() =
         let! struct (_token, state) = allowStale 40 // Triggers reload as delay of 50 above has rendered entry stale
         test <@ (2, 1, 1) = (state, cat.Loads, cat.Reloads) @>
 
-        cat.Delay <- TimeSpan.FromMilliseconds 50
+        cat.Delay <- TimeSpan.FromMilliseconds 50L
         let load1 = requireLoad ()
         do! Task.Delay 20 // Wait for the load1 read enter a delay state (of 50)
-        cat.Delay <- TimeSpan.FromMilliseconds 90 // Next read picks up the longer delay
+        cat.Delay <- TimeSpan.FromMilliseconds 90L // Next read picks up the longer delay
         // These reads start after the first read so replace the older value in the cache
         let load2 = allowStale 1 // NB this read overlaps with load1 task, ReadThrough should coalesce with next ...
         let load3 = allowStale 10 // ... should wind up internally sharing with load2 (despite taking 80, it's valid if it starts within 10)
@@ -186,7 +186,7 @@ type Tests() =
         // NOTE While 90 should be fine in next statement, it's not fine on a cold CI rig, don't adjust!
         let! struct (_token, state) = allowStale 250 // Delay of 90 overlapped with delay of 50+10 should not have expired the entry (was 200)
         test <@ (4, 1, 3) = (state, cat.Loads, cat.Reloads) @> // The newer cache entry won
-        cat.Delay <- TimeSpan.FromMilliseconds 10 // Reduce the delay, but we do want to overlap a write
+        cat.Delay <- TimeSpan.FromMilliseconds 10L // Reduce the delay, but we do want to overlap a write
         let t4 = allowStale 300 // Delay of 75 in load2/load3 should not have aged the read result beyond 200
         do! Task.Delay 10 // ensure delay has been picked up, before...
         cat.Delay <- TimeSpan.Zero // no further delays required for the rest of the tests
