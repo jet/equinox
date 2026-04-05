@@ -11,18 +11,22 @@ jobs:
         vmImage: 'macOS-latest'
   pool:
     vmImage: $(vmImage)
+  variables:  
+    BUILD_ID: $(BUILD.BUILDNUMBER)
+    CI: true
+    EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
+    EQUINOX_INTEGRATION_SKIP_COSMOS: true
   steps:
-  - script: dotnet build build.proj
-    displayName: dotnet build build.proj
-    env:
-      BUILD_ID: $(BUILD.BUILDNUMBER)
-      CI: true
-      EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
-      EQUINOX_INTEGRATION_SKIP_COSMOS: true
+  # exit code 8 signifies one or more assemblies did not have any non-skipped tests
+  # CI env does not provide docker-compose simulated stores, which means most store tests are skipped
+  - script: dotnet test -c Release --report-xunit-trx --ignore-exit-code 8 --results-directory tests/trx
+    displayName: dotnet test
+  - script: dotnet build -c Release
+    displayName: dotnet build
   - task: PublishTestResults@2
     inputs:
       testResultsFormat: 'VSTest'
-      testResultsFiles: 'tests/**/*.trx'
+      testResultsFiles: 'tests/trx/*.trx'
     condition: always()
   - task: PublishBuildArtifacts@1
     inputs:

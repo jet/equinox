@@ -37,7 +37,7 @@ if ($skipCosmos) {
 $env:EQUINOX_INTEGRATION_SKIP_COSMOS=[string]$skipCosmos
 
 warn "RUNNING: dotnet msbuild $args"
-. dotnet msbuild build.proj @args
+. dotnet build @args
 
 if( $LASTEXITCODE -ne 0) {
 	warn "open msbuild.log for error info or rebuild with -v n/d/diag for more detail, or open msbuild.binlog using https://github.com/KirillOsenkov/MSBuildStructuredLog/releases/download/v2.0.40/MSBuildStructuredLogSetup.exe"

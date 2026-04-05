@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
+    <PackAsTool>true</PackAsTool>
     <!-- Inhibit complaints about net6.0 not being supported -->
     <NoWarn>NETSDK1138;$(NoWarn)</NoWarn>
     <OutputType>Exe</OutputType>
