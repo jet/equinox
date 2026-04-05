@@ -21,15 +21,15 @@ jobs:
   # CI env does not provide docker-compose simulated stores, which means most store tests are skipped
   - script: dotnet test -c Release --report-xunit-trx --ignore-exit-code 8 --results-directory tests/trx
     displayName: dotnet test
-  - script: dotnet build -c Release
-    displayName: dotnet build
   - task: PublishTestResults@2
     inputs:
       testResultsFormat: 'VSTest'
       testResultsFiles: 'tests/trx/*.trx'
     condition: always()
+  - script: dotnet build -c Release
+    displayName: dotnet build
   - task: PublishBuildArtifacts@1
     inputs:
-      pathToPublish: 'bin'
-      artifactName: 'nupkgs'
+      pathToPublish: 'artifacts/nupkg'
+      artifactName: 'nupkg'
     condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'))

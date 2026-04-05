@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <!-- TargetFramework*S* is workaround for https://github.com/dotnet/sdk/issues/2114#issuecomment-380640781-->
+    <TargetFrameworks>net8.0</TargetFrameworks>
     <!-- Allow to run on newer SDKs -->
     <RollForward>Major</RollForward>
     <OutputType>Exe</OutputType>
