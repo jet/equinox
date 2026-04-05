@@ -18,7 +18,6 @@
 
     <!-- We want to opt in to publishing nugets per library, but only when CI=true --> 
     <IsPackable>false</IsPackable>
-    <GeneratePackageOnBuild Condition=" '$(CI)' == 'true' and '$(IsPackable)' == 'true' ">true</GeneratePackageOnBuild>
     <PackageOutputDir>$(MSBuildThisFileDirectory)bin</PackageOutputDir>
     <GenerateDocumentationFile Condition=" '$(CI)' == 'true' and '$(IsPackable)' == 'true' ">true</GenerateDocumentationFile>
   </PropertyGroup>
