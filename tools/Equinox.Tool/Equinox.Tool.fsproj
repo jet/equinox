@@ -8,9 +8,8 @@
     <RollForward>Major</RollForward>
     <OutputType>Exe</OutputType>
 
-    <PackageId>Equinox.Tool</PackageId>
     <PackAsTool>true</PackAsTool>
-    <AssemblyName>eqx</AssemblyName>
+    <ToolCommandName>eqx</ToolCommandName>
   </PropertyGroup>
 
   <ItemGroup>
