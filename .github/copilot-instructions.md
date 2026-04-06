@@ -49,9 +49,9 @@ Related repositories:
   dotnet test -c Release --report-xunit-trx --ignore-exit-code 8 --results-directory tests/trx
   ```
   Exit code 8 means all tests in an assembly were skipped (expected in CI without Docker stores).
-- **Build + test via MSBuild project**:
+- **Repository build**:
   ```sh
-  dotnet build build.proj
+  dotnet build -c Release
   ```
 - Integration test skip flags (set to `true` to skip):
   - `EQUINOX_INTEGRATION_SKIP_EVENTSTORE`
