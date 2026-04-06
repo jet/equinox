@@ -16,7 +16,7 @@ Performs code review on pull requests, focusing on correctness, style, and adher
 - Check that new dependencies are truly necessary; this project intentionally minimizes its dependency footprint.
 - Verify tests are not removed or weakened without justification.
 - For integration tests, ensure appropriate skip flags (`EQUINOX_INTEGRATION_SKIP_EVENTSTORE`, `EQUINOX_INTEGRATION_SKIP_COSMOS`) are respected.
-- CI-only pack behavior is enabled when either `CI=true` or Azure Pipelines sets `TF_BUILD`; packaged projects under `src/` and `tools/` opt into documentation generation and package validation from their local `Directory.Build.props`.
+- CI-only pack behavior is enabled when either `CI=true`; packaged projects under `src/` and `tools/` opt into documentation generation and package validation from their local `Directory.Build.props`.
 - Build: `dotnet build -c Release`
 - Test: `dotnet test -c Release --report-xunit-trx --ignore-exit-code 8 --results-directory tests/trx`
   - Exit code 8 is expected when store-dependent test assemblies have all tests skipped.
