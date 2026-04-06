@@ -8,7 +8,6 @@
     <Target Name="ComputeFileVersion" BeforeTargets="Build">
         <PropertyGroup>
             <GeneratePackageOnBuild Condition=" '$(CI)' == 'true' and '$(IsPackable)' == 'true' ">true</GeneratePackageOnBuild>
-            <EnablePackageValidation Condition=" '$(CI)' == 'true' and '$(IsPackable)' == 'true' ">true</EnablePackageValidation>
         </PropertyGroup>
     </Target>
 </Project>

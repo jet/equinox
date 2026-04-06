@@ -2,8 +2,6 @@
     <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))"/>
     <PropertyGroup>
         <IsPackable>true</IsPackable>
+        <EnablePackageValidation Condition=" '$(CI)' == 'true' ">true</EnablePackageValidation>
     </PropertyGroup>
-    <ItemGroup Condition="'$(CI)' == 'true' and '$(PackageValidationBaselinePath)' == '' and '$(PackageValidationBaselineVersion)' != ''">
-        <PackageDownload Include="$([MSBuild]::ValueOrDefault('$(PackageValidationBaselineName)', '$(PackageId)'))" Version="[$(PackageValidationBaselineVersion)]" />
-    </ItemGroup>
 </Project>
