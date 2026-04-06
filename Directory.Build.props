@@ -14,7 +14,7 @@
          Tools and Tests flip this to false in order to ensure we validate with the recent one embdedded in the SDK-->
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
 
-    <IsCiBuild Condition=" '$(CI)' == 'true' or '$(TF_BUILD)' == 'true' or '$(TF_BUILD)' == 'True' ">true</IsCiBuild>
+    <IsCiBuild Condition=" '$(CI)' == 'true' or '$(TF_BUILD)' != '' ">true</IsCiBuild>
     <!-- We want to opt in to publishing nugets per library, but only in CI --> 
     <IsPackable>false</IsPackable>
     <PackageOutputPath>$(MSBuildThisFileDirectory)artifacts\nupkg</PackageOutputPath>
