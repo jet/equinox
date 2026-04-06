@@ -5,9 +5,4 @@
             <FileVersion>$(MinVerMajor).$(MinVerMinor).$(MinVerPatch).$(BUILD_ID)</FileVersion>
         </PropertyGroup>
     </Target>
-    <Target Name="SetGeneratePackageOnBuild" BeforeTargets="Build">
-        <PropertyGroup>
-            <GeneratePackageOnBuild Condition=" '$(IsCiBuild)' == 'true' and '$(IsPackable)' == 'true' ">true</GeneratePackageOnBuild>
-        </PropertyGroup>
-    </Target>
 </Project>
