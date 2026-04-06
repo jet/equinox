@@ -14,10 +14,15 @@
          Tools and Tests flip this to false in order to ensure we validate with the recent one embdedded in the SDK-->
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
 
-    <!-- We want to opt in to publishing nugets per library, but only when CI=true --> 
+    <!-- We want to opt in to publishing nugets per library, but only when CI=true
+         NOTE GeneratePackageOnBuild and GenerateDocumentationFile are set in src/ and tools/ Directory.Build.props
+              (after IsPackable is flipped to true; setting them here would be too early) -->
     <IsPackable>false</IsPackable>
     <PackageOutputPath>$(MSBuildThisFileDirectory)artifacts\nupkg</PackageOutputPath>
-    <GenerateDocumentationFile Condition=" '$(CI)' == 'true' and '$(IsPackable)' == 'true' ">true</GenerateDocumentationFile>
+
+    <!-- Optimize non-CI builds: skip MinVer git operations and PackageValidation baseline downloads -->
+    <MinVerSkip Condition=" '$(CI)' != 'true' ">true</MinVerSkip>
+    <DisablePackageBaselineValidation Condition=" '$(CI)' != 'true' ">true</DisablePackageBaselineValidation>
   </PropertyGroup>
   <ItemGroup>
     <!-- SourceLink etc -->

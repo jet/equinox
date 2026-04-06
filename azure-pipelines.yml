@@ -26,6 +26,7 @@ jobs:
       testResultsFormat: 'VSTest'
       testResultsFiles: 'tests/trx/*.trx'
     condition: always()
+  # Incremental: test built most projects; this ensures samples/tools also get built and all packages are generated
   - script: dotnet build -c Release
     displayName: dotnet build
   - task: PublishBuildArtifacts@1
