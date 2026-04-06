@@ -1,8 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- TargetFramework*S* is workaround for https://github.com/dotnet/sdk/issues/2114#issuecomment-380640781-->
-    <TargetFrameworks>net6.0</TargetFrameworks>
+    <TargetFramework>net6.0</TargetFramework>
     <!-- Suppress .NET 6 out of support warning -->
     <NoWarn>NETSDK1138;$(NoWarn)</NoWarn>
     <!-- Allow to run on newer SDKs -->
@@ -12,9 +11,6 @@
     <PackageId>Equinox.Tool</PackageId>
     <PackAsTool>true</PackAsTool>
     <AssemblyName>eqx</AssemblyName>
-
-    <!-- workaround for not being able to make Domain inlined in a complete way https://github.com/nuget/home/issues/3891#issuecomment-377319939 -->
-    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);CopyProjectReferencesToPackage</TargetsForTfmSpecificBuildOutput>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,7 +23,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- workaround for not being able to make Domain inlined in a complete way https://github.com/nuget/home/issues/3891#issuecomment-377319939 -->
     <ProjectReference Include="..\..\samples\TodoBackend\TodoBackend.fsproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\samples\Infrastructure\Infrastructure.fsproj" PrivateAssets="all" />
@@ -42,12 +37,5 @@
     <PackageReference Include="Serilog.Sinks.Console" Version="5.0.1" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="7.0.0" />
   </ItemGroup>
-
-  <!-- workaround for not being able to make Domain inlined in a complete way https://github.com/nuget/home/issues/3891#issuecomment-377319939 -->
-  <Target Name="CopyProjectReferencesToPackage" DependsOnTargets="ResolveReferences">
-    <ItemGroup>
-      <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths -> WithMetadataValue('ReferenceSourceTarget', 'ProjectReference'))" />
-    </ItemGroup>
-  </Target>
 
 </Project>
