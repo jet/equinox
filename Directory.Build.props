@@ -10,6 +10,7 @@
 
     <WarningLevel>5</WarningLevel>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
     <!-- For packages we produce, we want to be explicit and conservative in what we depend on
          Tools and Tests flip this to false in order to ensure we validate with the recent one embdedded in the SDK-->
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
@@ -18,8 +19,7 @@
     <IsPackable>false</IsPackable>
     <PackageOutputPath>$(MSBuildThisFileDirectory)artifacts\nupkg</PackageOutputPath>
 
-    <!-- Use static graph evaluation for faster NuGet restore -->
+    <!-- Opt into static graph evaluation for faster NuGet restore -->
     <RestoreUseStaticGraphEvaluation>true</RestoreUseStaticGraphEvaluation>
-
   </PropertyGroup>
 </Project>
