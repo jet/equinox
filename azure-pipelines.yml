@@ -17,17 +17,17 @@ jobs:
     EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
     EQUINOX_INTEGRATION_SKIP_COSMOS: true
   steps:
+  - script: dotnet build -c Release
+    displayName: dotnet build
   # exit code 8 signifies one or more assemblies did not have any non-skipped tests
   # CI env does not provide docker-compose simulated stores, which means most store tests are skipped
-  - script: dotnet test -c Release --report-xunit-trx --ignore-exit-code 8 --results-directory tests/trx
+  - script: dotnet test -c Release --no-build --report-xunit-trx --ignore-exit-code 8 --results-directory tests/trx
     displayName: dotnet test
   - task: PublishTestResults@2
     inputs:
       testResultsFormat: 'VSTest'
       testResultsFiles: 'tests/trx/*.trx'
     condition: always()
-  - script: dotnet build -c Release
-    displayName: dotnet build
   - task: PublishBuildArtifacts@1
     inputs:
       pathToPublish: 'artifacts/nupkg'
