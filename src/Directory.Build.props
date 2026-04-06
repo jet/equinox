@@ -3,4 +3,7 @@
     <PropertyGroup>
         <IsPackable>true</IsPackable>
     </PropertyGroup>
+    <ItemGroup Condition="'$(CI)' == 'true' and '$(PackageValidationBaselinePath)' == '' and '$(PackageValidationBaselineVersion)' != ''">
+        <PackageDownload Include="$([MSBuild]::ValueOrDefault('$(PackageValidationBaselineName)', '$(PackageId)'))" Version="[$(PackageValidationBaselineVersion)]" />
+    </ItemGroup>
 </Project>
