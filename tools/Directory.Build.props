@@ -2,7 +2,7 @@
     <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))"/>
     <PropertyGroup>
         <IsPackable>true</IsPackable>
-        <GenerateDocumentationFile Condition=" '$(CI)' == 'true' ">true</GenerateDocumentationFile>
-        <EnablePackageValidation Condition=" '$(CI)' == 'true' ">true</EnablePackageValidation>
+        <GenerateDocumentationFile Condition=" '$(IsCiBuild)' == 'true' ">true</GenerateDocumentationFile>
+        <EnablePackageValidation Condition=" '$(IsCiBuild)' == 'true' ">true</EnablePackageValidation>
     </PropertyGroup>
 </Project>

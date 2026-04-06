@@ -13,7 +13,6 @@ jobs:
     vmImage: $(vmImage)
   variables:  
     BUILD_ID: $(BUILD.BUILDNUMBER)
-    CI: true
     EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
     EQUINOX_INTEGRATION_SKIP_COSMOS: true
   steps:

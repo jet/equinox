@@ -7,7 +7,7 @@
     </Target>
     <Target Name="ComputeFileVersion" BeforeTargets="Build">
         <PropertyGroup>
-            <GeneratePackageOnBuild Condition=" '$(CI)' == 'true' and '$(IsPackable)' == 'true' ">true</GeneratePackageOnBuild>
+            <GeneratePackageOnBuild Condition=" '$(IsCiBuild)' == 'true' and '$(IsPackable)' == 'true' ">true</GeneratePackageOnBuild>
         </PropertyGroup>
     </Target>
 </Project>
