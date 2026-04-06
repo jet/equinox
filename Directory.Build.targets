@@ -5,7 +5,7 @@
             <FileVersion>$(MinVerMajor).$(MinVerMinor).$(MinVerPatch).$(BUILD_ID)</FileVersion>
         </PropertyGroup>
     </Target>
-    <Target Name="ComputeFileVersion" BeforeTargets="Build">
+    <Target Name="SetGeneratePackageOnBuild" BeforeTargets="Build">
         <PropertyGroup>
             <GeneratePackageOnBuild Condition=" '$(IsCiBuild)' == 'true' and '$(IsPackable)' == 'true' ">true</GeneratePackageOnBuild>
         </PropertyGroup>
