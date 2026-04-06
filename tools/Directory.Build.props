@@ -2,8 +2,6 @@
     <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))"/>
     <PropertyGroup>
         <IsPackable>true</IsPackable>
-        <!-- Re-enable SDK SourceLink for packable projects (suppressed in root for non-packable projects) -->
-        <SuppressImplicitGitSourceLink>false</SuppressImplicitGitSourceLink>
         <GeneratePackageOnBuild Condition=" '$(CI)' == 'true' ">true</GeneratePackageOnBuild>
         <GenerateDocumentationFile Condition=" '$(CI)' == 'true' ">true</GenerateDocumentationFile>
         <EnablePackageValidation Condition=" '$(CI)' == 'true' ">true</EnablePackageValidation>

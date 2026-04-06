@@ -21,7 +21,5 @@
     <!-- Use static graph evaluation for faster NuGet restore -->
     <RestoreUseStaticGraphEvaluation>true</RestoreUseStaticGraphEvaluation>
 
-    <!-- Non-packable projects (tests, samples) don't need SourceLink; src/ and tools/ override via DotNet.ReproducibleBuilds -->
-    <SuppressImplicitGitSourceLink>true</SuppressImplicitGitSourceLink>
   </PropertyGroup>
 </Project>
