@@ -56,7 +56,7 @@ Related repositories:
 - Integration test skip flags (set to `true` to skip):
   - `EQUINOX_INTEGRATION_SKIP_EVENTSTORE`
   - `EQUINOX_INTEGRATION_SKIP_COSMOS`
-- CI-only packaging behavior is activated when either `CI=true` or Azure Pipelines provides `TF_BUILD`; packable projects under `src/` and `tools/` enable documentation-file generation and package validation from their local `Directory.Build.props`.
+- CI-only packaging behavior is activated when `CI=true`; packable projects under `src/` and `tools/` enable documentation-file generation and package validation from their local `Directory.Build.props`.
 - CI runs on Azure Pipelines across Windows, Linux, and macOS.
 
 ## Key Design Patterns
