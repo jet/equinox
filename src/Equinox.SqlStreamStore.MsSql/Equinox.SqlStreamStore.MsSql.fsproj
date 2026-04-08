@@ -22,6 +22,7 @@
 
     <PackageReference Include="SqlStreamStore.MsSql" Version="1.2.0-beta.8" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="2.1.7" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="6.34.0" />
   </ItemGroup>
 
 </Project>
