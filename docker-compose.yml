@@ -17,16 +17,16 @@ services:
 
   equinox-mssql:
     container_name: equinox-mssql
-    image: mcr.microsoft.com/mssql/server:2022-latest
+    image: mcr.microsoft.com/mssql/server:2025-latest
     restart: unless-stopped
     ports:
       - 1433:1433
     environment:
-      - SA_PASSWORD=mssql1Ipw
+      - MSSQL_SA_PASSWORD=mssql1Ipw
       - ACCEPT_EULA=Y
   # see https://github.com/microsoft/mssql-docker/issues/2#issuecomment-1683956282
   equinox-mssql-init:
-    image: mcr.microsoft.com/mssql/server:2022-latest
+    image: mcr.microsoft.com/mssql-tools
     network_mode: service:equinox-mssql
     command: bash -c 'until /opt/mssql-tools/bin/sqlcmd -U sa -P mssql1Ipw -Q "CREATE DATABASE EQUINOX_TEST_DB"; do echo retry && sleep 1; done'
     depends_on:
@@ -41,7 +41,7 @@ services:
     environment:
       - MYSQL_ALLOW_EMPTY_PASSWORD=1
       - MYSQL_DATABASE=EQUINOX_TEST_DB
-# it _almost_ (but doesnt) works with the default mysql using the following
+# it _almost_ (but doesn't) works with the default mysql using the following
 #    command: ['mysqld', '--character-set-server=utf8mb4', '--collation-server=utf8mb4_unicode_ci']
 
   setup.eventstore:
