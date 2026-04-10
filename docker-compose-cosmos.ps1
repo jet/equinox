@@ -1,3 +1,4 @@
+#requires -Version 7
 param(
     [alias("sc")][Switch][bool]$skipCert = $false,
     [alias("l")][Switch][bool]$bootstrapEqx = $false,
@@ -26,8 +27,8 @@ $env:EQUINOX_COSMOS_CONTAINER = "equinox-test"
 
 if (-not $skipInit)
 {
-    $cmd = $bootstrapEqx ? "dotnet run -c Release --project tools/Equinox.Tool --" : "eqx"
+    $local:cmd = $bootstrapEqx ? "dotnet run -c Release --project tools/Equinox.Tool --" : "eqx"
     Invoke-Expression "$cmd init cosmos"
     Invoke-Expression "$cmd init cosmos -c equinox-test-archive"
 }
-# Explorer URL: https://localhost:8080/_explorer/index.html, see https://learn.microsoft.com/en-us/azure/cosmos-db/how-to-develop-emulator
+# Explorer URL: https://localhost:8081/_explorer/index.html, see https://learn.microsoft.com/en-us/azure/cosmos-db/how-to-develop-emulator
