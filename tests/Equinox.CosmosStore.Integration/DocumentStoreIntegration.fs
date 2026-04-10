@@ -82,7 +82,7 @@ type Tests(testOutputHelper) =
         addAndThenRemoveItems true true context cartId skuId service count
 
     let verifyRequestChargesMax rus =
-        let tripRequestCharges = [ for e, c in capture.RequestCharges -> sprintf "%A" e, c ]
+        let tripRequestCharges = [ for e, c in capture.RequestCharges -> $"%A{e}", c ]
         test <@ float rus >= Seq.sum (Seq.map snd tripRequestCharges) @>
 
     // There's currently a discrepancy between real DynamoDB and the dynamodb-local simulator wrt whether a continuation token is returned
@@ -541,7 +541,7 @@ type Tests(testOutputHelper) =
         verifyRequestChargesMax 1 }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ```Can safely evolve AccessStrategy over time`` cartContext = Async.RunSynchronously <| async {
+    let ``Can safely evolve AccessStrategy over time`` cartContext = Async.RunSynchronously <| async {
         let context = createPrimaryContext log 10
         let unoptimized = Cart.createServiceWithoutOptimization log context
         let snapshot = Cart.createServiceWithSnapshotStrategy log context

@@ -24,6 +24,8 @@
 
   <ItemGroup>
     <PackageReference Include="FsCheck.Xunit.v3" Version="3.3.2" />
+    <!-- Always integration test with the latest Cosmos SDK as a canary test on any breaking changes -->
+    <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.*" />
     <PackageReference Include="JsonDiffPatch.Net" Version="2.3.0" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="7.0.0" />
     <PackageReference Include="unquote" Version="6.1.0" />

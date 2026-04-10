@@ -144,8 +144,10 @@ type Tests(testOutputHelper) =
 
         (* Demonstrate benefit/mechanism for using the Position-based API to avail of the etag tracking *)
 
-        let extrasCount = match extras with x when x > 50 -> 5000 | x when x < 1 -> 1 | x -> x*100
-        let! _pos = Async.call (fun ct -> ctx.NonIdempotentAppend(streamName, TestEvents.Create (int pos,extrasCount), ct))
+        // NOTE limiting to 5000 also works, but makes things flaky with the Cosmos emulator
+        let range lower upper = max lower >> min upper
+        let extrasCount = extras |> range 1 50
+        let! _pos = Async.call (fun ct -> ctx.NonIdempotentAppend(streamName, TestEvents.Create (int pos, extrasCount), ct))
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
         if eventsInTip then verifyRequestChargesMax 451 // 450.03
         else verifyRequestChargesMax 448 // 447.5 // 463.01 observed

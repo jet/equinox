@@ -1192,8 +1192,11 @@ type CosmosClientFactory(options) =
             MaxRetryWaitTimeOnRateLimitedRequests = maxRetryWaitTimeOnRateLimitedRequests,
             RequestTimeout = requestTimeout,
             UseSystemTextJsonSerializerWithOptions = JsonSerializerOptions())
-    /// Default when rendering/parsing Batch/Tip/Event/Unfold - omitting null values
-    static member val DefaultJsonSerializerOptions = JsonSerializerOptions(DefaultIgnoreCondition = Serialization.JsonIgnoreCondition.WhenWritingNull)
+    /// Default when rendering/parsing Batch/Tip/Event/Unfold
+    static member val DefaultJsonSerializerOptions =
+        JsonSerializerOptions(
+            DefaultIgnoreCondition = Serialization.JsonIgnoreCondition.WhenWritingNull, // omitting null values
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping) // don't need HTML-safe escaping for Cosmos Service invocations in this context
     /// CosmosClientOptions for this CosmosClientFactory as configured (NOTE while the Options object is not immutable, it should not have setters called on it)
     member val Options = options
     /// Creates an instance of CosmosClient without actually validating or establishing the connection
