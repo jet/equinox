@@ -54,27 +54,21 @@ type Category<'event, 'state, 'req> = MessageDbCategory<'event, 'state, 'req>
 #if STORE_EVENTSTOREDB
 open Equinox.EventStoreDb
 
-/// Connect directly to a locally running EventStoreDB Node using gRPC, without using Gossip-driven discovery
+/// Connect directly to a locally running EventStoreDB Node using gRPC
 let connectToLocalStore (_log: Serilog.ILogger) = async {
     let c = EventStoreConnector(reqTimeout = TimeSpan.FromSeconds 3., (*, log = Logger.SerilogVerbose log,*) tags = ["I",Guid.NewGuid() |> string])
-    let conn = c.Establish("Equinox-integration", Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false", ConnectionStrategy.ClusterSingle EventStore.Client.NodePreference.Leader)
+    let conn = c.Establish("Equinox-integration", Discovery.ConnectionString "esdb://admin:changeit@localhost:2113?tls=true&tlsVerifyCert=false", ConnectionStrategy.ClusterSingle EventStore.Client.NodePreference.Leader)
     return conn }
 #endif
 #if STORE_EVENTSTORE_LEGACY
 open Equinox.EventStore
 
-// NOTE: use `docker compose up` to establish the standard 3 node config at ports 1113/2113
+// NOTE: use `docker compose up` to establish the single node config at ports 1113/2113
 let connectToLocalStore log =
-    // NOTE: disable cert validation for this test suite. ABSOLUTELY DO NOT DO THIS FOR ANY CODE THAT WILL EVER HIT A STAGING OR PROD SERVER
     EventStoreConnector("admin", "changeit", custom = (fun c -> c.DisableServerCertificateValidation()),
     reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log, tags=["I",Guid.NewGuid() |> string]
-#if EVENTSTORE_NO_CLUSTER
     // Connect directly to the locally running EventStore Node without using Gossip-driven discovery
     ).Establish("Equinox-integration", Discovery.Uri(Uri "tcp://localhost:1113"), ConnectionStrategy.ClusterSingle NodePreference.Master)
-#else
-    // Connect directly to the locally running EventStore Node using Gossip-driven discovery
-    ).Establish("Equinox-integration", Discovery.GossipDns "localhost", ConnectionStrategy.ClusterTwinPreferSlaveReads)
-#endif
 #endif
 #if STORE_EVENTSTORE_LEGACY || STORE_EVENTSTOREDB
 type Context = EventStoreContext
