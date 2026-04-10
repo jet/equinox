@@ -11,7 +11,6 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Changed
 
 - `Equinox.SqlStreamStore.MsSql`: Update `System.IdentityModel.Tokens.Jwt` and `Microsoft.Data.SqlClient` to remove transitive vulnerable defaults [#489](https://github.com/jet/equinox/pull/489)
-- `Equinox.CosmosStore`: Update `Microsoft.Azure.Cosmos` to remove transitive vulnerable default [#489](https://github.com/jet/equinox/pull/489)
 - `Equinox.DynamoStore`: Update `AWSSDK` dependencies to 4.x (knock-on effect of updating `FSharp.AWS.DynamoDB` dependency to `0.13.0-beta`) [#480](https://github.com/jet/equinox/pull/480) :pray: [@njlr](https://github.com/njlr)
 
 ### Added

@@ -1,10 +1,11 @@
 param(
     [alias("sc")][Switch][bool]$skipCert = $false,
-    [alias("l")][Switch][bool]$localEqx = $false,
+    [alias("l")][Switch][bool]$bootstrapEqx = $false,
     [alias("si")][Switch][bool]$skipInit = $false
 )
 
 if (-not $skipCert) {
+    Write-Host "Please click on the cert import popup to confirm..."
     $rgs = @{
         Uri = 'https://localhost:8081/_explorer/emulator.pem'
         Method = 'GET'
@@ -25,7 +26,7 @@ $env:EQUINOX_COSMOS_CONTAINER = "equinox-test"
 
 if (-not $skipInit)
 {
-    $cmd = $localEqx ? "dotnet run -c Release --project tools/Equinox.Tool --" : "eqx"
+    $cmd = $bootstrapEqx ? "dotnet run -c Release --project tools/Equinox.Tool --" : "eqx"
     Invoke-Expression "$cmd init cosmos"
     Invoke-Expression "$cmd init cosmos -c equinox-test-archive"
 }
