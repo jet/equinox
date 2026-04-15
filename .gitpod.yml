@@ -5,7 +5,7 @@ tasks:
   - name: Build
     before: "./.gitpod/gitpod-init.sh"
     init: |
-      dotnet build ./Equinox.sln
+      dotnet build ./Equinox.slnx
 
 vscode:
   extensions:
