@@ -55,6 +55,10 @@ services:
       - EVENTSTORE_ENABLE_EXTERNAL_TCP=true
       - EVENTSTORE_ENABLE_ATOM_PUB_OVER_HTTP=true
       - EVENTSTORE_INSECURE=true
+      # Increase internal TCP heartbeat timeouts to avoid spurious leader elections under Docker/Windows networking latency.
+      # The defaults (700ms interval, 700ms timeout) are too tight for container-to-container communication on Windows.
+      - EVENTSTORE_INT_TCP_HEARTBEAT_INTERVAL=5000
+      - EVENTSTORE_INT_TCP_HEARTBEAT_TIMEOUT=15000
       - EVENTSTORE_INT_IP=172.30.240.11
       - EVENTSTORE_ADVERTISE_HTTP_PORT_TO_CLIENT_AS=2111
       - EVENTSTORE_ADVERTISE_TCP_PORT_TO_CLIENT_AS=1111

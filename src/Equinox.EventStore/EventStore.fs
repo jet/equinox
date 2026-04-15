@@ -137,7 +137,7 @@ module private Write =
         with :? EventStore.ClientAPI.Exceptions.WrongExpectedVersionException as ex ->
             log.Information(ex, "Ges Sync WrongExpectedVersionException writing {EventTypes}, actual {ActualVersion}",
                 [| for x in events -> x.Type |], ex.ActualVersion)
-            return EsSyncResult.Conflict (let v = ex.ActualVersion in v.Value) }
+            return EsSyncResult.Conflict (ex.ActualVersion |> Option.ofNullable |> Option.defaultValue -1L) }
 
     let eventDataBytes events =
         let eventDataLen (x: EventData) = match x.Data, x.Metadata with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes

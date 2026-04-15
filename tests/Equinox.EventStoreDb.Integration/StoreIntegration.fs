@@ -54,11 +54,12 @@ type Category<'event, 'state, 'req> = MessageDbCategory<'event, 'state, 'req>
 #if STORE_EVENTSTOREDB
 open Equinox.EventStoreDb
 
-/// Connect directly to the locally running EventStoreDB Node (see docker-compose.yml) using gRPC, with Gossip-driven discovery.
+/// Connect to the locally running INSECURE 3-node EventStoreDB cluster (see docker-compose.yml) via gRPC, using gossip-based discovery.
+/// The seed nodes at ports 2111-2113 are the 3 cluster nodes exposed to the host; see docker-compose.yml.
 let connectToLocalStore (_log: Serilog.ILogger) = async {
     let c = EventStoreConnector(reqTimeout = TimeSpan.FromSeconds 3., (*, log = Logger.SerilogVerbose log,*) tags = ["I",Guid.NewGuid() |> string])
-    // INSECURE: NEVER use tlsVerifyCert=false in staging - this is only to align with the simplified INSECURE docker-compose.yml config
-    let conn = c.Establish("Equinox-integration", Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false", ConnectionStrategy.ClusterSingle EventStore.Client.NodePreference.Leader)
+    // INSECURE: tls=false disables TLS entirely, to match the docker-compose EVENTSTORE_INSECURE=true config. NEVER do this in production.
+    let conn = c.Establish("Equinox-integration", Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=false", ConnectionStrategy.ClusterSingle EventStore.Client.NodePreference.Leader)
     return conn }
 #endif
 #if STORE_EVENTSTORE_LEGACY
