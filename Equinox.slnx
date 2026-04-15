@@ -8,7 +8,6 @@
     <File Path="Directory.Build.targets" />
     <File Path="docker-compose-cosmos.ps1" />
     <File Path="docker-compose-cosmos.sh" />
-    <File Path="docker-compose.env" />
     <File Path="docker-compose.yml" />
     <File Path="DOCUMENTATION.md" />
     <File Path="global.json" />
@@ -18,15 +17,7 @@
     <File Path="SECURITY.md" />
   </Folder>
   <Folder Name="/.project/diagrams/">
-    <File Path="diagrams/container.puml" />
-    <File Path="diagrams/context.puml" />
-    <File Path="diagrams/CosmosCode.puml" />
-    <File Path="diagrams/CosmosComponent.puml" />
-    <File Path="diagrams/CosmosContainer.puml" />
-    <File Path="diagrams/EventStore.puml" />
-    <File Path="diagrams/EventStoreCode.puml" />
-    <File Path="diagrams/MemoryStore.puml" />
-    <File Path="diagrams/MemoryStoreContainer.puml" />
+    <File Path="diagrams/*.puml" />
   </Folder>
   <Folder Name="/Samples/">
     <Project Path="samples/Infrastructure/Infrastructure.fsproj" />
