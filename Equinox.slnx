@@ -18,6 +18,15 @@
   </Folder>
   <Folder Name="/.project/diagrams/">
     <File Path="diagrams/*.puml" />
+    <File Path="diagrams/container.puml" />
+    <File Path="diagrams/context.puml" />
+    <File Path="diagrams/CosmosCode.puml" />
+    <File Path="diagrams/CosmosComponent.puml" />
+    <File Path="diagrams/CosmosContainer.puml" />
+    <File Path="diagrams/EventStore.puml" />
+    <File Path="diagrams/EventStoreCode.puml" />
+    <File Path="diagrams/MemoryStore.puml" />
+    <File Path="diagrams/MemoryStoreContainer.puml" />
   </Folder>
   <Folder Name="/Samples/">
     <Project Path="samples/Infrastructure/Infrastructure.fsproj" />

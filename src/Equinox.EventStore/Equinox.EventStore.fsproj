@@ -2,7 +2,8 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <PackageValidationBaselineVersion>4.0.0</PackageValidationBaselineVersion>
+    <!-- TODO reinstate validation referring to 4.2 once that's been published -->
+    <!-- <PackageValidationBaselineVersion>4.2.0</PackageValidationBaselineVersion> -->
   </PropertyGroup>
 
   <ItemGroup>

@@ -530,6 +530,8 @@ type Discovery =
     | Uri of Uri
     /// Supply a set of pre-resolved EndPoints instead of letting Gossip resolution derive from the DNS outcome
     | GossipSeeded of seedManagerEndpoints: System.Net.EndPoint []
+    /// TEST ONLY: As per GossipSeeded but for a server configured with EVENTSTORE_INSECURE=true
+    | GossipSeededInsecure of seedManagerEndpoints: System.Net.EndPoint[]
     // Standard Gossip-based discovery based on Dns query and standard manager port
     | GossipDns of clusterDns: string
     // Standard Gossip-based discovery based on Dns query (with manager port overriding default 2113)
@@ -543,6 +545,7 @@ module private Discovery =
 
     let buildSeeded np (f: GossipSeedClusterSettingsBuilder -> GossipSeedClusterSettingsBuilder) =
         ClusterSettings.Create().DiscoverClusterViaGossipSeeds().KeepDiscovering()
+        // |> fun s -> if insecure then s.TlsSettings(TlsSettings.DisableTls()) else s
         |> fun s -> match np with NodePreference.Random -> s.PreferRandomNode() | NodePreference.PreferSlave -> s.PreferFollowerNode() | _ -> s
         |> f |> _.Build()
 
@@ -550,15 +553,16 @@ module private Discovery =
         x.SetClusterDns(clusterDns)
         |> fun s -> match maybeManagerPort with Some port -> s.SetClusterGossipPort(port) | None -> s
 
-    let inline configureSeeded seedOverTls (seedEndpoints: System.Net.EndPoint []) (x: GossipSeedClusterSettingsBuilder) =
-        x.SetGossipSeedEndPoints(seedOverTls, seedEndpoints)
+    let inline configureSeeded insecure (seedEndpoints: System.Net.EndPoint []) (x: GossipSeedClusterSettingsBuilder) =
+        x.SetGossipSeedEndPoints(not insecure, seedEndpoints)
 
     // converts a Discovery mode to a ClusterSettings or a Uri as appropriate
-    let resolve gossipOverTls: Discovery * NodePreference -> Choice<Uri, ClusterSettings> = function
-        | Discovery.Uri uri, _ ->                           Choice1Of2 uri
-        | Discovery.GossipSeeded seedEndpoints, np ->       Choice2Of2 (buildSeeded np   (configureSeeded gossipOverTls seedEndpoints))
-        | Discovery.GossipDns clusterDns, np ->             Choice2Of2 (buildDns np      (configureDns clusterDns None))
-        | Discovery.GossipDnsCustomPort (dns, port), np ->  Choice2Of2 (buildDns np      (configureDns dns (Some port)))
+    let (|DiscoverViaUri|DiscoverViaGossip|): Discovery * NodePreference -> Choice<Uri, ClusterSettings> = function
+        | Discovery.Uri uri, _ ->                           DiscoverViaUri    uri
+        | Discovery.GossipSeeded seedEndpoints, np ->       DiscoverViaGossip (buildSeeded np   (configureSeeded false seedEndpoints))
+        | Discovery.GossipSeededInsecure seedEndpoints, np ->DiscoverViaGossip (buildSeeded np  (configureSeeded true seedEndpoints))
+        | Discovery.GossipDns clusterDns, np ->             DiscoverViaGossip (buildDns np      (configureDns clusterDns None))
+        | Discovery.GossipDnsCustomPort (dns, port), np ->  DiscoverViaGossip (buildDns np      (configureDns dns (Some port)))
 
 // see https://github.com/EventStore/EventStore/issues/1652
 [<RequireQualifiedAccess; NoComparison>]
@@ -576,9 +580,6 @@ type EventStoreConnector
         // Additional strings identifying the context of this connection; should provide enough context to disambiguate all potential connections to a cluster
         // NB as this will enter server and client logs, it should not contain sensitive information
         [<O; D(null)>] ?tags: (string*string) seq,
-        // Controls whether gossip seed endpoint queries use TLS (HTTPS) or plain HTTP. Default: true (HTTPS).
-        // Set to false when connecting to an insecure (EVENTSTORE_INSECURE=true) cluster. NEVER disable in production.
-        [<O; D(null)>] ?gossipOverTls: bool,
         // Facilitates arbitrary customization of settings that are not explicitly addressed herein and/or general post-processing of the configuration.
         [<O; D(null)>] ?custom: ConnectionSettingsBuilder -> ConnectionSettingsBuilder) =
     let connSettings node =
@@ -594,7 +595,7 @@ type EventStoreConnector
             | NodePreference.PreferMaster   -> s.PerformOnAnyNode()                     // override default [implied] PerformOnMasterOnly(), use default Node preference of Master
             // NB .PreferSlaveNode/.PreferRandomNode setting is ignored if using EventStoreConnection.Create(ConnectionSettings, ClusterSettings) overload but
             // this code is necessary for cases where people are using the discover:// and related URI schemes
-            | NodePreference.PreferSlave    -> s.PerformOnAnyNode().PreferFollowerNode()// override default PerformOnMasterOnly(), override Master Node preference
+            | NodePreference.PreferSlave    -> s.PerformOnAnyNode().PreferFollowerNode() // override default PerformOnMasterOnly(), override Master Node preference
             | NodePreference.Random         -> s.PerformOnAnyNode().PreferRandomNode()  // override default PerformOnMasterOnly(), override Master Node preference
         |> fun s -> match concurrentOperationsLimit with Some col -> s.LimitConcurrentOperationsTo(col) | None -> s // ES default: 5000
         |> fun s -> match heartbeatTimeout with Some v -> s.SetHeartbeatTimeout v | None -> s // default: 1500 ms
@@ -616,13 +617,12 @@ type EventStoreConnector
             yield string clusterNodePreference
             match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
         let sanitizedName = name.Replace('\'', '_').Replace(':', '_') // ES internally uses `:` and `'` as separators in log messages and ... people regex logs
-        let gossipTls = defaultArg gossipOverTls true
         let connection =
-            match Discovery.resolve gossipTls (discovery, clusterNodePreference) with
-            | Choice1Of2 uri ->
+            match discovery, clusterNodePreference with
+            | Discovery.DiscoverViaUri uri ->
                 // This overload picks up the discovery settings via ConnectionSettingsBuilder.PreferSlaveNode/.PreferRandomNode
                 EventStoreConnection.Create(connSettings clusterNodePreference, uri, sanitizedName)
-            | Choice2Of2 clusterSettings ->
+            | Discovery.DiscoverViaGossip clusterSettings ->
                 // NB This overload's implementation ignores the calls to ConnectionSettingsBuilder.PreferSlaveNode/.PreferRandomNode and
                 // requires equivalent ones on the GossipSeedClusterSettingsBuilder or ClusterSettingsBuilder
                 EventStoreConnection.Create(connSettings clusterNodePreference, clusterSettings, sanitizedName)

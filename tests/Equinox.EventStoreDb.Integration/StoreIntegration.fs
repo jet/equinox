@@ -54,32 +54,28 @@ type Category<'event, 'state, 'req> = MessageDbCategory<'event, 'state, 'req>
 #if STORE_EVENTSTOREDB
 open Equinox.EventStoreDb
 
-/// Connect to the locally running 3-node EventStoreDB cluster via gRPC, using gossip-based discovery.
-/// Uses INSECURE mode (tls=false) to match the docker-compose config. NEVER do this in staging or production.
-/// The seed nodes at ports 2111-2113 are the 3 cluster nodes exposed to the host; see docker-compose.yml.
+/// Connect directly to the locally running EventStoreDB Node (see docker-compose.yml) using gRPC, with Gossip-driven discovery.
 let connectToLocalStore (_log: Serilog.ILogger) = async {
     let c = EventStoreConnector(reqTimeout = TimeSpan.FromSeconds 3., (*, log = Logger.SerilogVerbose log,*) tags = ["I",Guid.NewGuid() |> string])
-    let conn = c.Establish("Equinox-integration", Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=false", ConnectionStrategy.ClusterSingle EventStore.Client.NodePreference.Leader)
+    // INSECURE: NEVER use tlsVerifyCert=false in staging - this is only to align with the simplified INSECURE docker-compose.yml config
+    let conn = c.Establish("Equinox-integration", Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false", ConnectionStrategy.ClusterSingle EventStore.Client.NodePreference.Leader)
     return conn }
 #endif
 #if STORE_EVENTSTORE_LEGACY
 open Equinox.EventStore
 
-/// Connect to the locally running 3-node EventStoreDB cluster via legacy TCP, using gossip seed-based discovery.
-/// Uses INSECURE mode to match the docker-compose config. NEVER do this in staging or production.
-/// The seed endpoints at ports 2111-2113 are the 3 cluster nodes' HTTP/gossip ports exposed to the host; see docker-compose.yml.
+/// Connect to the locally running INSECURE 3-node EventStoreDB cluster (see docker-compose.yml) via legacy TCP, using gossip seed-based discovery.
+/// WARNING: Applies INSECURE overrides to match the docker-compose config. NEVER do this in staging or production.
 let connectToLocalStore log =
-    // Gossip seed endpoints for the 3-node cluster — each node exposes its HTTP gossip port on localhost.
+    // Gossip seed endpoints: each node exposes its (INSECURE) HTTP gossip port on localhost.
     // In production, use DNS-based discovery instead of hardcoded seeds.
     let gossipSeeds: System.Net.EndPoint[] =
-        [| System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 2111)
-           System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 2112)
-           System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 2113) |]
+        [| for port in 2111..2113 -> System.Net.IPEndPoint(System.Net.IPAddress.Loopback, port) |]
     EventStoreConnector("admin", "changeit",
-    reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log, tags=["I",Guid.NewGuid() |> string],
-    // INSECURE: Disable TLS for TCP and gossip to match the docker-compose EVENTSTORE_INSECURE=true config. NEVER do this in production.
-    custom = (fun c -> c.DisableTls()), gossipOverTls = false
-    ).Establish("Equinox-integration", Discovery.GossipSeeded gossipSeeds, ConnectionStrategy.ClusterTwinPreferSlaveReads)
+        reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log, tags=["I",Guid.NewGuid() |> string],
+        // INSECURE: Disable TLS for TCP data transfer, to match the docker-compose EVENTSTORE_INSECURE=true config. NEVER do this in production.
+        custom = _.DisableTls()
+    ).Establish("Equinox-integration", Discovery.GossipSeededInsecure gossipSeeds, ConnectionStrategy.ClusterTwinPreferSlaveReads)
 #endif
 #if STORE_EVENTSTORE_LEGACY || STORE_EVENTSTOREDB
 type Context = EventStoreContext
