@@ -59,7 +59,8 @@ open Equinox.EventStoreDb
 let connectToLocalStore (_log: Serilog.ILogger) = async {
     let c = EventStoreConnector(reqTimeout = TimeSpan.FromSeconds 3., (*, log = Logger.SerilogVerbose log,*) tags = ["I",Guid.NewGuid() |> string])
     // INSECURE: tls=false disables TLS entirely, to match the docker-compose EVENTSTORE_INSECURE=true config. NEVER do this in production.
-    let conn = c.Establish("Equinox-integration", Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=false", ConnectionStrategy.ClusterSingle EventStore.Client.NodePreference.Leader)
+    let d = Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=false"
+    let conn = c.Establish("Equinox-integration", d, ConnectionStrategy.ClusterSingle EventStore.Client.NodePreference.Leader)
     return conn }
 #endif
 #if STORE_EVENTSTORE_LEGACY
@@ -68,13 +69,17 @@ open Equinox.EventStore
 /// Connect to the locally running INSECURE 3-node EventStoreDB cluster (see docker-compose.yml) via legacy TCP, using DNS-based gossip discovery.
 /// WARNING: Applies INSECURE overrides to match the docker-compose config. NEVER do this in staging or production.
 let connectToLocalStore log =
-    EventStoreConnector("admin", "changeit",
-        reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log, tags=["I",Guid.NewGuid() |> string],
-        // INSECURE: Disable TLS for TCP data transfer, to match the docker-compose EVENTSTORE_INSECURE=true config. NEVER do this in production.
-        custom = _.DisableTls()
-    // GossipDnsInsecure: resolves DNS then queries gossip over HTTP (not HTTPS) to match the insecure cluster config.
-    // In production with a TLS-enabled cluster, use Discovery.GossipDns instead.
-    ).Establish("Equinox-integration", Discovery.GossipDnsInsecure "localhost", ConnectionStrategy.ClusterTwinPreferSlaveReads)
+    let c = EventStoreConnector(
+            "admin", "changeit", reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log,
+            tags=["I", Guid.NewGuid().ToString("N")],
+            // INSECURE: Disable TLS for TCP data transfer, to match the docker-compose EVENTSTORE_INSECURE=true config. NEVER do this in production.
+            custom = _.DisableTls())
+    let ipEndpoint (ip: System.Net.IPAddress) port = System.Net.IPEndPoint(ip, port) :> System.Net.EndPoint
+    // INSECURE: runs gossip over HTTP (not HTTPS) to match the insecure cluster config.
+    // The EventStore Client does not provide a direct way to express insecure gossip over HTTP so we work around by using Seeded mode with hardcoded preconfigured endpoints
+    // In production, you should have a TLS-enabled cluster and use Discovery.GossipDns instead.
+    let endPoints = [| for port in 2111..2113 -> ipEndpoint System.Net.IPAddress.Loopback port |]
+    c.Establish("Equinox-integration", Discovery.GossipSeeded (endPoints, insecure = true), ConnectionStrategy.ClusterTwinPreferSlaveReads)
 #endif
 #if STORE_EVENTSTORE_LEGACY || STORE_EVENTSTOREDB
 type Context = EventStoreContext

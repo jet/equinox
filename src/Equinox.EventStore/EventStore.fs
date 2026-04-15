@@ -137,7 +137,7 @@ module private Write =
         with :? EventStore.ClientAPI.Exceptions.WrongExpectedVersionException as ex ->
             log.Information(ex, "Ges Sync WrongExpectedVersionException writing {EventTypes}, actual {ActualVersion}",
                 [| for x in events -> x.Type |], ex.ActualVersion)
-            return EsSyncResult.Conflict (ex.ActualVersion |> Option.ofNullable |> Option.defaultValue -1L) }
+            return EsSyncResult.Conflict (ex.ActualVersion.GetValueOrDefault -1L) }
 
     let eventDataBytes events =
         let eventDataLen (x: EventData) = match x.Data, x.Metadata with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
@@ -529,15 +529,12 @@ type Discovery =
     // Allow Uri-based connection definition (discovery://, tcp:// or
     | Uri of Uri
     /// Supply a set of pre-resolved EndPoints instead of letting Gossip resolution derive from the DNS outcome
-    | GossipSeeded of seedManagerEndpoints: System.Net.EndPoint []
+    /// WARNING: insecure=true opts into INSECURE connections to a server configured with EVENTSTORE_INSECURE=true (gossip over HTTP, not HTTPS).
+    | GossipSeeded of seedManagerEndpoints: System.Net.EndPoint[] * insecure: bool
     // Standard Gossip-based discovery based on Dns query and standard manager port
     | GossipDns of clusterDns: string
     // Standard Gossip-based discovery based on Dns query (with manager port overriding default 2113)
     | GossipDnsCustomPort of clusterDns: string * managerPortOverride: int
-    /// As per GossipDns, but for a server configured with EVENTSTORE_INSECURE=true (gossip over HTTP, not HTTPS).
-    /// The DnsClusterSettingsBuilder does not support disabling TLS for gossip queries, so this resolves the DNS name
-    /// and feeds the resulting endpoints as gossip seeds with SeedOverTls=false.
-    | GossipDnsInsecure of clusterDns: string * port: int
 
 module private Discovery =
     let buildDns np (f: DnsClusterSettingsBuilder -> DnsClusterSettingsBuilder) =
@@ -557,16 +554,12 @@ module private Discovery =
     let inline configureSeeded insecure (seedEndpoints: System.Net.EndPoint []) (x: GossipSeedClusterSettingsBuilder) =
         x.SetGossipSeedEndPoints(not insecure, seedEndpoints)
 
-    let resolveDnsToSeeds (clusterDns: string) port : System.Net.EndPoint[] =
-        [| for ip in System.Net.Dns.GetHostAddresses(clusterDns) -> System.Net.IPEndPoint(ip, port) |]
-
-    // converts a Discovery mode to a ClusterSettings or a Uri as appropriate
+    /// converts a Discovery mode to a ClusterSettings or a Uri as appropriate
     let (|DiscoverViaUri|DiscoverViaGossip|): Discovery * NodePreference -> Choice<Uri, ClusterSettings> = function
         | Discovery.Uri uri, _ ->                           DiscoverViaUri    uri
-        | Discovery.GossipSeeded seedEndpoints, np ->       DiscoverViaGossip (buildSeeded np   (configureSeeded false seedEndpoints))
+        | Discovery.GossipSeeded (ips, insecure), np ->     DiscoverViaGossip (buildSeeded np   (configureSeeded insecure ips))
         | Discovery.GossipDns clusterDns, np ->             DiscoverViaGossip (buildDns np      (configureDns clusterDns None))
         | Discovery.GossipDnsCustomPort (dns, port), np ->  DiscoverViaGossip (buildDns np      (configureDns dns (Some port)))
-        | Discovery.GossipDnsInsecure (dns, port), np ->    DiscoverViaGossip (buildSeeded np  (configureSeeded true (resolveDnsToSeeds dns port)))
 
 // see https://github.com/EventStore/EventStore/issues/1652
 [<RequireQualifiedAccess; NoComparison>]
