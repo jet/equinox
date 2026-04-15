@@ -1,3 +1,13 @@
+# Shared base config for all EventStoreDB cluster nodes: image, healthcheck, and restart policy.
+x-eventstore-node: &eventstore-node
+  image: eventstore/eventstore:23.10.8-bookworm-slim
+  healthcheck:
+    test: ["CMD-SHELL", "curl -f http://localhost:2113/health/live || exit 1"]
+    interval: 5s
+    timeout: 5s
+    retries: 24
+  restart: always
+
 # Common EventStoreDB environment variables shared across all cluster nodes.
 # Increase internal TCP heartbeat timeouts to avoid spurious leader elections under Docker/Windows networking latency.
 # The defaults (700ms interval, 700ms timeout) are too tight for container-to-container communication on Windows.
@@ -60,7 +70,7 @@ services:
   # 23.10 is the last LTS version supporting both the gRPC and legacy TCP protocols.
   # Nodes expose gRPC on ports 2111-2113 and TCP on ports 1111-1113 to the host.
   node1.eventstore:
-    image: eventstore/eventstore:23.10.8-bookworm-slim
+    <<: *eventstore-node
     container_name: node1.eventstore
     environment:
       <<: *eventstore-common-env
@@ -68,21 +78,15 @@ services:
       EVENTSTORE_ADVERTISE_HTTP_PORT_TO_CLIENT_AS: "2111"
       EVENTSTORE_ADVERTISE_TCP_PORT_TO_CLIENT_AS: "1111"
       EVENTSTORE_GOSSIP_SEED: 172.30.240.12:2113,172.30.240.13:2113
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:2113/health/live || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 24
     ports:
       - 1111:1113
       - 2111:2113
-    restart: always
     networks:
       clusternetwork:
         ipv4_address: 172.30.240.11
 
   node2.eventstore:
-    image: eventstore/eventstore:23.10.8-bookworm-slim
+    <<: *eventstore-node
     container_name: node2.eventstore
     environment:
       <<: *eventstore-common-env
@@ -90,21 +94,15 @@ services:
       EVENTSTORE_ADVERTISE_HTTP_PORT_TO_CLIENT_AS: "2112"
       EVENTSTORE_ADVERTISE_TCP_PORT_TO_CLIENT_AS: "1112"
       EVENTSTORE_GOSSIP_SEED: 172.30.240.11:2113,172.30.240.13:2113
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:2113/health/live || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 24
     ports:
       - 1112:1113
       - 2112:2113
-    restart: always
     networks:
       clusternetwork:
         ipv4_address: 172.30.240.12
 
   node3.eventstore:
-    image: eventstore/eventstore:23.10.8-bookworm-slim
+    <<: *eventstore-node
     container_name: node3.eventstore
     environment:
       <<: *eventstore-common-env
@@ -112,15 +110,9 @@ services:
       EVENTSTORE_ADVERTISE_HTTP_PORT_TO_CLIENT_AS: "2113"
       EVENTSTORE_ADVERTISE_TCP_PORT_TO_CLIENT_AS: "1113"
       EVENTSTORE_GOSSIP_SEED: 172.30.240.11:2113,172.30.240.12:2113
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:2113/health/live || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 24
     ports:
       - 1113:1113
       - 2113:2113
-    restart: always
     networks:
       clusternetwork:
         ipv4_address: 172.30.240.13
