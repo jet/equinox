@@ -79,7 +79,7 @@ let connectToLocalStore log =
     // The EventStore Client does not provide a direct way to express insecure gossip over HTTP so we work around by using Seeded mode with hardcoded preconfigured endpoints
     // In production, you should have a TLS-enabled cluster and use Discovery.GossipDns instead.
     let endPoints = [| for port in 2111..2113 -> ipEndpoint System.Net.IPAddress.Loopback port |]
-    c.Establish("Equinox-integration", Discovery.GossipSeeded (endPoints, insecure = true), ConnectionStrategy.ClusterTwinPreferSlaveReads)
+    c.Establish("Equinox-integration", Discovery.GossipSeededInsecure endPoints, ConnectionStrategy.ClusterTwinPreferSlaveReads)
 #endif
 #if STORE_EVENTSTORE_LEGACY || STORE_EVENTSTOREDB
 type Context = EventStoreContext

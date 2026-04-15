@@ -529,8 +529,10 @@ type Discovery =
     // Allow Uri-based connection definition (discovery://, tcp:// or
     | Uri of Uri
     /// Supply a set of pre-resolved EndPoints instead of letting Gossip resolution derive from the DNS outcome
+    | GossipSeeded of seedManagerEndpoints: System.Net.EndPoint[]
+    // As per GossipSeeded but opts into an insecure mode
     /// WARNING: insecure=true opts into INSECURE connections to a server configured with EVENTSTORE_INSECURE=true (gossip over HTTP, not HTTPS).
-    | GossipSeeded of seedManagerEndpoints: System.Net.EndPoint[] * insecure: bool
+    | GossipSeededInsecure of seedManagerEndpoints: System.Net.EndPoint[]
     // Standard Gossip-based discovery based on Dns query and standard manager port
     | GossipDns of clusterDns: string
     // Standard Gossip-based discovery based on Dns query (with manager port overriding default 2113)
@@ -557,7 +559,8 @@ module private Discovery =
     /// converts a Discovery mode to a ClusterSettings or a Uri as appropriate
     let (|DiscoverViaUri|DiscoverViaGossip|): Discovery * NodePreference -> Choice<Uri, ClusterSettings> = function
         | Discovery.Uri uri, _ ->                           DiscoverViaUri    uri
-        | Discovery.GossipSeeded (ips, insecure), np ->     DiscoverViaGossip (buildSeeded np   (configureSeeded insecure ips))
+        | Discovery.GossipSeeded ips, np ->                 DiscoverViaGossip (buildSeeded np   (configureSeeded false ips))
+        | Discovery.GossipSeededInsecure ips, np ->         DiscoverViaGossip (buildSeeded np   (configureSeeded true ips))
         | Discovery.GossipDns clusterDns, np ->             DiscoverViaGossip (buildDns np      (configureDns clusterDns None))
         | Discovery.GossipDnsCustomPort (dns, port), np ->  DiscoverViaGossip (buildDns np      (configureDns dns (Some port)))
 
