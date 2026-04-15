@@ -59,7 +59,7 @@ services:
   # IMPORTANT: INSECURE mode is suitable for local development/testing ONLY. Do NOT use in staging or production.
   # 23.10 is the last LTS version supporting both the gRPC and legacy TCP protocols.
   # Nodes expose gRPC on ports 2111-2113 and TCP on ports 1111-1113 to the host.
-  node1.eventstore: &template
+  node1.eventstore:
     image: eventstore/eventstore:23.10.8-bookworm-slim
     container_name: node1.eventstore
     environment:
@@ -82,7 +82,7 @@ services:
         ipv4_address: 172.30.240.11
 
   node2.eventstore:
-    <<: *template
+    image: eventstore/eventstore:23.10.8-bookworm-slim
     container_name: node2.eventstore
     environment:
       <<: *eventstore-common-env
@@ -90,15 +90,21 @@ services:
       EVENTSTORE_ADVERTISE_HTTP_PORT_TO_CLIENT_AS: "2112"
       EVENTSTORE_ADVERTISE_TCP_PORT_TO_CLIENT_AS: "1112"
       EVENTSTORE_GOSSIP_SEED: 172.30.240.11:2113,172.30.240.13:2113
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:2113/health/live || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
     ports:
       - 1112:1113
       - 2112:2113
+    restart: always
     networks:
       clusternetwork:
         ipv4_address: 172.30.240.12
 
   node3.eventstore:
-    <<: *template
+    image: eventstore/eventstore:23.10.8-bookworm-slim
     container_name: node3.eventstore
     environment:
       <<: *eventstore-common-env
@@ -106,9 +112,15 @@ services:
       EVENTSTORE_ADVERTISE_HTTP_PORT_TO_CLIENT_AS: "2113"
       EVENTSTORE_ADVERTISE_TCP_PORT_TO_CLIENT_AS: "1113"
       EVENTSTORE_GOSSIP_SEED: 172.30.240.11:2113,172.30.240.12:2113
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:2113/health/live || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
     ports:
       - 1113:1113
       - 2113:2113
+    restart: always
     networks:
       clusternetwork:
         ipv4_address: 172.30.240.13
