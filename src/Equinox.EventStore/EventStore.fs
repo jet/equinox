@@ -545,7 +545,6 @@ module private Discovery =
 
     let buildSeeded np (f: GossipSeedClusterSettingsBuilder -> GossipSeedClusterSettingsBuilder) =
         ClusterSettings.Create().DiscoverClusterViaGossipSeeds().KeepDiscovering()
-        // |> fun s -> if insecure then s.TlsSettings(TlsSettings.DisableTls()) else s
         |> fun s -> match np with NodePreference.Random -> s.PreferRandomNode() | NodePreference.PreferSlave -> s.PreferFollowerNode() | _ -> s
         |> f |> _.Build()
 

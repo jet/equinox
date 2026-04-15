@@ -20,6 +20,7 @@
     </ItemGroup>
 
     <ItemGroup>
+        <PackageReference Include="EventStore.Client.Grpc.Streams" Version="23.3.9" />
         <PackageReference Include="FsCheck.Xunit.v3" Version="3.3.2" />
         <PackageReference Include="Serilog.Sinks.Seq" Version="7.0.0" />
         <PackageReference Include="unquote" Version="7.0.0" />
