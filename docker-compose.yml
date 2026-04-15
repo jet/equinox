@@ -1,3 +1,16 @@
+# Common EventStoreDB environment variables shared across all cluster nodes.
+# Increase internal TCP heartbeat timeouts to avoid spurious leader elections under Docker/Windows networking latency.
+# The defaults (700ms interval, 700ms timeout) are too tight for container-to-container communication on Windows.
+x-eventstore-common-env: &eventstore-common-env
+  EVENTSTORE_CLUSTER_SIZE: "3"
+  EVENTSTORE_RUN_PROJECTIONS: All
+  EVENTSTORE_ENABLE_EXTERNAL_TCP: "true"
+  EVENTSTORE_ENABLE_ATOM_PUB_OVER_HTTP: "true"
+  EVENTSTORE_INSECURE: "true"
+  EVENTSTORE_INT_TCP_HEARTBEAT_INTERVAL: "5000"
+  EVENTSTORE_INT_TCP_HEARTBEAT_TIMEOUT: "15000"
+  EVENTSTORE_DISCOVER_VIA_DNS: "false"
+  EVENTSTORE_ADVERTISE_HOST_TO_CLIENT_AS: 127.0.0.1
 services:
 
   # NOTE requires initialization (trust emulator's self-signed cert, create 2 databases)
@@ -50,21 +63,11 @@ services:
     image: eventstore/eventstore:23.10.8-bookworm-slim
     container_name: node1.eventstore
     environment:
-      - EVENTSTORE_CLUSTER_SIZE=3
-      - EVENTSTORE_RUN_PROJECTIONS=All
-      - EVENTSTORE_ENABLE_EXTERNAL_TCP=true
-      - EVENTSTORE_ENABLE_ATOM_PUB_OVER_HTTP=true
-      - EVENTSTORE_INSECURE=true
-      # Increase internal TCP heartbeat timeouts to avoid spurious leader elections under Docker/Windows networking latency.
-      # The defaults (700ms interval, 700ms timeout) are too tight for container-to-container communication on Windows.
-      - EVENTSTORE_INT_TCP_HEARTBEAT_INTERVAL=5000
-      - EVENTSTORE_INT_TCP_HEARTBEAT_TIMEOUT=15000
-      - EVENTSTORE_INT_IP=172.30.240.11
-      - EVENTSTORE_ADVERTISE_HTTP_PORT_TO_CLIENT_AS=2111
-      - EVENTSTORE_ADVERTISE_TCP_PORT_TO_CLIENT_AS=1111
-      - EVENTSTORE_GOSSIP_SEED=172.30.240.12:2113,172.30.240.13:2113
-      - EVENTSTORE_DISCOVER_VIA_DNS=false
-      - EVENTSTORE_ADVERTISE_HOST_TO_CLIENT_AS=127.0.0.1
+      <<: *eventstore-common-env
+      EVENTSTORE_INT_IP: 172.30.240.11
+      EVENTSTORE_ADVERTISE_HTTP_PORT_TO_CLIENT_AS: "2111"
+      EVENTSTORE_ADVERTISE_TCP_PORT_TO_CLIENT_AS: "1111"
+      EVENTSTORE_GOSSIP_SEED: 172.30.240.12:2113,172.30.240.13:2113
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:2113/health/live || exit 1"]
       interval: 5s
@@ -82,17 +85,11 @@ services:
     <<: *template
     container_name: node2.eventstore
     environment:
-      - EVENTSTORE_CLUSTER_SIZE=3
-      - EVENTSTORE_RUN_PROJECTIONS=All
-      - EVENTSTORE_ENABLE_EXTERNAL_TCP=true
-      - EVENTSTORE_ENABLE_ATOM_PUB_OVER_HTTP=true
-      - EVENTSTORE_INSECURE=true
-      - EVENTSTORE_INT_IP=172.30.240.12
-      - EVENTSTORE_ADVERTISE_HTTP_PORT_TO_CLIENT_AS=2112
-      - EVENTSTORE_ADVERTISE_TCP_PORT_TO_CLIENT_AS=1112
-      - EVENTSTORE_GOSSIP_SEED=172.30.240.11:2113,172.30.240.13:2113
-      - EVENTSTORE_DISCOVER_VIA_DNS=false
-      - EVENTSTORE_ADVERTISE_HOST_TO_CLIENT_AS=127.0.0.1
+      <<: *eventstore-common-env
+      EVENTSTORE_INT_IP: 172.30.240.12
+      EVENTSTORE_ADVERTISE_HTTP_PORT_TO_CLIENT_AS: "2112"
+      EVENTSTORE_ADVERTISE_TCP_PORT_TO_CLIENT_AS: "1112"
+      EVENTSTORE_GOSSIP_SEED: 172.30.240.11:2113,172.30.240.13:2113
     ports:
       - 1112:1113
       - 2112:2113
@@ -104,17 +101,11 @@ services:
     <<: *template
     container_name: node3.eventstore
     environment:
-      - EVENTSTORE_CLUSTER_SIZE=3
-      - EVENTSTORE_RUN_PROJECTIONS=All
-      - EVENTSTORE_ENABLE_EXTERNAL_TCP=true
-      - EVENTSTORE_ENABLE_ATOM_PUB_OVER_HTTP=true
-      - EVENTSTORE_INSECURE=true
-      - EVENTSTORE_INT_IP=172.30.240.13
-      - EVENTSTORE_ADVERTISE_HTTP_PORT_TO_CLIENT_AS=2113
-      - EVENTSTORE_ADVERTISE_TCP_PORT_TO_CLIENT_AS=1113
-      - EVENTSTORE_GOSSIP_SEED=172.30.240.11:2113,172.30.240.12:2113
-      - EVENTSTORE_DISCOVER_VIA_DNS=false
-      - EVENTSTORE_ADVERTISE_HOST_TO_CLIENT_AS=127.0.0.1
+      <<: *eventstore-common-env
+      EVENTSTORE_INT_IP: 172.30.240.13
+      EVENTSTORE_ADVERTISE_HTTP_PORT_TO_CLIENT_AS: "2113"
+      EVENTSTORE_ADVERTISE_TCP_PORT_TO_CLIENT_AS: "1113"
+      EVENTSTORE_GOSSIP_SEED: 172.30.240.11:2113,172.30.240.12:2113
     ports:
       - 1113:1113
       - 2113:2113
