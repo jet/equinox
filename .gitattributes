@@ -4,11 +4,10 @@
 * text=auto
 
 ###############################################################################
-# Solution and project files: all SDK-style XML, merge cleanly as text
+# Solution files: ensure consistent LF line endings
 ###############################################################################
 *.sln        text eol=lf
 *.slnx       text eol=lf
-*.*proj      text eol=lf
 
 ###############################################################################
 # Set default behavior for command prompt diff.
