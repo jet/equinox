@@ -1,0 +1,71 @@
+<Solution>
+  <Folder Name="/.project/">
+    <File Path="azure-pipelines.yml" />
+    <File Path="build.ps1" />
+    <File Path="CHANGELOG.md" />
+    <File Path="CONTRIBUTING.md" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Build.targets" />
+    <File Path="docker-compose-cosmos.ps1" />
+    <File Path="docker-compose-cosmos.sh" />
+    <File Path="docker-compose.env" />
+    <File Path="docker-compose.yml" />
+    <File Path="DOCUMENTATION.md" />
+    <File Path="global.json" />
+    <File Path="LICENSE" />
+    <File Path="nuget.config" />
+    <File Path="README.md" />
+    <File Path="SECURITY.md" />
+  </Folder>
+  <Folder Name="/.project/diagrams/">
+    <File Path="diagrams/container.puml" />
+    <File Path="diagrams/context.puml" />
+    <File Path="diagrams/CosmosCode.puml" />
+    <File Path="diagrams/CosmosComponent.puml" />
+    <File Path="diagrams/CosmosContainer.puml" />
+    <File Path="diagrams/EventStore.puml" />
+    <File Path="diagrams/EventStoreCode.puml" />
+    <File Path="diagrams/MemoryStore.puml" />
+    <File Path="diagrams/MemoryStoreContainer.puml" />
+  </Folder>
+  <Folder Name="/Samples/">
+    <Project Path="samples/Infrastructure/Infrastructure.fsproj" />
+    <Project Path="samples/Tutorial/Tutorial.fsproj" />
+    <Project Path="samples/Web/Web.fsproj" />
+  </Folder>
+  <Folder Name="/Samples/Store/">
+    <Project Path="samples/Store/Domain.Tests/Domain.Tests.fsproj" />
+    <Project Path="samples/Store/Domain/Domain.fsproj" />
+    <Project Path="samples/Store/Integration/Integration.fsproj" />
+  </Folder>
+  <Folder Name="/Samples/Todo/">
+    <Project Path="samples/TodoBackend/TodoBackend.fsproj" />
+  </Folder>
+  <Project Path="src/Equinox.Core/Equinox.Core.fsproj" />
+  <Project Path="src/Equinox.CosmosStore.Prometheus/Equinox.CosmosStore.Prometheus.fsproj" />
+  <Project Path="src/Equinox.CosmosStore/Equinox.CosmosStore.fsproj" />
+  <Project Path="src/Equinox.DynamoStore.Prometheus/Equinox.DynamoStore.Prometheus.fsproj" />
+  <Project Path="src/Equinox.DynamoStore/Equinox.DynamoStore.fsproj" />
+  <Project Path="src/Equinox.EventStore/Equinox.EventStore.fsproj" />
+  <Project Path="src/Equinox.EventStoreDb/Equinox.EventStoreDb.fsproj" />
+  <Project Path="src/Equinox.MemoryStore/Equinox.MemoryStore.fsproj" />
+  <Project Path="src/Equinox.MessageDb/Equinox.MessageDb.fsproj" />
+  <Project Path="src/Equinox.SqlStreamStore.MsSql/Equinox.SqlStreamStore.MsSql.fsproj" />
+  <Project Path="src/Equinox.SqlStreamStore.MySql/Equinox.SqlStreamStore.MySql.fsproj" />
+  <Project Path="src/Equinox.SqlStreamStore.Postgres/Equinox.SqlStreamStore.Postgres.fsproj" />
+  <Project Path="src/Equinox.SqlStreamStore/Equinox.SqlStreamStore.fsproj" />
+  <Project Path="src/Equinox/Equinox.fsproj" />
+  <Project Path="tests/Equinox.Core.Tests/Equinox.Core.Tests.fsproj" />
+  <Project Path="tests/Equinox.CosmosStore.Integration/Equinox.CosmosStore.Integration.fsproj" />
+  <Project Path="tests/Equinox.DynamoStore.Integration/Equinox.DynamoStore.Integration.fsproj" />
+  <Project Path="tests/Equinox.EventStore.Integration/Equinox.EventStore.Integration.fsproj" />
+  <Project Path="tests/Equinox.EventStoreDb.Integration/Equinox.EventStoreDb.Integration.fsproj" />
+  <Project Path="tests/Equinox.MemoryStore.Integration/Equinox.MemoryStore.Integration.fsproj" />
+  <Project Path="tests/Equinox.MessageDb.Integration/Equinox.MessageDb.Integration.fsproj" />
+  <Project Path="tests/Equinox.SqlStreamStore.MsSql.Integration/Equinox.SqlStreamStore.MsSql.Integration.fsproj" />
+  <Project Path="tests/Equinox.SqlStreamStore.MySql.Integration/Equinox.SqlStreamStore.MySql.Integration.fsproj" />
+  <Project Path="tests/Equinox.SqlStreamStore.Postgres.Integration/Equinox.SqlStreamStore.Postgres.Integration.fsproj" />
+  <Project Path="tests/Equinox.Tests/Equinox.Tests.fsproj" />
+  <Project Path="tools/Equinox.Tool/Equinox.Tool.fsproj" />
+  <Project Path="tools/Equinox.Tools.TestHarness/Equinox.Tools.TestHarness.fsproj" />
+</Solution>
