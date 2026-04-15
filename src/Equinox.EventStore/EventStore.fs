@@ -551,7 +551,7 @@ module private Discovery =
         x.SetClusterDns(clusterDns)
         |> fun s -> match maybeManagerPort with Some port -> s.SetClusterGossipPort(port) | None -> s
 
-    let inline configureSeeded insecure (seedEndpoints: System.Net.EndPoint []) (x: GossipSeedClusterSettingsBuilder) =
+    let inline configureSeeded insecure (seedEndpoints: System.Net.EndPoint[]) (x: GossipSeedClusterSettingsBuilder) =
         x.SetGossipSeedEndPoints(not insecure, seedEndpoints)
 
     /// converts a Discovery mode to a ClusterSettings or a Uri as appropriate

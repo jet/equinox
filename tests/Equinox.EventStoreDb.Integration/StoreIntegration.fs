@@ -66,7 +66,7 @@ let connectToLocalStore (_log: Serilog.ILogger) = async {
 #if STORE_EVENTSTORE_LEGACY
 open Equinox.EventStore
 
-/// Connect to the locally running INSECURE 3-node EventStoreDB cluster (see docker-compose.yml) via legacy TCP, using DNS-based gossip discovery.
+ /// Connect to the locally running INSECURE 3-node EventStoreDB cluster (see docker-compose.yml) via legacy TCP, using gossip-based discovery.
 /// WARNING: Applies INSECURE overrides to match the docker-compose config. NEVER do this in staging or production.
 let connectToLocalStore log =
     let c = EventStoreConnector(
