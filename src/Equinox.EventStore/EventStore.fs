@@ -137,7 +137,7 @@ module private Write =
         with :? EventStore.ClientAPI.Exceptions.WrongExpectedVersionException as ex ->
             log.Information(ex, "Ges Sync WrongExpectedVersionException writing {EventTypes}, actual {ActualVersion}",
                 [| for x in events -> x.Type |], ex.ActualVersion)
-            return EsSyncResult.Conflict (let v = ex.ActualVersion in v.Value) }
+            return EsSyncResult.Conflict (ex.ActualVersion.GetValueOrDefault -1L) }
 
     let eventDataBytes events =
         let eventDataLen (x: EventData) = match x.Data, x.Metadata with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
@@ -529,7 +529,10 @@ type Discovery =
     // Allow Uri-based connection definition (discovery://, tcp:// or
     | Uri of Uri
     /// Supply a set of pre-resolved EndPoints instead of letting Gossip resolution derive from the DNS outcome
-    | GossipSeeded of seedManagerEndpoints: System.Net.EndPoint []
+    | GossipSeeded of seedManagerEndpoints: System.Net.EndPoint[]
+    // As per GossipSeeded but opts into an insecure mode
+    /// WARNING: insecure=true opts into INSECURE connections to a server configured with EVENTSTORE_INSECURE=true (gossip over HTTP, not HTTPS).
+    | GossipSeededInsecure of seedManagerEndpoints: System.Net.EndPoint[]
     // Standard Gossip-based discovery based on Dns query and standard manager port
     | GossipDns of clusterDns: string
     // Standard Gossip-based discovery based on Dns query (with manager port overriding default 2113)
@@ -550,13 +553,14 @@ module private Discovery =
         x.SetClusterDns(clusterDns)
         |> fun s -> match maybeManagerPort with Some port -> s.SetClusterGossipPort(port) | None -> s
 
-    let inline configureSeeded (seedEndpoints: System.Net.EndPoint []) (x: GossipSeedClusterSettingsBuilder) =
-        x.SetGossipSeedEndPoints(seedEndpoints)
+    let inline configureSeeded insecure (seedEndpoints: System.Net.EndPoint[]) (x: GossipSeedClusterSettingsBuilder) =
+        x.SetGossipSeedEndPoints(not insecure, seedEndpoints)
 
-    // converts a Discovery mode to a ClusterSettings or a Uri as appropriate
+    /// converts a Discovery mode to a ClusterSettings or a Uri as appropriate
     let (|DiscoverViaUri|DiscoverViaGossip|): Discovery * NodePreference -> Choice<Uri, ClusterSettings> = function
         | Discovery.Uri uri, _ ->                           DiscoverViaUri    uri
-        | Discovery.GossipSeeded seedEndpoints, np ->       DiscoverViaGossip (buildSeeded np   (configureSeeded seedEndpoints))
+        | Discovery.GossipSeeded ips, np ->                 DiscoverViaGossip (buildSeeded np   (configureSeeded false ips))
+        | Discovery.GossipSeededInsecure ips, np ->         DiscoverViaGossip (buildSeeded np   (configureSeeded true ips))
         | Discovery.GossipDns clusterDns, np ->             DiscoverViaGossip (buildDns np      (configureDns clusterDns None))
         | Discovery.GossipDnsCustomPort (dns, port), np ->  DiscoverViaGossip (buildDns np      (configureDns dns (Some port)))
 
@@ -591,7 +595,7 @@ type EventStoreConnector
             | NodePreference.PreferMaster   -> s.PerformOnAnyNode()                     // override default [implied] PerformOnMasterOnly(), use default Node preference of Master
             // NB .PreferSlaveNode/.PreferRandomNode setting is ignored if using EventStoreConnection.Create(ConnectionSettings, ClusterSettings) overload but
             // this code is necessary for cases where people are using the discover:// and related URI schemes
-            | NodePreference.PreferSlave    -> s.PerformOnAnyNode().PreferFollowerNode()// override default PerformOnMasterOnly(), override Master Node preference
+            | NodePreference.PreferSlave    -> s.PerformOnAnyNode().PreferFollowerNode() // override default PerformOnMasterOnly(), override Master Node preference
             | NodePreference.Random         -> s.PerformOnAnyNode().PreferRandomNode()  // override default PerformOnMasterOnly(), override Master Node preference
         |> fun s -> match concurrentOperationsLimit with Some col -> s.LimitConcurrentOperationsTo(col) | None -> s // ES default: 5000
         |> fun s -> match heartbeatTimeout with Some v -> s.SetHeartbeatTimeout v | None -> s // default: 1500 ms
