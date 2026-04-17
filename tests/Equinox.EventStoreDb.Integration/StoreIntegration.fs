@@ -88,9 +88,7 @@ type Category<'event, 'state, 'req> = EventStoreCategory<'event, 'state, 'req>
 
 let createContext connection batchSize = Context(connection, batchSize = batchSize)
 
-#if NET
 let source = new ActivitySource("StoreIntegration")
-#endif
 
 module SimplestThing =
     type Event =
@@ -201,9 +199,7 @@ type GeneralTests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly batching the reads [without any optimizations]`` (ctx, skuId) = async {
-        #if NET
         use _ = source.StartActivity("Can roundtrip against Store, correctly batching the reads [without any optimizations]")
-        #endif
         let log, capture = output.CreateLoggerWithCapture()
         let! connection = connectToLocalStore log
 
@@ -232,9 +228,7 @@ type GeneralTests(testOutputHelper) =
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, managing sync conflicts by retrying [without any optimizations]`` (ctx, initialState) = async {
-        #if NET
         use _ = source.StartActivity("Can roundtrip against Store, managing sync conflicts by retrying [without any optimizations]")
-        #endif
         let log1, capture = output.CreateLoggerWithCapture()
 
         let! connection = connectToLocalStore log1
@@ -266,9 +260,7 @@ type GeneralTests(testOutputHelper) =
         let w3, s3 = eventWaitSet ()
         let w4, s4 = eventWaitSet ()
         let t1 = async {
-            #if NET
             use _ = source.StartActivity("Trx1")
-            #endif
             // Wait for other to have state, signal we have it, await conflict and handle
             let prepare = async {
                 do! w0
@@ -284,9 +276,7 @@ type GeneralTests(testOutputHelper) =
         let context = createContext connection batchSize
         let service2 = Cart.createServiceWithoutOptimization log2 context
         let t2 = async {
-            #if NET
             use _ = source.StartActivity("Trx2")
-            #endif
             // Signal we have state, wait for other to do same, engineer conflict
             let prepare = async {
                 do! s0
@@ -328,9 +318,7 @@ type GeneralTests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can correctly read and update against Store, with LatestKnownEvent Access Strategy`` id value = async {
-        #if NET
         use _ = source.StartActivity("Can correctly read and update against Store, with LatestKnownEvent Access Strategy")
-        #endif
         let log, capture = output.CreateLoggerWithCapture()
         let! client = connectToLocalStore log
         let service = ContactPreferences.createService log client
@@ -351,9 +339,7 @@ type GeneralTests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly caching to avoid redundant reads`` (ctx, skuId) = async {
-        #if NET
         use _ = source.StartActivity("Can roundtrip against Store, correctly caching to avoid redundant reads")
-        #endif
         let log, capture = output.CreateLoggerWithCapture()
         let! client = connectToLocalStore log
         let batchSize = 10
@@ -416,9 +402,7 @@ type GeneralTests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Version is 0-based`` () = async {
-        #if NET
         use _ = source.StartActivity("Version is 0-based")
-        #endif
         let log, capture = output.CreateLoggerWithCapture()
         use _capture = capture
         let! connection = connectToLocalStore log
@@ -459,9 +443,7 @@ type RollingSnapshotTests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly compacting to avoid redundant reads`` (ctx, skuId) = async {
-        #if NET
         use _ = source.StartActivity("Can roundtrip against Store, correctly compacting to avoid redundant reads")
-        #endif
         let log, capture = output.CreateLoggerWithCapture()
         let! client = connectToLocalStore log
         let batchSize = 10
@@ -566,9 +548,7 @@ type AdjacentSnapshotTests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly snapshotting to avoid redundant reads`` (ctx, skuId) = async {
-        #if NET
         use _ = source.StartActivity("Can roundtrip against Store, correctly snapshotting to avoid redundant reads")
-        #endif
         let log, capture = output.CreateLoggerWithCapture()
         let! client = connectToLocalStore log
         let batchSize = 10
@@ -678,9 +658,7 @@ type OtelSerilogMappingTests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``OTel and Serilog both classify Append for a write operation`` (ctx, skuId) = async {
-        #if NET
-        use _ = source.StartActivity("OTel and Serilog both classify Append for a write operation")
-        #endif
+        use _ = source.StartActivity "OTel and Serilog both classify Append for a write operation"
         let log, otelCapture, serilogCapture = output.CreateLoggerWithDualCapture()
         use _capture = otelCapture
         let! connection = connectToLocalStore log
@@ -690,45 +668,36 @@ type OtelSerilogMappingTests(testOutputHelper) =
 
         do! service.SyncItems(cartId, false, [ (ctx, skuId, Some 1, None) ])
 
-        let otelAppends = otelCapture.ExternalCalls |> List.filter (fun a -> a = EsAct.Append)
-        let serilogAppends = serilogCapture.ExternalCalls |> List.filter (fun a -> a = EsAct.Append)
-        test <@ otelAppends.Length >= 1 @>
-        test <@ serilogAppends.Length >= 1 @> }
+        let acts = List.filter (fun a -> a = EsAct.Append)
+        let otelAppends = otelCapture.ExternalCalls |> acts
+        let serilogAppends = serilogCapture.ExternalCalls |> acts
+        test <@ otelAppends = serilogAppends && otelAppends.Length > 0 @> }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``OTel and Serilog both classify read operations consistently`` (ctx, skuId) = async {
-        #if NET
-        use _ = source.StartActivity("OTel and Serilog both classify read operations consistently")
-        #endif
+        use _ = source.StartActivity "OTel and Serilog both classify read operations consistently"
         let log, otelCapture, serilogCapture = output.CreateLoggerWithDualCapture()
         use _capture = otelCapture
         let! connection = connectToLocalStore log
         let context = createContext connection defaultBatchSize
         let service = Cart.createServiceWithoutOptimization log context
         let cartId = CartId.gen ()
-
-        // Seed some data, then read it
         do! service.SyncItems(cartId, false, [ (ctx, skuId, Some 1, None) ])
         otelCapture.Clear()
         serilogCapture.Clear()
+        
+        // Read the data that's been stashed
         let! _ = service.Read cartId
 
-        // Both should see at least a batch read operation
+        // Both should see at least a batch read operation; Both should agree on the type of read
         let otelOps = otelCapture.ExternalCalls
         let serilogOps = serilogCapture.ExternalCalls
-        test <@ otelOps.Length >= 1 @>
-        test <@ serilogOps.Length >= 1 @>
-        // Both should agree on the type of read
-        let otelHasBatch = otelOps |> List.exists (fun a -> a = EsAct.BatchForward || a = EsAct.BatchBackward || a = EsAct.ReadLast)
-        let serilogHasBatch = serilogOps |> List.exists (fun a -> a = EsAct.BatchForward || a = EsAct.BatchBackward || a = EsAct.ReadLast)
-        test <@ otelHasBatch @>
-        test <@ serilogHasBatch @> }
+        let acts = List.choose (function EsAct.BatchForward | EsAct.BatchBackward | EsAct.ReadLast  as a -> Some a | _ -> None) 
+        test <@ acts otelOps = acts serilogOps && otelOps.Length > 0 @> }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``OtelToSerilogBridge emits log events matching store operations`` (ctx, skuId) = async {
-        #if NET
-        use _ = source.StartActivity("OtelToSerilogBridge emits log events matching store operations")
-        #endif
+        use _ = source.StartActivity "OtelToSerilogBridge emits log events matching store operations"
         let bridgeCapture = LogCaptureBuffer()
         let bridgeLog = Serilog.LoggerConfiguration().WriteTo.Sink(bridgeCapture).CreateLogger()
         use _bridge = new OtelToSerilogBridge(bridgeLog)
@@ -749,7 +718,7 @@ type OtelSerilogMappingTests(testOutputHelper) =
             | true, v -> Some (string v)
             | _ -> None)
         test <@ bridgeLogs.Length >= 2 @>
-        test <@ bridgeLogs |> List.exists (fun s -> s.Contains "Append") @> }
+        test <@ bridgeLogs |> List.exists _.Contains("Append") @> }
 
 #if STORE_MESSAGEDB
     interface IDisposable with

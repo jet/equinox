@@ -17,8 +17,8 @@ type TestOutputRendererSink(writeLine) =
     interface Serilog.Core.ILogEventSink with member _.Emit e = e |> renderer |> writeLine
 
 type LogCaptureBuffer() =
-    let captured = System.Collections.Concurrent.ConcurrentQueue()
-    interface Serilog.Core.ILogEventSink with member _.Emit logEvent = captured.Enqueue logEvent
+    let captured = ResizeArray()
+    interface Serilog.Core.ILogEventSink with member _.Emit logEvent = captured.Add logEvent
     member _.Clear () = captured.Clear()
     member _.ChooseCalls chooser = captured.ToArray() |> Seq.choose chooser |> List.ofSeq
 

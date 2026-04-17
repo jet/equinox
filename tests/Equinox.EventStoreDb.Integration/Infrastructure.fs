@@ -36,8 +36,7 @@ type EsAct = Append | AppendConflict | SliceForward | SliceBackward | BatchForwa
 
 [<AutoOpen>]
 module OtelHelpers =
-    let (|EsOp|_|) (act: Activity): EsAct option =
-        match act.OperationName with
+    let tryEsAct = function
         | "Append" -> Some EsAct.Append
         | "AppendConflict" -> Some EsAct.AppendConflict
         | "SliceForward" -> Some EsAct.SliceForward
@@ -79,8 +78,6 @@ module SerilogHelpers =
         match e.Properties.TryGetValue name with
         | true, (SerilogScalar _ as s) -> Some s
         | _ -> None
-    let (|SerilogString|_|): LogEventPropertyValue -> string option = function SerilogScalar (:? string as y) -> Some y | _ -> None
-    let (|SerilogBool|_|): LogEventPropertyValue -> bool option = function SerilogScalar (:? bool as y) -> Some y | _ -> None
 
 /// Captures store-specific Activity emissions for test assertions, using AsyncLocal for per-test isolation
 type StoreActivityCapture() =
@@ -105,26 +102,13 @@ type StoreActivityCapture() =
             Sample = (fun _ -> ActivitySamplingResult.AllDataAndRecorded),
             ActivityStopped = (fun act ->
                 let ops = currentOps.Value
-                if ops <> null then lock gate (fun () -> ops.Add(act.OperationName))))
+                if ops <> null then lock gate (fun () -> ops.Add act.OperationName)))
         ActivitySource.AddActivityListener(l)
         l
     let ops = ResizeArray<string>()
-    do
-        ignore _listener
-        currentOps.Value <- ops
+    do currentOps.Value <- ops
     member _.Clear() = lock gate (fun () -> ops.Clear())
-    member _.ExternalCalls =
-        lock gate (fun () -> ops |> Seq.toList)
-        |> List.choose (fun name ->
-            match name with
-            | "Append" -> Some EsAct.Append
-            | "AppendConflict" -> Some EsAct.AppendConflict
-            | "SliceForward" -> Some EsAct.SliceForward
-            | "SliceBackward" -> Some EsAct.SliceBackward
-            | "BatchForward" -> Some EsAct.BatchForward
-            | "BatchBackward" -> Some EsAct.BatchBackward
-            | "ReadLast" -> Some EsAct.ReadLast
-            | _ -> None)
+    member _.ExternalCalls = lock gate (fun () -> ops |> Seq.toList) |> List.choose tryEsAct
     interface IDisposable with member _.Dispose() = currentOps.Value <- null
 
 type LogCapture() =
