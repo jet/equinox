@@ -20,7 +20,7 @@ type LogCaptureBuffer() =
     let captured = ResizeArray()
     interface Serilog.Core.ILogEventSink with member _.Emit logEvent = captured.Add logEvent
     member _.Clear () = captured.Clear()
-    member _.ChooseCalls chooser = captured.ToArray() |> Seq.choose chooser |> List.ofSeq
+    member _.ChooseCalls chooser = captured |> Seq.choose chooser |> List.ofSeq
 
 type TestOutput(testOutput: Xunit.ITestOutputHelper) =
 
