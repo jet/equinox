@@ -1,10 +1,12 @@
 ﻿namespace Equinox.EventStore
 
 open Equinox.Core
+open Equinox.Core.Tracing
 open EventStore.ClientAPI
 open Serilog // NB must shadow EventStore.ClientAPI.ILogger
 open System
 open System.Collections.Generic
+open System.Diagnostics
 
 type EventBody = ReadOnlyMemory<byte>
 
@@ -145,20 +147,26 @@ module private Write =
 
     let private writeEventsLogged (conn: IEventStoreConnection) (streamName: string) (version: int64) (events: EventData[]) (log: ILogger)
         : Task<EsSyncResult> = task {
+        let act = Activity.Current
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propEventData "Json" events
         let bytes, count = eventDataBytes events, events.Length
         let log = log |> Log.prop "bytes" bytes
+        if act <> null then act.AddExpectedVersion(version).IncMetric(count, bytes) |> ignore
         let writeLog = log |> Log.prop "stream" streamName |> Log.prop "expectedVersion" version |> Log.prop "count" count
         let! t, result = (fun _ct -> writeEventsAsync writeLog conn streamName version events) |> Stopwatch.time CancellationToken.None
         let reqMetric: Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let resultLog, evt =
             match result, reqMetric with
             | EsSyncResult.Written x, m ->
+                if act <> null then act.SetStatus(ActivityStatusCode.Ok).AddTag("eqx.new_version", x.NextExpectedVersion) |> ignore
                 log |> Log.prop "nextExpectedVersion" x.NextExpectedVersion |> Log.prop "logPosition" x.LogPosition, Log.WriteSuccess m
             | EsSyncResult.Conflict actualVersion, m ->
+                let eventTypes = [| for x in events -> x.Type |]
+                if act <> null then act.RecordConflict().AddTag("eqx.event_types", eventTypes) |> ignore
                 log |> Log.prop "actualVersion" actualVersion, Log.WriteConflict m
         (resultLog |> Log.event evt).Information("Ges{action:l} count={count} conflict={conflict}",
             "Write", events.Length, match evt with Log.WriteConflict _ -> true | _ -> false)
+        emitStoreOp (match evt with Log.WriteConflict _ -> "AppendConflict" | _ -> "Append")
         return result }
 
     let writeEvents (log: ILogger) retryPolicy (conn: IEventStoreConnection) (streamName: string) (version: int64) (events: EventData[])
@@ -178,13 +186,16 @@ module private Read =
     let (|ResolvedEventLen|) (x: ResolvedEvent) = match x.Event.Data, x.Event.Metadata with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
 
     let private loggedReadSlice conn streamName direction batchSize startPos (log: ILogger): Task<StreamEventsSlice> = task {
+        let act = Activity.Current
         let! t, slice = (fun _ct -> readSliceAsync conn streamName direction batchSize startPos) |> Stopwatch.time CancellationToken.None
         let bytes, count = slice.Events |> Array.sumBy (|ResolvedEventLen|), slice.Events.Length
         let reqMetric: Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Slice (direction, reqMetric)
+        if act <> null then act.IncMetric(count, bytes).AddDirection(string direction) |> ignore
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propResolvedEvents "Json" slice.Events
         (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes |> Log.event evt).Information("Ges{action:l} count={count} version={version}",
             "Read", count, slice.LastEventNumber)
+        emitStoreOp (match direction with Direction.Forward -> "SliceForward" | Direction.Backward -> "SliceBackward")
         return slice }
 
     let private readBatches (log: ILogger) (readSlice: int64 -> ILogger -> Task<StreamEventsSlice>)
@@ -211,14 +222,17 @@ module private Read =
     let resolvedEventBytes events = events |> Array.sumBy (|ResolvedEventLen|)
 
     let logBatchRead direction streamName t events batchSize version (log: ILogger) =
+        let act = Activity.Current
         let bytes, count = resolvedEventBytes events, events.Length
         let reqMetric: Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let batches = (events.Length - 1) / batchSize + 1
         let action = match direction with Direction.Forward -> "LoadF" | Direction.Backward -> "LoadB"
+        if act <> null then act.IncMetric(count, bytes).AddLastVersion(version).AddBatches(batches).AddDirection(string direction) |> ignore
         let evt = Log.Metric.Batch (direction, batches, reqMetric)
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "Ges{action:l} stream={stream} count={count}/{batches} version={version}",
             action, streamName, count, batches, version)
+        emitStoreOp (match direction with Direction.Forward -> "BatchForward" | Direction.Backward -> "BatchBackward")
 
     let loadForwardsFrom (log: ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName startPosition: Task<int64 * ResolvedEvent[]> = task {
         let mergeBatches (batches: IAsyncEnumerable<int64 option * ResolvedEvent[]>) = task {
@@ -491,28 +505,6 @@ type EventStoreCategory<'event, 'state, 'req> =
         let cat = StoreCategory<'event, 'state, 'req>(context, codec, fold, initial, access) |> Caching.apply Token.isStale caching
         { inherit Equinox.Category<'event, 'state, 'req>(name, cat); __ = () }; val private __: unit
 
-type private SerilogAdapter(log: ILogger) =
-    interface EventStore.ClientAPI.ILogger with
-        member _.Debug(format: string, args: obj []) =           log.Debug(format, args)
-        member _.Debug(ex: exn, format: string, args: obj []) =  log.Debug(ex, format, args)
-        member _.Info(format: string, args: obj []) =            log.Information(format, args)
-        member _.Info(ex: exn, format: string, args: obj []) =   log.Information(ex, format, args)
-        member _.Error(format: string, args: obj []) =           log.Error(format, args)
-        member _.Error(ex: exn, format: string, args: obj []) =  log.Error(ex, format, args)
-
-[<RequireQualifiedAccess; NoComparison; NoEquality>]
-type Logger =
-    | SerilogVerbose of ILogger
-    | SerilogNormal of ILogger
-    | CustomVerbose of EventStore.ClientAPI.ILogger
-    | CustomNormal of EventStore.ClientAPI.ILogger
-    member log.Configure(b: ConnectionSettingsBuilder) =
-        match log with
-        | SerilogVerbose logger -> b.EnableVerboseLogging().UseCustomLogger(SerilogAdapter(logger))
-        | SerilogNormal logger -> b.UseCustomLogger(SerilogAdapter(logger))
-        | CustomVerbose logger -> b.EnableVerboseLogging().UseCustomLogger(logger)
-        | CustomNormal logger -> b.UseCustomLogger(logger)
-
 [<RequireQualifiedAccess; NoComparison>]
 type NodePreference =
     /// Track master via gossip, writes direct, reads should immediately reflect writes, resync without backoff (highest load on master, good write perf)
@@ -574,7 +566,7 @@ type ConnectionStrategy =
 
 type EventStoreConnector
     (   username, password, reqTimeout: TimeSpan, reqRetries: int,
-        [<O; D(null)>] ?log: Logger, [<O; D(null)>] ?heartbeatTimeout: TimeSpan, [<O; D(null)>] ?concurrentOperationsLimit,
+        [<O; D(null)>] ?heartbeatTimeout: TimeSpan, [<O; D(null)>] ?concurrentOperationsLimit,
         [<O; D(null)>] ?readRetryPolicy, [<O; D(null)>] ?writeRetryPolicy,
         [<O; D(null)>] ?gossipTimeout, [<O; D(null)>] ?clientConnectionTimeout,
         // Additional strings identifying the context of this connection; should provide enough context to disambiguate all potential connections to a cluster
@@ -601,7 +593,6 @@ type EventStoreConnector
         |> fun s -> match heartbeatTimeout with Some v -> s.SetHeartbeatTimeout v | None -> s // default: 1500 ms
         |> fun s -> match gossipTimeout with Some v -> s.SetGossipTimeout v | None -> s // default: 1000 ms
         |> fun s -> match clientConnectionTimeout with Some v -> s.WithConnectionTimeoutOf v | None -> s // default: 1000 ms
-        |> fun s -> match log with Some log -> log.Configure s | None -> s
         |> fun s -> match custom with Some c -> c s | None -> s
         |> _.Build()
 

@@ -16,10 +16,17 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Equinox.DynamoStore`: Update `AWSSDK` dependencies to 4.x (knock-on effect of updating `FSharp.AWS.DynamoDB` dependency to `0.13.0-beta`) [#480](https://github.com/jet/equinox/pull/480) :pray: [@njlr](https://github.com/njlr)
 - `Equinox.SqlStreamStore.MsSql`: Update `System.IdentityModel.Tokens.Jwt` to remove transitive vulnerable defaults [#489](https://github.com/jet/equinox/pull/489)
 - `Equinox.EventStore`: Correct handling for `WrongExpectedVersion` when stream empty [#493](https://github.com/jet/equinox/pull/493)
+- `Equinox.EventStore`, `Equinox.EventStoreDb`, `Equinox.SqlStreamStore`: Add `System.Diagnostics.Activity`-based OpenTelemetry tracing (following `Equinox.MessageDb` patterns). Store operations emit child Activities for granular metric capture via `ActivityListener`
+- `Equinox.SqlStreamStore.Postgres`, `Equinox.SqlStreamStore.MsSql`, `Equinox.SqlStreamStore.MySql`: Use unconditional `ProjectReference` to `Equinox.SqlStreamStore` (previously conditional Debug/Release)
+
+### Removed
+
+- `Equinox.EventStore`: Removed `Logger` DU (`SerilogVerbose`/`SerilogNormal`/`CustomVerbose`/`CustomNormal`), `SerilogAdapter` type, and `?log: Logger` optional parameter from `EventStoreConnector` [**breaking**]
 
 ### Added
 
 - `Equinox.CosmosStore.Linq`: Add LINQ querying support for Indexed `u`nfolds [#450](https://github.com/jet/equinox/pull/450)
+- `OtelToSerilogBridge`: Shared helper mapping OpenTelemetry Activity completions to equivalent Serilog structured log writes, providing a migration path for consumers with Serilog-based metric pipelines
 
 <a name="4.1.2"></a>
 ## [4.1.2] - 2026-02-04

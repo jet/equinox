@@ -152,6 +152,7 @@ module private Write =
                 log, Log.WriteConflict reqMetric
         (resultLog |> Log.event evt).Information("Mdb{action:l} count={count} conflict={conflict}",
                                                  "Write", count, match evt with Log.WriteConflict _ -> true | _ -> false)
+        emitStoreOp (match evt with Log.WriteConflict _ -> "AppendConflict" | _ -> "Append")
         return result }
     let writeEvents log retryPolicy writer (category, streamId, streamName) version events onSync ct: Task<MdbSyncResult> = task {
         let call = writeEventsLogged writer streamName version events onSync
@@ -188,6 +189,7 @@ module Read =
         let log = if not (log.IsEnabled Events.LogEventLevel.Debug) then log else log |> Log.propResolvedEvents "Json" slice.Messages
         (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes |> Log.event evt).Information("Mdb{action:l} count={count} version={version}",
             "Read", count, slice.LastVersion)
+        emitStoreOp "SliceForward"
         return slice }
 
     let private readBatches (log: ILogger) fold originState tryDecode (readSlice: int64 -> int -> ILogger -> CancellationToken -> Task<StreamEventsSlice>)
@@ -223,6 +225,7 @@ module Read =
         (log |> Log.event evt).Information(
             "Mdb{action:l} stream={stream} count={count}/{batches} version={version}",
             action, streamName, events, batches, version)
+        emitStoreOp "BatchForward"
 
     let private logLastEventRead streamName t events (version: int64) (log: ILogger) =
         let bytes = resolvedEventBytes events
@@ -234,6 +237,7 @@ module Read =
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "Mdb{action:l} stream={stream} count={count} version={version}",
             "ReadL", streamName, count, version)
+        emitStoreOp "ReadLast"
 
     let internal loadLastEvent (log: ILogger) retryPolicy (reader: MessageDbReader) requiresLeader streamName eventType ct
         : Task<int64 * ITimelineEvent<EventBody>[]> = task {

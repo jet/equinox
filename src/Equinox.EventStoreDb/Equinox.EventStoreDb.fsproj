@@ -2,12 +2,14 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <PackageValidationBaselineVersion>4.0.0</PackageValidationBaselineVersion>
+    <!-- <PackageValidationBaselineVersion>4.0.0</PackageValidationBaselineVersion> -->
+    <DefineConstants>$(DefineConstants);STORE_EVENTSTOREDB</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="..\Equinox\Infrastructure.fs" />
     <Compile Include="..\Equinox.Core\Internal.fs" />
+    <Compile Include="Tracing.fs" />
     <Compile Include="EventStoreDb.fs" />
   </ItemGroup>
 

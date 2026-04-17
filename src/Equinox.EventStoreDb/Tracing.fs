@@ -1,24 +1,43 @@
 [<AutoOpen>]
-module internal Equinox.MessageDb.Tracing
+module internal
+#if STORE_EVENTSTOREDB
+    Equinox.EventStoreDb.Tracing
+#endif
+#if STORE_EVENTSTORE_LEGACY
+    Equinox.EventStore.Tracing
+#endif
+#if !STORE_EVENTSTOREDB && !STORE_EVENTSTORE_LEGACY
+    Equinox.SqlStreamStore.Tracing
+#endif
 
-open Equinox.MessageDb.Core
 open System.Diagnostics
 
-let source = new ActivitySource("Equinox.MessageDb")
+let [<Literal>] private SourceName =
+#if STORE_EVENTSTOREDB
+    "Equinox.EventStoreDb"
+#endif
+#if STORE_EVENTSTORE_LEGACY
+    "Equinox.EventStore"
+#endif
+#if !STORE_EVENTSTOREDB && !STORE_EVENTSTORE_LEGACY
+    "Equinox.SqlStreamStore"
+#endif
+
+let source = new ActivitySource(SourceName)
 
 [<AbstractClass; Sealed; System.Runtime.CompilerServices.Extension>]
 type ActivityExtensions private () =
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddExpectedVersion(act: Activity, version) =
-        match version with StreamVersion v -> act.AddTag("eqx.expected_version", v) | Any -> act
+    static member AddExpectedVersion(act: Activity, version: int64) =
+        act.AddTag("eqx.expected_version", version)
 
     [<System.Runtime.CompilerServices.Extension>]
     static member AddLastVersion(act: Activity, version: int64) =
         act.AddTag("eqx.last_version", version)
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddBatchSize(act: Activity, size: int64) =
+    static member AddBatchSize(act: Activity, size: int) =
         act.AddTag("eqx.batch_size", size)
 
     [<System.Runtime.CompilerServices.Extension>]
@@ -32,6 +51,10 @@ type ActivityExtensions private () =
     [<System.Runtime.CompilerServices.Extension>]
     static member AddLoadMethod(act: Activity, method: string) =
         act.AddTag("eqx.load_method", method)
+
+    [<System.Runtime.CompilerServices.Extension>]
+    static member AddDirection(act: Activity, direction: string) =
+        act.AddTag("eqx.direction", direction)
 
     [<System.Runtime.CompilerServices.Extension>]
     static member RecordConflict(act: Activity) =

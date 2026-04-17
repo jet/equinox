@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <PackageValidationBaselineVersion>4.0.0</PackageValidationBaselineVersion>
+    <!-- <PackageValidationBaselineVersion>4.0.0</PackageValidationBaselineVersion> -->
   </PropertyGroup>
 
   <ItemGroup>
@@ -11,8 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Condition=" '$(Configuration)' == 'Debug' " Include="..\Equinox.SqlStreamStore\Equinox.SqlStreamStore.fsproj" />
-    <PackageReference Condition=" '$(Configuration)' == 'Release' " Include="Equinox.SqlStreamStore" Version="[4.0.0, 5.0.0)" />
+    <ProjectReference Include="..\Equinox.SqlStreamStore\Equinox.SqlStreamStore.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

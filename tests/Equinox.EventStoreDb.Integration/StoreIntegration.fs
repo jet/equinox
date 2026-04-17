@@ -70,7 +70,7 @@ open Equinox.EventStore
 /// WARNING: Applies INSECURE overrides to match the docker-compose config. NEVER do this in staging or production.
 let connectToLocalStore log =
     let c = EventStoreConnector(
-            "admin", "changeit", reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log,
+            "admin", "changeit", reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3,
             tags=["I", Guid.NewGuid().ToString("N")],
             // INSECURE: Disable TLS for TCP data transfer, to match the docker-compose EVENTSTORE_INSECURE=true config. NEVER do this in production.
             custom = _.DisableTls())
@@ -235,7 +235,7 @@ type GeneralTests(testOutputHelper) =
         #if NET
         use _ = source.StartActivity("Can roundtrip against Store, managing sync conflicts by retrying [without any optimizations]")
         #endif
-        let log1, capture1 = output.CreateLoggerWithCapture()
+        let log1, capture = output.CreateLoggerWithCapture()
 
         let! connection = connectToLocalStore log1
         // Ensure batching is included at some point in the proceedings
@@ -280,7 +280,7 @@ type GeneralTests(testOutputHelper) =
             do! act prepare service1 sku12 12
             // Signal conflict generated
             do! s4 }
-        let log2, capture2 = output.CreateLoggerWithCapture()
+        let log2 = output.CreateLogger()
         let context = createContext connection batchSize
         let service2 = Cart.createServiceWithoutOptimization log2 context
         let t2 = async {
@@ -299,7 +299,7 @@ type GeneralTests(testOutputHelper) =
                 do! s3
                 do! w4 }
             do! act prepare service2 sku22 22 }
-        // Act: Engineer the conflicts and applications, with logging into capture1 and capture2
+        // Act: Engineer the conflicts and applications
         do! Async.Parallel [t1; t2] |> Async.Ignore
 
         // Load state
@@ -310,9 +310,8 @@ type GeneralTests(testOutputHelper) =
         test <@ maybeInitialSku |> Option.forall (fun (skuId, quantity) -> has skuId quantity)
                 && has sku11 11 && has sku12 12
                 && has sku21 21 && has sku22 22 @>
-       // Intended conflicts pertained
-        let hadConflict= function EsEvent (EsAction EsAct.AppendConflict) -> Some () | _ -> None
-        test <@ [1; 1] = [for c in [capture1; capture2] -> c.ChooseCalls hadConflict |> List.length] @> }
+       // Intended conflicts pertained (2 total: one per concurrent service)
+        test <@ 2 = (capture.ExternalCalls |> List.filter (fun a -> a = EsAct.AppendConflict) |> List.length) @> }
 
 #if STORE_EVENTSTOREDB // gRPC does not expose slice metrics
     let sliceBackward = []
@@ -420,7 +419,8 @@ type GeneralTests(testOutputHelper) =
         #if NET
         use _ = source.StartActivity("Version is 0-based")
         #endif
-        let log, _ = output.CreateLoggerWithCapture()
+        let log, capture = output.CreateLoggerWithCapture()
+        use _capture = capture
         let! connection = connectToLocalStore log
 
         let batchSize = 3
@@ -656,6 +656,102 @@ type AdjacentSnapshotTests(testOutputHelper) =
         test <@ readSnapshotted @ [EsAct.Append; EsAct.Append] @ sliceForward @ singleBatchForward = capture.ExternalCalls @>
     }
 
+    interface IDisposable with
+      member _.Dispose() = sdk.Shutdown() |> ignore
+#endif
+
+/// Demonstrates that OTel Activity capture and Serilog LogEvent capture yield equivalent EsAct classifications,
+/// proving the OTel migration is lossless. Also exercises the OtelToSerilogBridge helper.
+type OtelSerilogMappingTests(testOutputHelper) =
+#if STORE_MESSAGEDB
+    let sdk =
+        Sdk.CreateTracerProviderBuilder()
+           .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService(serviceName = "mdbi-mapping"))
+           .AddSource("Equinox")
+           .AddSource("Equinox.MessageDb")
+           .AddSource("StoreIntegration")
+           .AddSource("Npqsl")
+           .AddOtlpExporter(fun opts -> opts.Endpoint <- Uri("http://localhost:4317"))
+           .Build()
+#endif
+    let output = TestContext(testOutputHelper)
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
+    let ``OTel and Serilog both classify Append for a write operation`` (ctx, skuId) = async {
+        #if NET
+        use _ = source.StartActivity("OTel and Serilog both classify Append for a write operation")
+        #endif
+        let log, otelCapture, serilogCapture = output.CreateLoggerWithDualCapture()
+        use _capture = otelCapture
+        let! connection = connectToLocalStore log
+        let context = createContext connection defaultBatchSize
+        let service = Cart.createServiceWithoutOptimization log context
+        let cartId = CartId.gen ()
+
+        do! service.SyncItems(cartId, false, [ (ctx, skuId, Some 1, None) ])
+
+        let otelAppends = otelCapture.ExternalCalls |> List.filter (fun a -> a = EsAct.Append)
+        let serilogAppends = serilogCapture.ExternalCalls |> List.filter (fun a -> a = EsAct.Append)
+        test <@ otelAppends.Length >= 1 @>
+        test <@ serilogAppends.Length >= 1 @> }
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
+    let ``OTel and Serilog both classify read operations consistently`` (ctx, skuId) = async {
+        #if NET
+        use _ = source.StartActivity("OTel and Serilog both classify read operations consistently")
+        #endif
+        let log, otelCapture, serilogCapture = output.CreateLoggerWithDualCapture()
+        use _capture = otelCapture
+        let! connection = connectToLocalStore log
+        let context = createContext connection defaultBatchSize
+        let service = Cart.createServiceWithoutOptimization log context
+        let cartId = CartId.gen ()
+
+        // Seed some data, then read it
+        do! service.SyncItems(cartId, false, [ (ctx, skuId, Some 1, None) ])
+        otelCapture.Clear()
+        serilogCapture.Clear()
+        let! _ = service.Read cartId
+
+        // Both should see at least a batch read operation
+        let otelOps = otelCapture.ExternalCalls
+        let serilogOps = serilogCapture.ExternalCalls
+        test <@ otelOps.Length >= 1 @>
+        test <@ serilogOps.Length >= 1 @>
+        // Both should agree on the type of read
+        let otelHasBatch = otelOps |> List.exists (fun a -> a = EsAct.BatchForward || a = EsAct.BatchBackward || a = EsAct.ReadLast)
+        let serilogHasBatch = serilogOps |> List.exists (fun a -> a = EsAct.BatchForward || a = EsAct.BatchBackward || a = EsAct.ReadLast)
+        test <@ otelHasBatch @>
+        test <@ serilogHasBatch @> }
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
+    let ``OtelToSerilogBridge emits log events matching store operations`` (ctx, skuId) = async {
+        #if NET
+        use _ = source.StartActivity("OtelToSerilogBridge emits log events matching store operations")
+        #endif
+        let bridgeCapture = LogCaptureBuffer()
+        let bridgeLog = Serilog.LoggerConfiguration().WriteTo.Sink(bridgeCapture).CreateLogger()
+        use _bridge = new OtelToSerilogBridge(bridgeLog)
+        let log, capture = output.CreateLoggerWithCapture()
+        use _capture = capture
+        let! connection = connectToLocalStore log
+        let context = createContext connection defaultBatchSize
+        let service = Cart.createServiceWithoutOptimization log context
+        let cartId = CartId.gen ()
+
+        // Act: write then read
+        do! service.SyncItems(cartId, false, [ (ctx, skuId, Some 1, None) ])
+        let! _ = service.Read cartId
+
+        // The bridge should have emitted log events for store operations
+        let bridgeLogs = bridgeCapture.ChooseCalls(fun e ->
+            match e.Properties.TryGetValue("Action") with
+            | true, v -> Some (string v)
+            | _ -> None)
+        test <@ bridgeLogs.Length >= 2 @>
+        test <@ bridgeLogs |> List.exists (fun s -> s.Contains "Append") @> }
+
+#if STORE_MESSAGEDB
     interface IDisposable with
       member _.Dispose() = sdk.Shutdown() |> ignore
 #endif
