@@ -14,9 +14,8 @@ type OtelToSerilogBridge(log: Serilog.ILogger) =
         Sample = (fun _ -> ActivitySamplingResult.AllDataAndRecorded),
         ActivityStopped = (fun act ->
             let tag name = act.GetTagItem(name)
-            let tagStr name = match tag name with :? string as s -> s | _ -> null
+            let tagStr name = match tag name :?> string[] with null -> null | s -> s
             let tagInt name = match tag name with :? int as i -> i | _ -> 0
-            let tagBool name = match tag name with :? bool as b -> b | _ -> false
             let count = tagInt "eqx.count"
             let bytes = tagInt "eqx.bytes"
             match act.OperationName with

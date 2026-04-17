@@ -8,7 +8,6 @@
 
     <ItemGroup>
         <Compile Include="..\..\samples\Store\Integration\TestOutput.fs" Link="TestOutput.fs" />
-        <Compile Include="..\..\samples\Store\Integration\ActivityCapture.fs" Link="ActivityCapture.fs" />
         <Compile Include="..\..\samples\Store\Integration\OtelToSerilogBridge.fs" Link="OtelToSerilogBridge.fs" />
         <Compile Include="Infrastructure.fs" />
         <Compile Include="..\..\samples\Store\Integration\AutoDataAttribute.fs" Link="AutoDataAttribute.fs" />

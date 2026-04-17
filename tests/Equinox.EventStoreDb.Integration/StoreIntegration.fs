@@ -68,7 +68,7 @@ open Equinox.EventStore
 
  /// Connect to the locally running INSECURE 3-node EventStoreDB cluster (see docker-compose.yml) via legacy TCP, using gossip-based discovery.
 /// WARNING: Applies INSECURE overrides to match the docker-compose config. NEVER do this in staging or production.
-let connectToLocalStore log =
+let connectToLocalStore _ =
     let c = EventStoreConnector(
             "admin", "changeit", reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3,
             tags=["I", Guid.NewGuid().ToString("N")],
@@ -184,7 +184,7 @@ type GeneralTests(testOutputHelper) =
            .AddSource("Equinox")
            .AddSource("Equinox.MessageDb")
            .AddSource("StoreIntegration")
-           .AddSource("Npqsl")
+           .AddSource("Npgsql")
            .AddOtlpExporter(fun opts -> opts.Endpoint <- Uri("http://localhost:4317"))
            .Build()
     #endif
@@ -554,7 +554,7 @@ type AdjacentSnapshotTests(testOutputHelper) =
            .AddSource("Equinox")
            .AddSource("Equinox.MessageDb")
            .AddSource("StoreIntegration")
-           .AddSource("Npqsl")
+           .AddSource("Npgsql")
            .AddOtlpExporter(fun opts -> opts.Endpoint <- Uri("http://localhost:4317"))
            .Build()
 
@@ -670,7 +670,7 @@ type OtelSerilogMappingTests(testOutputHelper) =
            .AddSource("Equinox")
            .AddSource("Equinox.MessageDb")
            .AddSource("StoreIntegration")
-           .AddSource("Npqsl")
+           .AddSource("Npgsql")
            .AddOtlpExporter(fun opts -> opts.Endpoint <- Uri("http://localhost:4317"))
            .Build()
 #endif

@@ -17,11 +17,10 @@ type TestOutputRendererSink(writeLine) =
     interface Serilog.Core.ILogEventSink with member _.Emit e = e |> renderer |> writeLine
 
 type LogCaptureBuffer() =
-    let gate = obj ()
-    let captured = ResizeArray()
-    interface Serilog.Core.ILogEventSink with member _.Emit logEvent = lock gate (fun () -> captured.Add logEvent)
-    member _.Clear () = lock gate (fun () -> captured.Clear())
-    member _.ChooseCalls chooser = lock gate (fun () -> captured.ToArray()) |> Seq.choose chooser |> List.ofSeq
+    let captured = System.Collections.Concurrent.ConcurrentQueue()
+    interface Serilog.Core.ILogEventSink with member _.Emit logEvent = captured.Enqueue logEvent
+    member _.Clear () = captured.Clear()
+    member _.ChooseCalls chooser = captured.ToArray() |> Seq.choose chooser |> List.ofSeq
 
 type TestOutput(testOutput: Xunit.ITestOutputHelper) =
 

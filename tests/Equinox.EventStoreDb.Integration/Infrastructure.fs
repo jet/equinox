@@ -125,8 +125,7 @@ type StoreActivityCapture() =
             | "BatchBackward" -> Some EsAct.BatchBackward
             | "ReadLast" -> Some EsAct.ReadLast
             | _ -> None)
-    interface IDisposable with
-        member _.Dispose() = currentOps.Value <- null
+    interface IDisposable with member _.Dispose() = currentOps.Value <- null
 
 type LogCapture() =
     inherit LogCaptureBuffer()
@@ -140,10 +139,6 @@ type TestContext(testOutputHelper) =
     member _.CreateLoggerWithCapture() =
         let capture = new StoreActivityCapture()
         output.CreateLogger(), capture
-
-    member _.CreateLoggerWithSerilogCapture() =
-        let capture = LogCapture()
-        output.CreateLogger(capture), capture
 
     member _.CreateLoggerWithDualCapture() =
         let serilogCapture = LogCapture()
