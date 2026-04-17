@@ -1,11 +1,13 @@
 ﻿namespace Equinox.SqlStreamStore
 
 open Equinox.Core
+open Equinox.Core.Tracing
 open Serilog
 open SqlStreamStore
 open SqlStreamStore.Streams
 open System
 open System.Collections.Generic
+open System.Diagnostics
 
 type EventBody = ReadOnlyMemory<byte>
 type EventData = NewStreamMessage
@@ -148,20 +150,26 @@ module private Write =
         events |> Array.sumBy eventDataLen
     let private writeEventsLogged (conn: IEventStoreConnection) (streamName: string) (version: int64) (events: EventData[]) (log: ILogger) ct
         : Task<EsSyncResult> = task {
+        let act = Activity.Current
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propEventData "Json" events
         let bytes, count = eventDataBytes events, events.Length
         let log = log |> Log.prop "bytes" bytes
+        if act <> null then act.AddExpectedVersion(version).IncMetric(count, bytes) |> ignore
         let writeLog = log |> Log.prop "stream" streamName |> Log.prop "expectedVersion" version |> Log.prop "count" count
         let! t, result = writeEventsAsync writeLog conn streamName version events |> Stopwatch.time ct
         let reqMetric: Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let resultLog, evt =
             match result, reqMetric with
             | EsSyncResult.Written x, m ->
+                if act <> null then act.SetStatus(ActivityStatusCode.Ok).AddTag("eqx.new_version", x.CurrentVersion) |> ignore
                 log |> Log.prop "currentVersion" x.CurrentVersion |> Log.prop "currentPosition" x.CurrentPosition, Log.WriteSuccess m
             | EsSyncResult.ConflictUnknown, m ->
+                let eventTypes = [| for x in events -> x.Type |]
+                if act <> null then act.RecordConflict().AddTag("eqx.event_types", eventTypes) |> ignore
                 log, Log.WriteConflict m
         (resultLog |> Log.event evt).Information("SqlEs{action:l} count={count} conflict={conflict}",
             "Write", events.Length, match evt with Log.WriteConflict _ -> true | _ -> false)
+        emitStoreOp (match evt with Log.WriteConflict _ -> "AppendConflict" | _ -> "Append")
         return result }
     let writeEvents (log: ILogger) retryPolicy (conn: IEventStoreConnection) (streamName: string) (version: int64) (events: EventData[]) ct
         : Task<EsSyncResult> =
@@ -177,13 +185,16 @@ module private Read =
         | Direction.Backward -> conn.ReadStreamBackwards(streamName, int startPos, batchSize, ct)
     let (|ResolvedEventLen|) (x: StreamMessage) = match x.JsonData, x.JsonMetadata with Log.StrLen bytes, Log.StrLen metaBytes -> bytes + metaBytes
     let private loggedReadSlice conn streamName direction batchSize startPos (log: ILogger) ct: Task<ReadStreamPage> = task {
+        let act = Activity.Current
         let! t, slice = readSliceAsync conn streamName direction batchSize startPos |> Stopwatch.time ct
         let bytes, count = slice.Messages |> Array.sumBy (|ResolvedEventLen|), slice.Messages.Length
         let reqMetric: Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count }
         let evt = Log.Slice (direction, reqMetric)
+        if act <> null then act.IncMetric(count, bytes).AddDirection(string direction) |> ignore
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propResolvedEvents "Json" slice.Messages
         (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes |> Log.event evt).Information("SqlEs{action:l} count={count} version={version}",
             "Read", count, slice.LastStreamVersion)
+        emitStoreOp (match direction with Direction.Forward -> "SliceForward" | Direction.Backward -> "SliceBackward")
         return slice }
     let private readBatches (log: ILogger) (readSlice: int64 -> ILogger -> CancellationToken -> Task<StreamEventsSlice>)
             (maxPermittedBatchReads: int option) (startPosition: int64) ct
@@ -206,14 +217,17 @@ module private Read =
         loop 0 startPosition
     let resolvedEventBytes events = events |> Array.sumBy (|ResolvedEventLen|)
     let logBatchRead direction streamName t events batchSize version (log: ILogger) =
+        let act = Activity.Current
         let bytes, count = resolvedEventBytes events, events.Length
         let reqMetric: Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let batches = (events.Length - 1)/batchSize + 1
         let action = match direction with Direction.Forward -> "LoadF" | Direction.Backward -> "LoadB"
+        if act <> null then act.IncMetric(count, bytes).AddLastVersion(version).AddBatches(batches).AddDirection(string direction) |> ignore
         let evt = Log.Metric.Batch (direction, batches, reqMetric)
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "SqlEs{action:l} stream={stream} count={count}/{batches} version={version}",
             action, streamName, count, batches, version)
+        emitStoreOp (match direction with Direction.Forward -> "BatchForward" | Direction.Backward -> "BatchBackward")
     let loadForwardsFrom (log: ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName startPosition ct
         : Task<int64 * ResolvedEvent[]> = task {
         let mergeBatches (batches: IAsyncEnumerable<int64 option * ResolvedEvent[]>) = task {

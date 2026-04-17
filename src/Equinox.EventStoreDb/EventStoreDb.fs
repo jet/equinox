@@ -1,9 +1,11 @@
 ﻿namespace Equinox.EventStoreDb
 
 open Equinox.Core
+open Equinox.Core.Tracing
 open EventStore.Client
 open Serilog
 open System
+open System.Diagnostics
 
 type EventBody = ReadOnlyMemory<byte>
 
@@ -142,20 +144,26 @@ module private Write =
 
     let private writeEventsLogged (conn: EventStoreClient) (streamName: string) (version: int64) (events: EventData[]) (log: ILogger) ct
         : Task<EsSyncResult> = task {
+        let act = Activity.Current
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propEventData "Json" events
         let bytes, count = eventDataBytes events, events.Length
         let log = log |> Log.prop "bytes" bytes |> Log.prop "expectedVersion" version
+        if act <> null then act.AddExpectedVersion(version).IncMetric(count, bytes) |> ignore
         let writeLog = log |> Log.prop "stream" streamName |> Log.prop "count" count
         let! t, result = writeEventsAsync writeLog conn streamName version events |> Stopwatch.time ct
         let reqMetric: Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let resultLog, evt =
             match result, reqMetric with
             | EsSyncResult.Written x, m ->
+                if act <> null then act.SetStatus(ActivityStatusCode.Ok).AddTag("eqx.new_version", x.NextExpectedVersion) |> ignore
                 log |> Log.prop "nextExpectedVersion" x.NextExpectedVersion |> Log.prop "logPosition" x.LogPosition, Log.WriteSuccess m
             | EsSyncResult.Conflict actualVersion, m ->
+                let eventTypes = [| for x in events -> x.Type |]
+                if act <> null then act.RecordConflict().AddTag("eqx.event_types", eventTypes) |> ignore
                 log |> Log.prop "actualVersion" actualVersion, Log.WriteConflict m
         (resultLog |> Log.event evt).Information("Esdb{action:l} count={count} conflict={conflict}",
             "Write", events.Length, match evt with Log.WriteConflict _ -> true | _ -> false)
+        emitStoreOp (match evt with Log.WriteConflict _ -> "AppendConflict" | _ -> "Append")
         return result }
 
     let writeEvents (log: ILogger) retryPolicy (conn: EventStoreClient) (streamName: string) (version: int64) (events: EventData[]) ct
@@ -168,15 +176,18 @@ module private Read =
     let resolvedEventBytes (x: ResolvedEvent) = let Log.BlobLen bytes, Log.BlobLen metaBytes = x.Event.Data, x.Event.Metadata in bytes + metaBytes
     let resolvedEventsBytes events = events |> Array.sumBy resolvedEventBytes
     let private logBatchRead direction streamName t events batchSize version (log: ILogger) =
+        let act = Activity.Current
         let bytes, count = resolvedEventsBytes events, events.Length
         let reqMetric: Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let batches = match batchSize with Some batchSize -> (events.Length - 1) / batchSize + 1 | None -> -1
         let action = if direction = Direction.Forward then "LoadF" else "LoadB"
+        if act <> null then act.IncMetric(count, bytes).AddLastVersion(version).AddBatches(batches).AddDirection(string direction) |> ignore
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propResolvedEvents "Json" events
         let evt = Log.Metric.Batch (direction, batches, reqMetric)
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "Esdb{action:l} stream={stream} count={count}/{batches} version={version}",
             action, streamName, count, batches, version)
+        emitStoreOp (if direction = Direction.Forward then "BatchForward" else "BatchBackward")
     let private loadBackwardsUntilOrigin (log: ILogger) (conn: EventStoreClient) batchSize streamName (tryDecode, isOrigin) ct
         : Task<int64 * struct (ResolvedEvent * 'event voption)[]> = task {
         let res = conn.ReadStreamAsync(Direction.Backwards, streamName, StreamPosition.End, int64 batchSize, resolveLinkTos = false, cancellationToken = ct)
