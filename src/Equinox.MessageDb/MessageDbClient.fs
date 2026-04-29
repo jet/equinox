@@ -19,10 +19,9 @@ type MdbSyncResult = Written of int64 | ConflictUnknown
 [<AutoOpen>]
 module private NpgsqlHelpers =
 
-    let createConnectionAndOpen connectionString ct = task {
-        let conn = new NpgsqlConnection(connectionString)
-        do! conn.OpenAsync(ct)
-        return conn }
+    let createConnectionAndOpen (dataSource: Npgsql.NpgsqlDataSource) ct = task {
+            let! conn = dataSource.OpenConnectionAsync(ct)
+            return conn }
 
     type NpgsqlParameterCollection with
         member p.AddParameter<'T>(parameterType: NpgsqlDbType, value: 'T voption) =
@@ -54,10 +53,10 @@ module private WriteMessage =
         cmd.Parameters.AddExpectedVersion(expectedVersion)
         cmd
 
-type internal MessageDbWriter(connectionString: string) =
+type internal MessageDbWriter(dataSource: Npgsql.NpgsqlDataSource) =
 
     member _.WriteMessages(streamName, events: _[], version, onSync, ct) = task {
-        use! conn = createConnectionAndOpen connectionString ct
+        use! conn = createConnectionAndOpen dataSource ct
         use transaction = conn.BeginTransaction()
         use batch = new NpgsqlBatch(conn, transaction)
         let toAppendCall i e =
@@ -94,9 +93,9 @@ module private ReadStream =
         cmd.Parameters.AddWithValue(NpgsqlDbType.Bigint, batchSize) |> ignore
         cmd
 
-type internal MessageDbReader (connectionString: string, leaderConnectionString: string) =
+type internal MessageDbReader (dataSource: Npgsql.NpgsqlDataSource, leaderDataSource: Npgsql.NpgsqlDataSource) =
 
-    let connect requiresLeader = createConnectionAndOpen (if requiresLeader then leaderConnectionString else connectionString)
+    let connect requiresLeader = createConnectionAndOpen (if requiresLeader then leaderDataSource else dataSource)
 
     let parseRow (reader: DbDataReader): ITimelineEvent<Format> =
         let et, data, meta = reader.GetString(1), reader.GetJson(2), reader.GetJson(3)
