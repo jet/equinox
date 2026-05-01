@@ -19,11 +19,6 @@ type MdbSyncResult = Written of int64 | ConflictUnknown
 [<AutoOpen>]
 module private NpgsqlHelpers =
 
-    let createConnectionAndOpen connectionString ct = task {
-        let conn = new NpgsqlConnection(connectionString)
-        do! conn.OpenAsync(ct)
-        return conn }
-
     type NpgsqlParameterCollection with
         member p.AddParameter<'T>(parameterType: NpgsqlDbType, value: 'T voption) =
             p.AddWithValue(parameterType, match value with ValueSome v -> box v | ValueNone -> DBNull.Value) |> ignore
@@ -54,10 +49,10 @@ module private WriteMessage =
         cmd.Parameters.AddExpectedVersion(expectedVersion)
         cmd
 
-type internal MessageDbWriter(connectionString: string) =
+type internal MessageDbWriter(dataSource: Npgsql.NpgsqlDataSource) =
 
     member _.WriteMessages(streamName, events: _[], version, onSync, ct) = task {
-        use! conn = createConnectionAndOpen connectionString ct
+        use! conn = dataSource.OpenConnectionAsync(ct)
         use transaction = conn.BeginTransaction()
         use batch = new NpgsqlBatch(conn, transaction)
         let toAppendCall i e =
@@ -94,9 +89,7 @@ module private ReadStream =
         cmd.Parameters.AddWithValue(NpgsqlDbType.Bigint, batchSize) |> ignore
         cmd
 
-type internal MessageDbReader (connectionString: string, leaderConnectionString: string) =
-
-    let connect requiresLeader = createConnectionAndOpen (if requiresLeader then leaderConnectionString else connectionString)
+type internal MessageDbReader (dataSource: Npgsql.NpgsqlDataSource, leaderDataSource: Npgsql.NpgsqlDataSource) =
 
     let parseRow (reader: DbDataReader): ITimelineEvent<Format> =
         let et, data, meta = reader.GetString(1), reader.GetJson(2), reader.GetJson(3)
@@ -107,7 +100,8 @@ type internal MessageDbReader (connectionString: string, leaderConnectionString:
             size = et.Length + data.Length + meta.Length)
 
     member _.ReadLastEvent(streamName: string, requiresLeader, ct, ?eventType) = task {
-        use! conn = connect requiresLeader ct
+        let dataSource = if requiresLeader then leaderDataSource else dataSource
+        use! conn = dataSource.OpenConnectionAsync(ct)
         use cmd = ReadLast.prepareCommand conn streamName eventType
         use! reader = cmd.ExecuteReaderAsync(ct)
 
@@ -115,7 +109,8 @@ type internal MessageDbReader (connectionString: string, leaderConnectionString:
         else return Array.empty }
 
     member _.ReadStream(streamName: string, fromPosition: int64, batchSize: int64, requiresLeader, ct) = task {
-        use! conn = connect requiresLeader ct
+        let dataSource = if requiresLeader then leaderDataSource else dataSource
+        use! conn = dataSource.OpenConnectionAsync(ct)
         use cmd = ReadStream.prepareCommand conn streamName fromPosition batchSize
         use! reader = cmd.ExecuteReaderAsync(ct)
 

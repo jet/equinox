@@ -294,15 +294,34 @@ type MessageDbClient internal (reader, writer, ?readRetryPolicy, ?writeRetryPoli
     member val ReadRetryPolicy = readRetryPolicy
     member val internal Writer = writer
     member val WriteRetryPolicy = writeRetryPolicy
+
+    new(dataSource: Npgsql.NpgsqlDataSource,
+        // Can be used to divert reads to a replica
+        // Conflicts detected on write trigger a resync, reading via the `dataSource` to maximize the freshness of the data for the retry
+        [<O; D(null)>]?readDataSource: Npgsql.NpgsqlDataSource,
+        [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
+
+        let readDataSource = defaultArg readDataSource dataSource
+        let reader = MessageDbReader(readDataSource, dataSource)
+        let writer = MessageDbWriter(dataSource)
+        MessageDbClient(reader, writer, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
+
     new(connectionString: string,
         // Can be used to divert reads to a replica
         // Conflicts detected on write trigger a resync, reading via the `connectionString` to maximize the freshness of the data for the retry
         [<O; D(null)>]?readConnectionString: string,
         [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
 
-        let readConnectionString = defaultArg readConnectionString connectionString
-        let reader = MessageDbReader(readConnectionString, connectionString)
-        let writer = MessageDbWriter(connectionString)
+        let buildDatasource connStr = Npgsql.NpgsqlDataSourceBuilder(connStr).Build()
+
+        let dataSource = buildDatasource connectionString
+        let readDataSource =
+            readConnectionString
+            |> Option.map buildDatasource
+            |> Option.defaultValue dataSource
+
+        let reader = MessageDbReader(readDataSource, dataSource)
+        let writer = MessageDbWriter(dataSource)
         MessageDbClient(reader, writer, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
 
 type BatchOptions(getBatchSize: Func<int>, [<O; D(null)>]?batchCountLimit) =
