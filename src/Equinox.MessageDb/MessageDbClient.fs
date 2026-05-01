@@ -95,7 +95,7 @@ module private ReadStream =
 
 type internal MessageDbReader (dataSource: Npgsql.NpgsqlDataSource, leaderDataSource: Npgsql.NpgsqlDataSource) =
 
-    let connect requiresLeader = createConnectionAndOpen (if requiresLeader then leaderDataSource else dataSource)
+    let selectDatasource requiresLeader = if requiresLeader then leaderDataSource else dataSource
 
     let parseRow (reader: DbDataReader): ITimelineEvent<Format> =
         let et, data, meta = reader.GetString(1), reader.GetJson(2), reader.GetJson(3)
@@ -106,7 +106,8 @@ type internal MessageDbReader (dataSource: Npgsql.NpgsqlDataSource, leaderDataSo
             size = et.Length + data.Length + meta.Length)
 
     member _.ReadLastEvent(streamName: string, requiresLeader, ct, ?eventType) = task {
-        use! conn = connect requiresLeader ct
+        let dataSource = selectDatasource requiresLeader
+        use! conn = dataSource.OpenConnectionAsync(ct)
         use cmd = ReadLast.prepareCommand conn streamName eventType
         use! reader = cmd.ExecuteReaderAsync(ct)
 
@@ -114,7 +115,8 @@ type internal MessageDbReader (dataSource: Npgsql.NpgsqlDataSource, leaderDataSo
         else return Array.empty }
 
     member _.ReadStream(streamName: string, fromPosition: int64, batchSize: int64, requiresLeader, ct) = task {
-        use! conn = connect requiresLeader ct
+        let dataSource = selectDatasource requiresLeader
+        use! conn = dataSource.OpenConnectionAsync(ct)
         use cmd = ReadStream.prepareCommand conn streamName fromPosition batchSize
         use! reader = cmd.ExecuteReaderAsync(ct)
 
