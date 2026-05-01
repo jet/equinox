@@ -3,6 +3,8 @@
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
     <PackageValidationBaselineVersion>4.0.0</PackageValidationBaselineVersion>
+    <!-- Inhibit NU5104 A stable release of a package should not have a prerelease dependency (all releases are -beta to date) -->
+    <NoWarn>$NoWarn);NU5104</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

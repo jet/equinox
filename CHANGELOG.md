@@ -10,17 +10,26 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Changed
 
-- .NET 10 SDK update & build optimizations; Docker image update to MSSQL 2025
-- Docker image update to EventStoreDB 23.10.8 without certs or TLS (but retaining 3-node cluster) [#493](https://github.com/jet/equinox/pull/493)
-- `Equinox.CosmosStore`: Update `Microsoft.Azure.Cosmos` to >= `3.58.0` to remove transitive vulnerable default [#489](https://github.com/jet/equinox/pull/489)
 - `Equinox.DynamoStore`: Update `AWSSDK` dependencies to 4.x (knock-on effect of updating `FSharp.AWS.DynamoDB` dependency to `0.13.0-beta`) [#480](https://github.com/jet/equinox/pull/480) :pray: [@njlr](https://github.com/njlr)
-- `Equinox.SqlStreamStore.MsSql`: Update `System.IdentityModel.Tokens.Jwt` to remove transitive vulnerable defaults [#489](https://github.com/jet/equinox/pull/489)
-- `Equinox.EventStore`: Correct handling for `WrongExpectedVersion` when stream empty [#493](https://github.com/jet/equinox/pull/493)
-- `Equinox.MessageDb`: Provide additional constructors that accept an `NpgsqlDataSource` [#496](https://github.com/jet/equinox/pull/496)
 
 ### Added
 
 - `Equinox.CosmosStore.Linq`: Add LINQ querying support for Indexed `u`nfolds [#450](https://github.com/jet/equinox/pull/450)
+
+<a name="4.1.3"></a>
+## [4.1.3] - 2026-05-01
+
+### Added
+
+- `Equinox.MessageDb`: Provide additional constructors that accept an `NpgsqlDataSource` [#496](https://github.com/jet/equinox/pull/496) :pray: [@njlr](https://github.com/njlr)
+
+### Changed
+
+- .NET 10 SDK update & build optimizations; Docker image update to MSSQL 2025
+- Docker image update to EventStoreDB 23.10.8 without certs or TLS (but retaining 3-node cluster) [#493](https://github.com/jet/equinox/pull/493)
+- `Equinox.CosmosStore`: Update `Microsoft.Azure.Cosmos` to >= `3.58.0` to remove transitive vulnerable default [#489](https://github.com/jet/equinox/pull/489)
+- `Equinox.EventStore`: Correct handling for `WrongExpectedVersion` when stream empty [#493](https://github.com/jet/equinox/pull/493)
+- `Equinox.SqlStreamStore.MsSql`: Update `System.IdentityModel.Tokens.Jwt` to remove transitive vulnerable defaults [#489](https://github.com/jet/equinox/pull/489)
 
 <a name="4.1.2"></a>
 ## [4.1.2] - 2026-02-04
@@ -833,7 +842,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/4.1.2...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/4.1.3...HEAD
+[4.1.3]: https://github.com/jet/equinox/compare/4.1.2...4.1.3
 [4.1.2]: https://github.com/jet/equinox/compare/4.1.1...4.1.2
 [4.1.1]: https://github.com/jet/equinox/compare/4.1.0...4.1.1
 [4.1.0]: https://github.com/jet/equinox/compare/4.0.4...4.1.0
