@@ -19,10 +19,6 @@ type MdbSyncResult = Written of int64 | ConflictUnknown
 [<AutoOpen>]
 module private NpgsqlHelpers =
 
-    let inline createConnectionAndOpen (dataSource: Npgsql.NpgsqlDataSource) ct = task {
-            let! conn = dataSource.OpenConnectionAsync(ct)
-            return conn }
-
     type NpgsqlParameterCollection with
         member p.AddParameter<'T>(parameterType: NpgsqlDbType, value: 'T voption) =
             p.AddWithValue(parameterType, match value with ValueSome v -> box v | ValueNone -> DBNull.Value) |> ignore
@@ -56,7 +52,7 @@ module private WriteMessage =
 type internal MessageDbWriter(dataSource: Npgsql.NpgsqlDataSource) =
 
     member _.WriteMessages(streamName, events: _[], version, onSync, ct) = task {
-        use! conn = createConnectionAndOpen dataSource ct
+        use! conn = dataSource.OpenConnectionAsync(ct)
         use transaction = conn.BeginTransaction()
         use batch = new NpgsqlBatch(conn, transaction)
         let toAppendCall i e =
