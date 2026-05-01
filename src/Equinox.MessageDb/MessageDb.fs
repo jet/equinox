@@ -312,10 +312,12 @@ type MessageDbClient internal (reader, writer, ?readRetryPolicy, ?writeRetryPoli
         [<O; D(null)>]?readConnectionString: string,
         [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
 
-        let dataSource = Npgsql.NpgsqlDataSourceBuilder(connectionString).Build()
+        let buildDatasource connStr = Npgsql.NpgsqlDataSourceBuilder(connStr).Build()
+
+        let dataSource = buildDatasource connectionString
         let readDataSource =
             readConnectionString
-            |> Option.map (fun readConnectionString -> Npgsql.NpgsqlDataSourceBuilder(readConnectionString).Build())
+            |> Option.map buildDatasource
             |> Option.defaultValue dataSource
 
         let reader = MessageDbReader(readDataSource, dataSource)
