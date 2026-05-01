@@ -19,7 +19,7 @@ type MdbSyncResult = Written of int64 | ConflictUnknown
 [<AutoOpen>]
 module private NpgsqlHelpers =
 
-    let createConnectionAndOpen (dataSource: Npgsql.NpgsqlDataSource) ct = task {
+    let inline createConnectionAndOpen (dataSource: Npgsql.NpgsqlDataSource) ct = task {
             let! conn = dataSource.OpenConnectionAsync(ct)
             return conn }
 
