@@ -16,6 +16,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Equinox.DynamoStore`: Update `AWSSDK` dependencies to 4.x (knock-on effect of updating `FSharp.AWS.DynamoDB` dependency to `0.13.0-beta`) [#480](https://github.com/jet/equinox/pull/480) :pray: [@njlr](https://github.com/njlr)
 - `Equinox.SqlStreamStore.MsSql`: Update `System.IdentityModel.Tokens.Jwt` to remove transitive vulnerable defaults [#489](https://github.com/jet/equinox/pull/489)
 - `Equinox.EventStore`: Correct handling for `WrongExpectedVersion` when stream empty [#493](https://github.com/jet/equinox/pull/493)
+- `Equinox.MessageDb`: Provide additional constructors that accept an `NpgsqlDataSource` [#496](https://github.com/jet/equinox/pull/496)
 
 ### Added
 
