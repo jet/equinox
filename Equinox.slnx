@@ -17,7 +17,6 @@
     <File Path="SECURITY.md" />
   </Folder>
   <Folder Name="/.project/diagrams/">
-    <File Path="diagrams/*.puml" />
     <File Path="diagrams/container.puml" />
     <File Path="diagrams/context.puml" />
     <File Path="diagrams/CosmosCode.puml" />

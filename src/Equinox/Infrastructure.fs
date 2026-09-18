@@ -70,3 +70,4 @@ module Array =
 
     let inline chooseV f xs = [| for item in xs do match f item with ValueSome v -> yield v | ValueNone -> () |]
     let inline tryFirstV (xs: _[]) = if xs.Length = 0 then ValueNone else ValueSome xs[0]
+
