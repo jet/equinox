@@ -10,7 +10,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Changed
 
-- `Equinox.DynamoStore`: Update `AWSSDK` dependencies to 4.x (knock-on effect of updating `FSharp.AWS.DynamoDB` dependency to `0.13.0-beta`) [#480](https://github.com/jet/equinox/pull/480) :pray: [@njlr](https://github.com/njlr)
+- `Equinox.DynamoStore`: Update `AWSSDK` dependencies to 4.x (knock-on effect of updating `FSharp.AWS.DynamoDB` dependency to `0.13.2-beta`) [#480](https://github.com/jet/equinox/pull/480) :pray: [@njlr](https://github.com/njlr)
 
 ### Added
 
