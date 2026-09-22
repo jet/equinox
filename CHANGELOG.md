@@ -8,13 +8,17 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ## [Unreleased]
 
-### Changed
-
-- `Equinox.DynamoStore`: Update `AWSSDK` dependencies to 4.x (knock-on effect of updating `FSharp.AWS.DynamoDB` dependency to `0.13.2-beta`) [#480](https://github.com/jet/equinox/pull/480) :pray: [@njlr](https://github.com/njlr)
-
 ### Added
 
 - `Equinox.CosmosStore.Linq`: Add LINQ querying support for Indexed `u`nfolds [#450](https://github.com/jet/equinox/pull/450)
+
+<a name="4.1.4"></a>
+## [4.1.4] - 2026-09-23
+
+### Changed
+
+- `Equinox.DynamoStore`: Update `AWSSDK` dependencies to 4.x (knock-on effect of updating `FSharp.AWS.DynamoDB` dependency to `0.13.2-beta`) [#480](https://github.com/jet/equinox/pull/480), [#497](https://github.com/jet/equinox/pull/497) :pray: [@njlr](https://github.com/njlr)
+- `Equinox.Postgres`: Update `Npgsql` dependency to `4.1.14` to remove vulnerable default dependency 
 
 <a name="4.1.3"></a>
 ## [4.1.3] - 2026-05-01
@@ -842,7 +846,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/4.1.3...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/4.1.4...HEAD
+[4.1.4]: https://github.com/jet/equinox/compare/4.1.3...4.1.4
 [4.1.3]: https://github.com/jet/equinox/compare/4.1.2...4.1.3
 [4.1.2]: https://github.com/jet/equinox/compare/4.1.1...4.1.2
 [4.1.1]: https://github.com/jet/equinox/compare/4.1.0...4.1.1
